@@ -121,6 +121,24 @@ npm run typecheck   # type-check main + renderer
    hotkey. It closes when you say a dismissal ("stop", "that's it for today", "never mind",
    "bye Nimbus"), press `Esc`, or stay silent.
 
+## Ask about your screen
+
+Press **Ctrl+Shift+S** (configurable) and Nimbus captures the display your cursor is on,
+then listens for a question about it — *"what does this error mean?"*, *"explain this
+chart"*, *"what is this dialog asking me?"*. The answer comes from Gemini's vision support,
+which is part of the same free tier, so it needs no extra key.
+
+Design decisions that matter here, since this reads your screen:
+
+- **Capture only ever happens on that explicit hotkey.** Nothing is captured automatically,
+  and no phrase triggers it.
+- **The screenshot is shown back to you** — as a thumbnail while you ask, and on the answer
+  card afterwards — so it's never ambiguous what Nimbus looked at.
+- **It's held only for the turn that uses it.** The image lives in a single main-process
+  variable, is cleared the moment a question consumes it, and is dropped when the overlay
+  closes or the normal hotkey is pressed. It's never written to disk.
+- Capture happens *before* the overlay is shown, so Nimbus isn't in its own screenshot.
+
 ## Rich response cards
 
 Answers render as visuals where the data supports it, not just spoken text:
