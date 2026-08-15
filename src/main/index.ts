@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, session, shell } from 'electron'
+import { app, BrowserWindow, clipboard, ipcMain, session, shell } from 'electron'
 import { electronApp, optimizer } from '@electron-toolkit/utils'
 import dotenv from 'dotenv'
 import { createTray } from './tray'
@@ -80,6 +80,12 @@ function registerIpcHandlers(): void {
     pendingCapture = null
   })
 
+  ipcMain.on(IPC.COPY_TEXT, (_event, text: string) => {
+    // Electron's clipboard rather than navigator.clipboard: the overlay is a
+    // transparent, often-unfocused window, where the web API is unreliable.
+    clipboard.writeText(text)
+  })
+
   ipcMain.on(IPC.SET_MOUSE_IGNORE, (_event, ignore: boolean) => {
     // forward:true keeps mousemove flowing to the renderer while ignoring, so
     // it can still tell when the pointer arrives over the card.
@@ -115,6 +121,9 @@ function registerIpcHandlers(): void {
       const result = await runTextAction(kind, pendingSelection.text, customInstruction, (chunk) => {
         if (!event.sender.isDestroyed()) event.sender.send(IPC.SPEECH_CHUNK, chunk)
       })
+      // The result becomes the working text, so a follow-up ("now make it
+      // shorter") builds on it instead of starting from the original again.
+      pendingSelection = { ...pendingSelection, text: result }
       return { result, canReplace: pendingSelection.windowHandle !== '0' }
     }
   )
