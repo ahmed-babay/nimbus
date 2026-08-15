@@ -33,6 +33,7 @@ export default function App() {
     radio,
     levelRef,
     speechProgressRef,
+    isOpen,
     submitText,
     onTypingStart,
     dismiss
@@ -40,16 +41,8 @@ export default function App() {
   // Paced reveal: the model streams in a few big chunks, which otherwise
   // lands as the whole answer at once.
   const typedText = useTypewriter(streamingText)
-  // The selection flow has no mic, so it sits at 'idle' while waiting for the
-  // user to pick an action — visibility can't be driven by state alone.
-  // Typed turns end at 'idle' with the answer still up, so visibility can't
-  // be driven by state alone.
-  const isVisible =
-    mode === 'settings' ||
-    state !== 'idle' ||
-    response !== null ||
-    pendingSelection !== null ||
-    Boolean(error)
+  // Driven by one explicit flag rather than inferred from state and content.
+  const isVisible = isOpen || mode === 'settings'
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent): void {
@@ -176,11 +169,20 @@ export default function App() {
                           </p>
                         </div>
                       </div>
-                    ) : (
+                    ) : state === 'listening' ? (
                       <div className="flex h-14 flex-col justify-center gap-1">
                         <Waveform levelRef={levelRef} />
                         <p className="arcade-type text-[9px] text-nimbus-cyan">
                           &gt; Listening — say &ldquo;stop&rdquo; when done
+                        </p>
+                      </div>
+                    ) : (
+                      // Mic is closed (typing, or a finished typed turn) — say
+                      // so rather than showing a dead "listening" waveform.
+                      <div className="flex h-14 flex-col justify-center">
+                        <p className="arcade-type text-[9px] text-nimbus-text-dim">
+                          &gt; Type below, or press {config?.hotkey.accelerator ?? 'the hotkey'} to
+                          talk
                         </p>
                       </div>
                     )}
