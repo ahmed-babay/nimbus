@@ -202,6 +202,8 @@ export interface NimbusConfig {
     /** Quiet time before a turn is considered finished. Lower = snappier,
      *  but tolerates shorter mid-sentence pauses. */
     endOfSpeechMs: number
+    /** Speech pace for TTS, e.g. "+20%". Edge's default reads slowly. */
+    speechRate: string
   }
   textActions: {
     /** Target language for the Translate button. Speaking an instruction

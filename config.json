@@ -18,7 +18,8 @@
     "autoFadeMs": 8000
   },
   "voice": {
-    "endOfSpeechMs": 900
+    "endOfSpeechMs": 900,
+    "speechRate": "+20%"
   },
   "textActions": {
     "translateTo": "English"
