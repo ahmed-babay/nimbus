@@ -27,6 +27,11 @@ dotenv.config()
 // every single time — must be set before app is ready.
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
 
+// Time given to the compositor to actually repaint after hiding the overlay,
+// before a screenshot is taken. Without it the overlay is still on screen in
+// the captured frame even though the window reports itself hidden.
+const OVERLAY_HIDE_REPAINT_MS = 180
+
 let overlayWindow: BrowserWindow | null = null
 // Held only between the capture hotkey and the question that follows it, then
 // cleared — the screenshot is never retained beyond the turn that uses it.
@@ -191,9 +196,19 @@ app.whenReady().then(() => {
     },
     async () => {
       if (!overlayWindow) return
+      // Hidden, not closed: an already-open overlay would otherwise appear in
+      // its own screenshot. Conversation, pending selection and everything
+      // else in the renderer survive, since the window is only hidden.
+      const wasVisible = overlayWindow.isVisible()
+
       try {
-        // Capture before anything is shown, so neither the overlay nor the
-        // region picker can appear in the shot.
+        if (wasVisible) {
+          overlayWindow.hide()
+          // Hiding is not instant on screen — without a beat for the
+          // compositor to repaint, the capture still contains the overlay.
+          await new Promise((resolve) => setTimeout(resolve, OVERLAY_HIDE_REPAINT_MS))
+        }
+
         const { image, bounds } = await captureDisplayImage()
 
         let choice: RegionChoice = 'full'
@@ -202,8 +217,12 @@ app.whenReady().then(() => {
           // exactly onto what gets cropped.
           const preview = `data:image/jpeg;base64,${image.toJPEG(70).toString('base64')}`
           choice = await pickRegion(preview, bounds)
-          // Esc — no capture, no overlay.
-          if (choice === null) return
+        }
+
+        if (choice === null) {
+          // Cancelled — put the overlay back exactly as it was.
+          if (wasVisible) showOverlay(overlayWindow)
+          return
         }
 
         pendingCapture = encodeCapture(image, choice === 'full' ? undefined : choice)
@@ -213,6 +232,7 @@ app.whenReady().then(() => {
       } catch (err) {
         console.error('[screen] capture failed:', err instanceof Error ? err.message : err)
         pendingCapture = null
+        if (wasVisible) showOverlay(overlayWindow)
       }
     },
     async () => {
