@@ -309,8 +309,8 @@ function RadioBody({ data, radio }: { data: RadioCardData; radio: RadioPlayerCon
         aria-label={radio.isPlaying ? 'Pause' : 'Play'}
         className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full transition-transform hover:scale-105"
         style={{
-          background: 'linear-gradient(145deg, #ffb067, #ff6a1f)',
-          boxShadow: '0 0 20px rgba(255,138,61,0.5)'
+          background: 'linear-gradient(145deg, var(--color-nimbus-accent-bright), var(--color-nimbus-violet-deep))',
+          boxShadow: '0 0 20px rgba(79,214,255,0.5)'
         }}
       >
         {radio.isLoading ? (

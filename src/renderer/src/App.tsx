@@ -5,6 +5,7 @@ import { Waveform } from './components/Waveform'
 import { ResponseCard } from './components/ResponseCard'
 import { SelectionActions } from './components/SelectionActions'
 import { useNimbus } from './hooks/useNimbus'
+import { useTypewriter } from './hooks/useTypewriter'
 import type { NimbusConfig, NimbusState } from '@shared/types'
 
 const STATE_LABEL: Record<NimbusState, string> = {
@@ -33,6 +34,9 @@ export default function App() {
     speechProgressRef,
     dismiss
   } = useNimbus()
+  // Paced reveal: the model streams in a few big chunks, which otherwise
+  // lands as the whole answer at once.
+  const typedText = useTypewriter(streamingText)
   // The selection flow has no mic, so it sits at 'idle' while waiting for the
   // user to pick an action — visibility can't be driven by state alone.
   const isVisible =
@@ -62,15 +66,24 @@ export default function App() {
             className="relative w-[492px] overflow-hidden rounded-[20px] border border-nimbus-border bg-nimbus-bg backdrop-blur-2xl"
             style={{
               boxShadow:
-                '0 20px 60px -12px rgba(0,0,0,0.75), 0 0 0 1px rgba(255,138,61,0.06), inset 0 1px 0 rgba(255,255,255,0.07)'
+                '0 20px 60px -12px rgba(0,0,0,0.8), 0 0 0 1px rgba(79,214,255,0.10), 0 0 34px -8px rgba(79,214,255,0.28), inset 0 1px 0 rgba(154,233,255,0.10)'
             }}
           >
-            {/* Warm top edge highlight */}
+            {/* Faint hex lattice — hextech texture without competing with content */}
+            <div
+              className="pointer-events-none absolute inset-0 opacity-[0.055]"
+              style={{
+                backgroundImage:
+                  'linear-gradient(60deg, var(--color-nimbus-accent) 1px, transparent 1px), linear-gradient(-60deg, var(--color-nimbus-accent) 1px, transparent 1px)',
+                backgroundSize: '22px 38px'
+              }}
+            />
+            {/* Energised top edge */}
             <div
               className="pointer-events-none absolute inset-x-0 top-0 h-px"
               style={{
                 background:
-                  'linear-gradient(90deg, transparent, rgba(255,138,61,0.55), transparent)'
+                  'linear-gradient(90deg, transparent, rgba(79,214,255,0.65), rgba(169,123,255,0.55), transparent)'
               }}
             />
             {/* Scanning line while thinking */}
@@ -80,7 +93,7 @@ export default function App() {
                   className="nimbus-scan h-full w-1/3"
                   style={{
                     background:
-                      'linear-gradient(90deg, transparent, rgba(255,176,103,0.95), transparent)'
+                      'linear-gradient(90deg, transparent, rgba(154,233,255,0.95), transparent)'
                   }}
                 />
               </div>
@@ -116,10 +129,10 @@ export default function App() {
                             &ldquo;{transcript}&rdquo;
                           </p>
                         )}
-                        {streamingText ? (
+                        {typedText ? (
                           // Live tokens from the model, with a blinking caret.
                           <p className="mt-1 text-[13px] leading-relaxed text-nimbus-text">
-                            {streamingText}
+                            {typedText}
                             <motion.span
                               animate={{ opacity: [1, 0.15, 1] }}
                               transition={{ duration: 0.9, repeat: Infinity }}
