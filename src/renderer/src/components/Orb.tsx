@@ -7,10 +7,18 @@ interface OrbProps {
   levelRef: RefObject<number>
 }
 
+/** Evenly spaced tick marks around a ring, drawn as an SVG dash pattern. */
+function runeDashes(radius: number, count: number): string {
+  const circumference = 2 * Math.PI * radius
+  const segment = circumference / count
+  return `${segment * 0.34} ${segment * 0.66}`
+}
+
 /**
- * Listening / thinking / speaking indicator. While listening the glow tracks
- * the real mic level via requestAnimationFrame reading a ref, so it reacts to
- * the user's actual voice without re-rendering React on every audio frame.
+ * Hextech-style indicator: counter-rotating runic rings around a charged core,
+ * with motes drifting off it. While listening the glow tracks the real mic
+ * level via requestAnimationFrame reading a ref, so the orb reacts to the
+ * user's actual voice without re-rendering React on every audio frame.
  */
 export function Orb({ state, levelRef }: OrbProps) {
   const glowRef = useRef<HTMLDivElement>(null)
@@ -26,14 +34,13 @@ export function Orb({ state, levelRef }: OrbProps) {
     let frame = 0
     let smoothed = 0
     const tick = (): void => {
-      // Ease toward the target so the orb breathes instead of jittering.
       smoothed += (levelRef.current - smoothed) * 0.2
       if (glowRef.current) {
-        glowRef.current.style.transform = `scale(${1 + smoothed * 0.85})`
-        glowRef.current.style.opacity = `${0.35 + smoothed * 0.5}`
+        glowRef.current.style.transform = `scale(${1 + smoothed * 0.95})`
+        glowRef.current.style.opacity = `${0.4 + smoothed * 0.55}`
       }
       if (coreRef.current) {
-        coreRef.current.style.transform = `scale(${1 + smoothed * 0.28})`
+        coreRef.current.style.transform = `scale(${1 + smoothed * 0.3})`
       }
       frame = requestAnimationFrame(tick)
     }
@@ -41,70 +48,119 @@ export function Orb({ state, levelRef }: OrbProps) {
     return () => cancelAnimationFrame(frame)
   }, [state, levelRef])
 
-  const isActive = state === 'listening' || state === 'speaking'
+  const isActive = state !== 'idle'
+  const isThinking = state === 'thinking'
 
   return (
-    <div className="relative flex h-14 w-14 shrink-0 items-center justify-center">
-      {/* Outer conic sweep — subtle "system running" cue */}
-      {isActive && (
-        <div className="nimbus-rotate-slow absolute inset-0 rounded-full opacity-70">
-          <div
-            className="h-full w-full rounded-full"
-            style={{
-              background:
-                'conic-gradient(from 0deg, transparent 0deg, rgba(255,138,61,0.55) 90deg, transparent 200deg)',
-              maskImage: 'radial-gradient(circle, transparent 58%, black 62%)',
-              WebkitMaskImage: 'radial-gradient(circle, transparent 58%, black 62%)'
-            }}
-          />
-        </div>
-      )}
+    <div className="relative flex h-16 w-16 shrink-0 items-center justify-center">
+      {/* Runic rings */}
+      <svg viewBox="0 0 64 64" className="absolute inset-0 h-full w-full">
+        <defs>
+          <linearGradient id="nimbus-ring" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor="var(--color-nimbus-accent-bright)" />
+            <stop offset="55%" stopColor="var(--color-nimbus-accent)" />
+            <stop offset="100%" stopColor="var(--color-nimbus-violet)" />
+          </linearGradient>
+        </defs>
 
-      {state === 'thinking' && (
-        <div className="nimbus-rotate-reverse absolute inset-1 rounded-full opacity-80">
-          <div
-            className="h-full w-full rounded-full"
-            style={{
-              background:
-                'conic-gradient(from 0deg, transparent 0deg, rgba(255,176,103,0.8) 60deg, transparent 140deg)',
-              maskImage: 'radial-gradient(circle, transparent 62%, black 66%)',
-              WebkitMaskImage: 'radial-gradient(circle, transparent 62%, black 66%)'
-            }}
+        <g
+          className={isActive ? 'nimbus-rotate-slow' : undefined}
+          style={{ transformOrigin: '32px 32px' }}
+        >
+          <circle
+            cx="32"
+            cy="32"
+            r="29"
+            fill="none"
+            stroke="url(#nimbus-ring)"
+            strokeWidth="1.2"
+            strokeDasharray={runeDashes(29, 16)}
+            opacity={isActive ? 0.85 : 0.3}
           />
-        </div>
-      )}
+        </g>
+
+        <g
+          className={isActive ? 'nimbus-rotate-reverse' : undefined}
+          style={{ transformOrigin: '32px 32px' }}
+        >
+          <circle
+            cx="32"
+            cy="32"
+            r="23"
+            fill="none"
+            stroke="url(#nimbus-ring)"
+            strokeWidth="0.9"
+            strokeDasharray={runeDashes(23, 9)}
+            opacity={isActive ? 0.6 : 0.22}
+          />
+        </g>
+
+        {/* Thinking: a bright arc races the outer ring. */}
+        {isThinking && (
+          <g className="nimbus-rotate-slow" style={{ transformOrigin: '32px 32px' }}>
+            <circle
+              cx="32"
+              cy="32"
+              r="26"
+              fill="none"
+              stroke="var(--color-nimbus-accent-bright)"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+              strokeDasharray="20 143"
+            />
+          </g>
+        )}
+      </svg>
 
       {/* Reactive glow */}
       <div
         ref={glowRef}
-        className="absolute h-9 w-9 rounded-full blur-md will-change-transform"
+        className="absolute h-10 w-10 rounded-full blur-md will-change-transform"
         style={{
-          background: 'radial-gradient(circle, rgba(255,138,61,0.9), rgba(255,106,31,0) 70%)',
-          opacity: 0.4
+          background:
+            'radial-gradient(circle, rgba(79,214,255,0.95), rgba(169,123,255,0.35) 55%, rgba(109,75,214,0) 75%)',
+          opacity: 0.45
         }}
       />
 
-      {/* Core */}
+      {/* Charged core */}
       <motion.div
         ref={coreRef}
-        className="relative h-6 w-6 rounded-full will-change-transform"
+        className="relative h-[22px] w-[22px] rounded-full will-change-transform"
         style={{
-          background: 'linear-gradient(145deg, #ffb067, #ff6a1f)',
-          boxShadow: '0 0 18px rgba(255,138,61,0.65), inset 0 1px 2px rgba(255,255,255,0.4)'
+          background:
+            'radial-gradient(circle at 35% 30%, #eafcff, var(--color-nimbus-accent) 45%, var(--color-nimbus-violet-deep) 100%)',
+          boxShadow:
+            '0 0 18px rgba(79,214,255,0.7), 0 0 34px rgba(169,123,255,0.35), inset 0 1px 2px rgba(255,255,255,0.55)'
         }}
         animate={
           state === 'speaking'
-            ? { scale: [1, 1.14, 1] }
-            : state === 'thinking'
-              ? { opacity: [0.65, 1, 0.65] }
+            ? { scale: [1, 1.16, 1] }
+            : isThinking
+              ? { opacity: [0.6, 1, 0.6] }
               : { scale: 1, opacity: 1 }
         }
         transition={{
-          duration: state === 'speaking' ? 0.62 : 1.1,
-          repeat: state === 'speaking' || state === 'thinking' ? Infinity : 0,
+          duration: state === 'speaking' ? 0.6 : 1.2,
+          repeat: state === 'speaking' || isThinking ? Infinity : 0,
           ease: 'easeInOut'
         }}
       />
+
+      {/* Motes lifting off the core while it's doing something */}
+      {isActive &&
+        [0, 1, 2, 3].map((i) => (
+          <span
+            key={i}
+            className="pointer-events-none absolute h-[3px] w-[3px] rounded-full bg-nimbus-accent-bright"
+            style={{
+              left: `${28 + (i % 2 === 0 ? -9 : 9) + i * 2}px`,
+              bottom: '20px',
+              boxShadow: '0 0 6px var(--color-nimbus-accent)',
+              animation: `nimbus-float ${2.2 + i * 0.35}s ease-out ${i * 0.5}s infinite`
+            }}
+          />
+        ))}
     </div>
   )
 }
