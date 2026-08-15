@@ -10,7 +10,8 @@
   },
   "hotkey": {
     "enabled": true,
-    "accelerator": "CommandOrControl+Shift+Space"
+    "accelerator": "CommandOrControl+Shift+Space",
+    "captureAccelerator": "CommandOrControl+Shift+S"
   },
   "overlay": {
     "autoFadeMs": 8000
