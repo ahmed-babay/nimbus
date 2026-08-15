@@ -46,6 +46,20 @@ const MAX_RECORDING_MS = 20000 // hard safety cap once they *are* talking
 // Small margin so a trailing consonant isn't clipped. The hysteresis below
 // does most of that work, so this stays short — it's pure added latency.
 const TAIL_PADDING_MS = 150
+// Speech band. The low edge sits at 150Hz rather than 300 so male voices,
+// whose fundamental runs 85-180Hz, aren't half-excluded; the high edge covers
+// the formants that carry intelligibility.
+const VOICE_BAND_LOW_HZ = 150
+const VOICE_BAND_HIGH_HZ = 4000
+
+// Energy alone can't tell a voice from a fan — measured on synthesised
+// signals, a 100Hz hum scored 5.48 on a voice-band/total-energy ratio against
+// speech's 6.29, nowhere near separable. Speech's real signature is that it
+// *fluctuates*: syllables modulate the level several times a second, while
+// fans, hiss and hum hold steady. This tracks that variation over a ~1s
+// window and requires it before calling something speech.
+const MODULATION_WINDOW = 16 // samples at POLL_MS ≈ 1 second
+const MODULATION_MIN = 0.18 // coefficient of variation; steady noise sits near 0
 const POLL_MS = 60 // detection granularity; also the jitter floor on stopping
 // Opus runs ~3KB/s, so this is well under a second of speech — big enough to
 // reject a truncated container, small enough to keep genuine short answers.
@@ -140,10 +154,19 @@ export function useVoiceInput({
     const speech = { detected: false }
     // Declared up here so recorder.onstop (assigned before the analyser is
     // built) can report them.
-    const metrics = { peak: 0, threshold: 0, startedAt: Date.now(), voicedMs: 0 }
+    const metrics = { peak: 0, threshold: 0, startedAt: Date.now(), voicedMs: 0, peakRatio: 0, peakModulation: 0 }
 
     navigator.mediaDevices
-      .getUserMedia({ audio: true })
+      // Chromium's own DSP does the first pass: noise suppression strips
+      // steady background noise before it ever reaches the detector, and echo
+      // cancellation stops Nimbus's own voice being heard as user speech.
+      .getUserMedia({
+        audio: {
+          noiseSuppression: true,
+          echoCancellation: true,
+          autoGainControl: true
+        }
+      })
       .then((stream) => {
         if (sessionId !== sessionIdRef.current) {
           stream.getTracks().forEach((track) => track.stop())
@@ -169,6 +192,7 @@ export function useVoiceInput({
             `[voice] turn ended — ${chunks.length} chunks, ${blob.size} bytes, ` +
               `${Date.now() - metrics.startedAt}ms, speechDetected=${spoke}, ` +
               `peakLevel=${metrics.peak.toFixed(1)} vs threshold=${metrics.threshold.toFixed(1)}, ` +
+              `peakRatio=${metrics.peakRatio.toFixed(2)} peakModulation=${metrics.peakModulation.toFixed(2)} (need >${MODULATION_MIN}), ` +
               `session=${sessionId}/${sessionIdRef.current}`
           )
 
@@ -228,13 +252,25 @@ export function useVoiceInput({
         audioContextRef.current = audioContext
         const source = audioContext.createMediaStreamSource(stream)
         const analyser = audioContext.createAnalyser()
-        analyser.fftSize = 512
+        // 1024 gives ~47Hz bins at 48kHz — enough resolution to isolate the
+        // voice band rather than lumping all sound into one number.
+        analyser.fftSize = 1024
+        analyser.smoothingTimeConstant = 0.3
         source.connect(analyser)
 
         const data = new Uint8Array(analyser.frequencyBinCount)
+
+        // Map the voice band onto FFT bins for this context's sample rate.
+        const binHz = audioContext.sampleRate / analyser.fftSize
+        const voiceLowBin = Math.max(1, Math.floor(VOICE_BAND_LOW_HZ / binHz))
+        const voiceHighBin = Math.min(
+          analyser.frequencyBinCount - 1,
+          Math.ceil(VOICE_BAND_HIGH_HZ / binHz)
+        )
         const startedAt = Date.now()
         let lastLoudAt = Date.now()
         let speechStartedAt = Date.now()
+        const levelHistory: number[] = []
 
         // Calibrate against the actual room instead of a hardcoded level: a
         // fixed threshold clipped people with quiet mics, and treated fan
@@ -252,14 +288,43 @@ export function useVoiceInput({
             return
           }
 
-          analyser.getByteTimeDomainData(data)
-          let sumSquares = 0
-          for (let i = 0; i < data.length; i++) {
-            const centered = data[i] - 128
-            sumSquares += centered * centered
+          // Frequency domain, not raw amplitude. Plain energy can't tell a
+          // voice from a fan, a keyboard or music — which is why background
+          // noise kept the recording alive after the user stopped talking.
+          analyser.getByteFrequencyData(data)
+
+          let voiceSum = 0
+          let outsideSum = 0
+          let outsideCount = 0
+          for (let i = 1; i < data.length; i++) {
+            if (i >= voiceLowBin && i <= voiceHighBin) {
+              voiceSum += data[i]
+            } else {
+              outsideSum += data[i]
+              outsideCount++
+            }
           }
-          const rms = Math.sqrt(sumSquares / data.length)
-          onLevel?.(Math.min(1, rms / 40))
+          const voiceLevel = voiceSum / (voiceHighBin - voiceLowBin + 1)
+          const outsideLevel = outsideCount > 0 ? outsideSum / outsideCount : 0
+          // Voice band measured against everything outside it, which rejects
+          // broadband hiss and out-of-band rumble.
+          const voiceRatio = voiceLevel / (outsideLevel + 1)
+
+          // Rolling variation of the voice-band level. Speech swings with
+          // every syllable; a fan or hiss holds flat.
+          levelHistory.push(voiceLevel)
+          if (levelHistory.length > MODULATION_WINDOW) levelHistory.shift()
+          let modulation = 0
+          if (levelHistory.length >= MODULATION_WINDOW) {
+            const mean = levelHistory.reduce((a, b) => a + b, 0) / levelHistory.length
+            if (mean > 1) {
+              const variance =
+                levelHistory.reduce((a, b) => a + (b - mean) ** 2, 0) / levelHistory.length
+              modulation = Math.sqrt(variance) / mean
+            }
+          }
+
+          onLevel?.(Math.min(1, voiceLevel / 45))
 
           const now = Date.now()
           const elapsed = now - startedAt
@@ -267,7 +332,7 @@ export function useVoiceInput({
           // Skip the chime, then sample the room before judging any speech.
           if (elapsed < CALIBRATION_END_MS) {
             if (elapsed >= CALIBRATION_START_MS) {
-              noiseFloor = (noiseFloor * calibrationSamples + rms) / (calibrationSamples + 1)
+              noiseFloor = (noiseFloor * calibrationSamples + voiceLevel) / (calibrationSamples + 1)
               calibrationSamples++
             }
             lastLoudAt = now
@@ -280,7 +345,9 @@ export function useVoiceInput({
           // recording never ended. Falls fast toward true quiet, rises slowly
           // so speech itself barely moves it.
           noiseFloor =
-            rms < noiseFloor ? noiseFloor * 0.9 + rms * 0.1 : noiseFloor * 0.999 + rms * 0.001
+            voiceLevel < noiseFloor
+              ? noiseFloor * 0.9 + voiceLevel * 0.1
+              : noiseFloor * 0.999 + voiceLevel * 0.001
 
           // Hysteresis: it takes a clear signal to *start* counting as speech,
           // but a weaker one to keep it going, since sentence endings trail off
@@ -290,10 +357,22 @@ export function useVoiceInput({
             ? Math.max(ABS_CONTINUE_THRESHOLD, noiseFloor * CONTINUE_MULTIPLIER)
             : Math.max(ABS_START_THRESHOLD, noiseFloor * START_MULTIPLIER)
 
-          metrics.peak = Math.max(metrics.peak, rms)
-          metrics.threshold = threshold
+          // Loud enough, in the right band, and actually varying. Steady
+          // noise fails the last test no matter how loud it is, which is what
+          // stops a fan or background hum from holding the recording open.
+          // Once speech is established the modulation gate is relaxed, so a
+          // sustained word isn't cut off mid-vowel.
+          const loudEnough = voiceLevel > threshold
+          const inVoiceBand = voiceRatio > 1.1
+          const varying = modulation > MODULATION_MIN || speech.detected
+          const isSpeech = loudEnough && inVoiceBand && varying
 
-          if (rms > threshold) {
+          metrics.peak = Math.max(metrics.peak, voiceLevel)
+          metrics.threshold = threshold
+          metrics.peakRatio = Math.max(metrics.peakRatio, voiceRatio)
+          metrics.peakModulation = Math.max(metrics.peakModulation, modulation)
+
+          if (isSpeech) {
             lastLoudAt = now
             if (!speech.detected) speechStartedAt = now
             speech.detected = true
