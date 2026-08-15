@@ -9,6 +9,8 @@ const DEFAULT_AUTO_FADE_MS = 8000
 // an extract take far longer to take in than the fade meant for an empty
 // overlay, and closing at 8s made results feel like they vanished instantly.
 const READING_AUTO_FADE_MS = 45000
+// Consecutive turns with nothing said before the overlay gives up.
+const MAX_EMPTY_TURNS = 2
 
 export interface NimbusOverlayState {
   state: NimbusState
@@ -79,6 +81,10 @@ export function useNimbus(): NimbusOverlayState {
   useEffect(() => {
     pendingSelectionRef.current = pendingSelection
   }, [pendingSelection])
+  /** Consecutive turns that produced no usable transcript. */
+  const emptyTurnsRef = useRef(0)
+  /** scheduleAutoFade is declared after listenAgain, so reached by ref. */
+  const scheduleAutoFadeRef = useRef<(() => void) | null>(null)
   /** runTextAction is declared after handleResult, so it's reached by ref. */
   const runTextActionRef = useRef<
     ((kind: TextActionKind, label: string, instruction?: string) => void) | null
@@ -153,6 +159,10 @@ export function useNimbus(): NimbusOverlayState {
     fadeTimer.current = setTimeout(dismiss, autoFadeMs)
   }, [clearFadeTimer, config, dismiss])
 
+  useEffect(() => {
+    scheduleAutoFadeRef.current = scheduleAutoFade
+  }, [scheduleAutoFade])
+
   // After Nimbus finishes speaking, listen again for a follow-up instead of
   // immediately fading out — otherwise every turn required pressing the
   // hotkey again, which reads as "it won't let me speak anymore." If the
@@ -161,6 +171,15 @@ export function useNimbus(): NimbusOverlayState {
   // own once the user stops responding.
   const listenAgain = useCallback(() => {
     clearFadeTimer()
+    // Two silent turns in a row means the user has walked away or the room is
+    // just noisy. Reopening the mic forever kept the overlay alive and fed
+    // Whisper more silence to hallucinate from.
+    if (emptyTurnsRef.current >= MAX_EMPTY_TURNS) {
+      console.log('[nimbus] no speech for two turns — closing instead of listening again')
+      scheduleAutoFadeRef.current?.()
+      setState('idle')
+      return
+    }
     // Don't reopen the mic over a playing station: the speakers feed straight
     // back into it, and Whisper happily transcribes the music as commands.
     // The player stays on screen; Esc or the hotkey starts a new turn.
@@ -300,6 +319,7 @@ export function useNimbus(): NimbusOverlayState {
 
       // Previous answer clears here — when a new question actually arrives —
       // rather than the moment the mic reopens.
+      emptyTurnsRef.current = 0
       setResponse(null)
       setError(null)
       setStreamingText('')
@@ -404,6 +424,7 @@ export function useNimbus(): NimbusOverlayState {
     // Reads state from a ref rather than triggering the side effect inside a
     // setState updater, which React StrictMode double-invokes.
     console.log(`[nimbus] voice turn ended with no transcript (state: ${stateRef.current})`)
+    emptyTurnsRef.current += 1
 
     // Interrupted the music but then said nothing? Put it back on.
     if (pausedForListeningRef.current) {
@@ -487,6 +508,7 @@ export function useNimbus(): NimbusOverlayState {
   useEffect(() => {
     const unsubscribeWake = window.nimbus.onWake(() => {
       clearFadeTimer()
+      emptyTurnsRef.current = 0
       setMode('assistant')
       setError(null)
       setTranscript(null)
