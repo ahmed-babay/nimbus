@@ -34,6 +34,14 @@ export interface NimbusOverlayState {
   levelRef: RefObject<number>
   /** 0..1 progress through the spoken response, for the synced text reveal. */
   speechProgressRef: RefObject<number>
+  /**
+   * Submits typed text through exactly the same router as speech, so typing
+   * works for questions, screenshot follow-ups and selection instructions
+   * without any of those paths needing to know where the text came from.
+   */
+  submitText: (text: string) => void
+  /** Call when the user starts typing, to close the mic. */
+  onTypingStart: () => void
   dismiss: () => void
 }
 
@@ -81,10 +89,15 @@ export function useNimbus(): NimbusOverlayState {
   useEffect(() => {
     pendingSelectionRef.current = pendingSelection
   }, [pendingSelection])
+  /** True when the last input was typed — the mic then stays closed rather
+   *  than reopening on someone who evidently cannot speak right now. */
+  const typedInputRef = useRef(false)
   /** Consecutive turns that produced no usable transcript. */
   const emptyTurnsRef = useRef(0)
   /** scheduleAutoFade is declared after listenAgain, so reached by ref. */
   const scheduleAutoFadeRef = useRef<(() => void) | null>(null)
+  /** handleResult is declared after submitText, so reached by ref. */
+  const handleResultRef = useRef<((text: string) => void) | null>(null)
   /** askQuestion is used as a fallback from runTextAction. */
   const askQuestionRef = useRef<((text: string) => void) | null>(null)
   /** runTextAction is declared after handleResult, so it's reached by ref. */
@@ -193,6 +206,13 @@ export function useNimbus(): NimbusOverlayState {
     // The player stays on screen; Esc or the hotkey starts a new turn.
     if (radioActiveRef.current) {
       setState('playing')
+      return
+    }
+    // Typed last turn? Stay quiet and leave the text field ready instead of
+    // opening the mic on someone who chose to type.
+    if (typedInputRef.current) {
+      setState('idle')
+      scheduleAutoFadeRef.current?.()
       return
     }
     // The answer stays on screen while listening for a follow-up. Clearing it
@@ -457,6 +477,10 @@ export function useNimbus(): NimbusOverlayState {
     runTextActionRef.current = runTextAction
   }, [runTextAction])
 
+  useEffect(() => {
+    handleResultRef.current = handleResult
+  }, [handleResult])
+
   /** Pastes a result back over the original selection. */
   const replaceSelection = useCallback(
     (text: string) => {
@@ -477,6 +501,32 @@ export function useNimbus(): NimbusOverlayState {
     },
     [clearFadeTimer]
   )
+
+  /**
+   * Typed input takes the same path as a finished transcript, so stop phrases,
+   * selection instructions and screenshot questions all behave identically
+   * whether spoken or typed. The mic is closed first — otherwise a half-heard
+   * sentence could land on top of what was just typed.
+   */
+  const submitText = useCallback((text: string) => {
+    const trimmed = text.trim()
+    if (!trimmed) return
+    // Someone typing usually can't talk, so remember that and don't reopen
+    // the mic on them afterwards.
+    typedInputRef.current = true
+    stopVoiceInputRef.current?.()
+    console.log(`[nimbus] typed input: "${trimmed}"`)
+    handleResultRef.current?.(trimmed)
+  }, [])
+
+  /** Closes the mic the moment typing starts, before it hears the keyboard. */
+  const handleTypingStart = useCallback(() => {
+    typedInputRef.current = true
+    if (stateRef.current === 'listening') {
+      stopVoiceInputRef.current?.()
+      setState('idle')
+    }
+  }, [])
 
   const handleVoiceEnd = useCallback(() => {
     // Recording ended with nothing usable (silence timeout) — fade out.
@@ -568,6 +618,7 @@ export function useNimbus(): NimbusOverlayState {
     const unsubscribeWake = window.nimbus.onWake(() => {
       clearFadeTimer()
       emptyTurnsRef.current = 0
+      typedInputRef.current = false
       setMode('assistant')
       setError(null)
       setTranscript(null)
@@ -618,6 +669,8 @@ export function useNimbus(): NimbusOverlayState {
     radio,
     levelRef,
     speechProgressRef,
+    submitText,
+    onTypingStart: handleTypingStart,
     dismiss
   }
 }
