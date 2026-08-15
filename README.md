@@ -121,6 +121,28 @@ npm run typecheck   # type-check main + renderer
    hotkey. It closes when you say a dismissal ("stop", "that's it for today", "never mind",
    "bye Nimbus"), press `Esc`, or stay silent.
 
+## Act on selected text
+
+Highlight text in **any** application — Word, VS Code, a browser, a PDF — and press
+**Ctrl+Shift+A**. Nimbus grabs the selection and offers *Fix · Rewrite · Summarize ·
+Explain · Translate*, then either copies the result or **pastes it back over the original
+selection**.
+
+How it reads another app's selection, since there's no API for that:
+
+1. Records which window has focus, then sends it **Ctrl+C** (via PowerShell `SendKeys`) —
+   the same thing you'd do by hand.
+2. Reads the clipboard, then **puts your previous clipboard contents straight back**. Using
+   Nimbus never costs you whatever you had copied.
+3. A sentinel value distinguishes "nothing was selected" from "the selection happened to
+   match what was already on the clipboard", so it can tell you to select something first
+   instead of silently acting on stale text.
+4. *Replace selection* restores focus to the original window (`SetForegroundWindow`) before
+   pasting, because showing the overlay took focus away.
+
+The capture costs roughly 0.7s, which is PowerShell's start-up time — a persistent helper
+process would remove it if that ever becomes annoying.
+
 ## Ask about your screen
 
 Press **Ctrl+Shift+S** (configurable) and Nimbus captures the display your cursor is on,
