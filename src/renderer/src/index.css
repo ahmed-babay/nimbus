@@ -1,27 +1,27 @@
 @import 'tailwindcss';
 
 @theme {
-  /* Arcane / hextech: deep indigo glass, energy cyan bleeding into violet,
-     with brass as the secondary highlight. Token names are unchanged from the
-     previous palette so every component re-themes from here alone. */
-  --color-nimbus-bg: rgb(10 12 26 / 0.82);
-  --color-nimbus-bg-raised: rgb(120 160 255 / 0.06);
-  --color-nimbus-border: rgb(120 200 255 / 0.18);
+  /* Arcade cabinet: near-black CRT with hot neon magenta and cyan, plus
+     coin-op yellow. Token names are unchanged, so every component
+     re-themes from this block alone. */
+  --color-nimbus-bg: rgb(9 6 18 / 0.88);
+  --color-nimbus-bg-raised: rgb(255 62 165 / 0.07);
+  --color-nimbus-border: rgb(255 62 165 / 0.3);
 
-  --color-nimbus-accent: #4fd6ff;
-  --color-nimbus-accent-bright: #9ae9ff;
-  --color-nimbus-accent-deep: #2a7fd4;
+  --color-nimbus-accent: #ff3ea5;
+  --color-nimbus-accent-bright: #ff8ecb;
+  --color-nimbus-accent-deep: #c81e7a;
 
-  /* Arcane extras */
-  --color-nimbus-violet: #a97bff;
-  --color-nimbus-violet-deep: #6d4bd6;
-  --color-nimbus-brass: #f0b45a;
+  /* Arcade extras */
+  --color-nimbus-cyan: #22e8ff;
+  --color-nimbus-yellow: #ffd23f;
+  --color-nimbus-green: #3dff7a;
 
-  --color-nimbus-text: #eaf2ff;
-  --color-nimbus-text-dim: #8fa2c4;
+  --color-nimbus-text: #f4f0ff;
+  --color-nimbus-text-dim: #9b8fb8;
 
-  --color-nimbus-positive: #52e3b0;
-  --color-nimbus-negative: #ff6b8a;
+  --color-nimbus-positive: #3dff7a;
+  --color-nimbus-negative: #ff4d6d;
 }
 
 html,
@@ -45,13 +45,22 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-@keyframes nimbus-rotate {
+/* Chunky monospace for labels and readouts — reads as a cabinet display
+   without needing a pixel font file (the CSP blocks remote fonts). */
+.arcade-type {
+  font-family: 'Cascadia Mono', Consolas, 'Courier New', monospace;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+/* CRT scanlines drifting slowly down the panel. */
+@keyframes nimbus-scanlines {
   to {
-    transform: rotate(360deg);
+    background-position-y: 6px;
   }
 }
 
-/* Energy sweep along the panel edge while thinking. */
+/* Marquee sweep across the top edge. */
 @keyframes nimbus-scan {
   0% {
     transform: translateX(-100%);
@@ -61,57 +70,55 @@ body {
   }
 }
 
-/* Slow breathing glow — the "charged" feel of an idle hextech core. */
-@keyframes nimbus-pulse {
+/* Neon sign flicker — brief, irregular, never distracting. */
+@keyframes nimbus-flicker {
   0%,
+  93%,
   100% {
-    opacity: 0.45;
-    transform: scale(1);
+    opacity: 1;
   }
-  50% {
-    opacity: 0.85;
-    transform: scale(1.06);
+  94% {
+    opacity: 0.55;
+  }
+  96% {
+    opacity: 1;
+  }
+  97% {
+    opacity: 0.7;
   }
 }
 
-/* Motes drifting upward around the orb. */
-@keyframes nimbus-float {
+/* Blocky pop for pixel elements appearing. */
+@keyframes nimbus-pixel-pop {
   0% {
+    transform: scale(0.4);
     opacity: 0;
-    transform: translateY(6px) scale(0.6);
   }
-  25% {
+  60% {
+    transform: scale(1.15);
     opacity: 1;
   }
   100% {
-    opacity: 0;
-    transform: translateY(-14px) scale(1);
+    transform: scale(1);
+    opacity: 1;
   }
-}
-
-/* Runic ring dash drift, so the rings read as inscribed rather than solid. */
-@keyframes nimbus-dash {
-  to {
-    stroke-dashoffset: -1000;
-  }
-}
-
-.nimbus-rotate-slow {
-  animation: nimbus-rotate 8s linear infinite;
-}
-
-.nimbus-rotate-reverse {
-  animation: nimbus-rotate 12s linear infinite reverse;
 }
 
 .nimbus-scan {
-  animation: nimbus-scan 1.4s ease-in-out infinite;
+  animation: nimbus-scan 1.2s steps(24, end) infinite;
 }
 
-.nimbus-pulse {
-  animation: nimbus-pulse 2.8s ease-in-out infinite;
+.nimbus-scanlines {
+  background-image: repeating-linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0.32) 0px,
+    rgba(0, 0, 0, 0.32) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  animation: nimbus-scanlines 1.4s linear infinite;
 }
 
-.nimbus-dash {
-  animation: nimbus-dash 22s linear infinite;
+.nimbus-flicker {
+  animation: nimbus-flicker 6s linear infinite;
 }
