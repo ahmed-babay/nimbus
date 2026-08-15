@@ -15,6 +15,7 @@ import type {
   ResponseCardData,
   ScreenCardData,
   SearchCardData,
+  SelectionCardData,
   StockCardData,
   WeatherCardData
 } from '@shared/types'
@@ -23,6 +24,7 @@ interface ResponseCardProps {
   response: NimbusResponse
   speechProgressRef: RefObject<number>
   radio: RadioPlayerControls
+  onReplace: (text: string) => void
 }
 
 const panel =
@@ -36,7 +38,7 @@ const mediaIn = {
 }
 
 /** Generic response card; body varies by `card.type`. */
-export function ResponseCard({ response, speechProgressRef, radio }: ResponseCardProps) {
+export function ResponseCard({ response, speechProgressRef, radio, onReplace }: ResponseCardProps) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
@@ -44,12 +46,20 @@ export function ResponseCard({ response, speechProgressRef, radio }: ResponseCar
       transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
     >
       <SpokenText text={response.speech} progressRef={speechProgressRef} />
-      <CardBody card={response.card} radio={radio} />
+      <CardBody card={response.card} radio={radio} onReplace={onReplace} />
     </motion.div>
   )
 }
 
-function CardBody({ card, radio }: { card: ResponseCardData; radio: RadioPlayerControls }) {
+function CardBody({
+  card,
+  radio,
+  onReplace
+}: {
+  card: ResponseCardData
+  radio: RadioPlayerControls
+  onReplace: (text: string) => void
+}) {
   switch (card.type) {
     case 'weather':
       return <WeatherBody data={card.data} />
@@ -71,6 +81,8 @@ function CardBody({ card, radio }: { card: ResponseCardData; radio: RadioPlayerC
       return <RadioBody data={card.data} radio={radio} />
     case 'screen':
       return <ScreenBody data={card.data} />
+    case 'selection':
+      return <SelectionBody data={card.data} onReplace={onReplace} />
     default:
       return null
   }
@@ -195,6 +207,42 @@ function MusicBody({ data }: { data: MusicCardData }) {
         </div>
       </div>
     </button>
+  )
+}
+
+function SelectionBody({
+  data,
+  onReplace
+}: {
+  data: SelectionCardData
+  onReplace: (text: string) => void
+}) {
+  return (
+    <div className={panel}>
+      <div className="text-[10px] uppercase tracking-[0.14em] text-nimbus-accent">
+        {data.actionLabel}
+      </div>
+      <p className="mt-1.5 max-h-40 overflow-y-auto whitespace-pre-wrap text-[12.5px] leading-relaxed text-nimbus-text">
+        {data.result}
+      </p>
+
+      <div className="mt-2.5 flex gap-1.5 border-t border-white/[0.06] pt-2.5">
+        {data.canReplace && (
+          <button
+            onClick={() => onReplace(data.result)}
+            className="rounded-lg bg-nimbus-accent/20 px-2.5 py-1 text-[11px] font-medium text-nimbus-accent-bright transition-colors hover:bg-nimbus-accent/30"
+          >
+            Replace selection
+          </button>
+        )}
+        <button
+          onClick={() => navigator.clipboard.writeText(data.result)}
+          className="rounded-lg border border-nimbus-border px-2.5 py-1 text-[11px] text-nimbus-text-dim transition-colors hover:bg-white/[0.06] hover:text-nimbus-text"
+        >
+          Copy
+        </button>
+      </div>
+    </div>
   )
 }
 
