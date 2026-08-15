@@ -8,6 +8,9 @@ import { handleUtterance } from '../services'
 import { resetConversation, recordTurn } from '../services/conversation'
 import { askAboutScreen } from '../services/vision'
 import { captureScreen, type ScreenCapture } from './screen'
+import { captureSelection, pasteIntoWindow, type CapturedSelection } from './selection'
+import { runTextAction } from '../services/text-actions'
+import type { TextActionKind } from '../shared/types'
 import { transcribeAudio } from '../services/whisper'
 import { synthesizeSpeech } from '../services/tts'
 import { IPC } from '../shared/ipc-channels'
@@ -27,6 +30,8 @@ let overlayWindow: BrowserWindow | null = null
 // Held only between the capture hotkey and the question that follows it, then
 // cleared — the screenshot is never retained beyond the turn that uses it.
 let pendingCapture: ScreenCapture | null = null
+// Text grabbed from another app, plus the window to paste a result back into.
+let pendingSelection: CapturedSelection | null = null
 
 function registerIpcHandlers(): void {
   ipcMain.handle(IPC.TRANSCRIPT, async (event, utterance: string): Promise<NimbusResponse> => {
@@ -94,6 +99,30 @@ function registerIpcHandlers(): void {
   ipcMain.handle(IPC.GET_CONFIG, (): NimbusConfig => config)
 
   ipcMain.handle(
+    IPC.RUN_TEXT_ACTION,
+    async (
+      event,
+      kind: TextActionKind,
+      customInstruction?: string
+    ): Promise<{ result: string; canReplace: boolean }> => {
+      if (!pendingSelection) throw new Error('There is no selected text to work on.')
+      const result = await runTextAction(kind, pendingSelection.text, customInstruction, (chunk) => {
+        if (!event.sender.isDestroyed()) event.sender.send(IPC.SPEECH_CHUNK, chunk)
+      })
+      return { result, canReplace: pendingSelection.windowHandle !== '0' }
+    }
+  )
+
+  ipcMain.handle(IPC.REPLACE_SELECTION, async (_event, text: string): Promise<void> => {
+    if (!pendingSelection) throw new Error('There is no selection to replace.')
+    const { windowHandle } = pendingSelection
+    // Hide first so focus can return to the source app before the paste.
+    if (overlayWindow) hideOverlay(overlayWindow)
+    await pasteIntoWindow(windowHandle, text)
+    pendingSelection = null
+  })
+
+  ipcMain.handle(
     IPC.TRANSCRIBE_AUDIO,
     async (_event, audio: ArrayBuffer, mimeType: string): Promise<string> => {
       return transcribeAudio(Buffer.from(audio), mimeType)
@@ -149,6 +178,24 @@ app.whenReady().then(() => {
       } catch (err) {
         console.error('[screen] capture failed:', err instanceof Error ? err.message : err)
         pendingCapture = null
+      }
+    },
+    async () => {
+      if (!overlayWindow) return
+      try {
+        // Read the selection while the other app still has focus — showing
+        // the overlay first would make Nimbus the foreground window and the
+        // Ctrl+C would go to the wrong place.
+        pendingSelection = await captureSelection()
+        pendingCapture = null
+        showOverlay(overlayWindow)
+        overlayWindow.webContents.send(IPC.SELECTION_CAPTURED, pendingSelection.text)
+      } catch (err) {
+        pendingSelection = null
+        const message = err instanceof Error ? err.message : 'Selection capture failed.'
+        console.warn('[selection]', message)
+        showOverlay(overlayWindow)
+        overlayWindow.webContents.send(IPC.SELECTION_CAPTURED, '')
       }
     }
   )
