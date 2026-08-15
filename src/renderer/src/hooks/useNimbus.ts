@@ -44,6 +44,9 @@ export interface NimbusOverlayState {
   submitText: (text: string) => void
   /** Call when the user starts typing, to close the mic. */
   onTypingStart: () => void
+  /** Whether speech input is enabled, and its toggle. */
+  micEnabled: boolean
+  toggleMic: () => void
   dismiss: () => void
 }
 
@@ -98,9 +101,13 @@ export function useNimbus(): NimbusOverlayState {
   useEffect(() => {
     pendingSelectionRef.current = pendingSelection
   }, [pendingSelection])
-  /** True when the last input was typed — the mic then stays closed rather
-   *  than reopening on someone who evidently cannot speak right now. */
-  const typedInputRef = useRef(false)
+  /** Explicit user preference. Typing no longer disables speech implicitly —
+   *  only this toggle does, so both input methods stay available. */
+  const [micEnabled, setMicEnabled] = useState(true)
+  const micEnabledRef = useRef(true)
+  useEffect(() => {
+    micEnabledRef.current = micEnabled
+  }, [micEnabled])
   /** Consecutive turns that produced no usable transcript. */
   const emptyTurnsRef = useRef(0)
   /** scheduleAutoFade is declared after listenAgain, so reached by ref. */
@@ -218,9 +225,10 @@ export function useNimbus(): NimbusOverlayState {
       setState('playing')
       return
     }
-    // Typed last turn? Stay quiet and leave the text field ready instead of
-    // opening the mic on someone who chose to type.
-    if (typedInputRef.current) {
+    // The mic reopens after a typed turn too — typing once shouldn't lock
+    // speech out for the rest of the session. Turning it off is an explicit
+    // choice via the mic toggle, not something inferred from one message.
+    if (!micEnabledRef.current) {
       setState('idle')
       scheduleAutoFadeRef.current?.()
       return
@@ -521,17 +529,31 @@ export function useNimbus(): NimbusOverlayState {
   const submitText = useCallback((text: string) => {
     const trimmed = text.trim()
     if (!trimmed) return
-    // Someone typing usually can't talk, so remember that and don't reopen
-    // the mic on them afterwards.
-    typedInputRef.current = true
+    // Only stops the in-flight recording; the mic stays enabled so the next
+    // turn can still be spoken.
     stopVoiceInputRef.current?.()
     console.log(`[nimbus] typed input: "${trimmed}"`)
     handleResultRef.current?.(trimmed)
   }, [])
 
+  /** Explicit on/off for speech input. */
+  const toggleMic = useCallback(() => {
+    setMicEnabled((on) => {
+      const next = !on
+      micEnabledRef.current = next
+      if (!next) {
+        stopVoiceInputRef.current?.()
+        if (stateRef.current === 'listening') setState('idle')
+      } else if (stateRef.current === 'idle') {
+        setState('listening')
+        startVoiceInputRef.current?.()
+      }
+      return next
+    })
+  }, [])
+
   /** Closes the mic the moment typing starts, before it hears the keyboard. */
   const handleTypingStart = useCallback(() => {
-    typedInputRef.current = true
     if (stateRef.current === 'listening') {
       stopVoiceInputRef.current?.()
       setState('idle')
@@ -631,7 +653,6 @@ export function useNimbus(): NimbusOverlayState {
       clearFadeTimer()
       setIsOpen(true)
       emptyTurnsRef.current = 0
-      typedInputRef.current = false
       setMode('assistant')
       setError(null)
       setTranscript(null)
@@ -649,8 +670,12 @@ export function useNimbus(): NimbusOverlayState {
         setResponse(null)
       }
 
-      setState('listening')
-      startVoiceInput()
+      if (micEnabledRef.current) {
+        setState('listening')
+        startVoiceInput()
+      } else {
+        setState('idle')
+      }
     })
 
     const unsubscribeSettings = window.nimbus.onShowSettings(() => {
@@ -686,6 +711,8 @@ export function useNimbus(): NimbusOverlayState {
     isOpen,
     submitText,
     onTypingStart: handleTypingStart,
+    micEnabled,
+    toggleMic,
     dismiss
   }
 }
