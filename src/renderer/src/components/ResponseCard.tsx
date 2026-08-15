@@ -53,13 +53,18 @@ export function ResponseCard({ response, speechProgressRef, radio, onReplace }: 
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
     >
-      {wasShortened ? (
-        <p className="max-h-52 overflow-y-auto whitespace-pre-wrap text-[13px] leading-relaxed text-nimbus-text">
-          {displayText}
-        </p>
-      ) : (
-        <SpokenText text={displayText} progressRef={speechProgressRef} />
-      )}
+      {/* Long answers still get the reveal for the part that's read aloud;
+          the tail past the TTS cap stays fully visible. */}
+      <SpokenText
+        text={displayText}
+        progressRef={speechProgressRef}
+        spokenRatio={wasShortened ? response.speech.length / displayText.length : 1}
+        className={
+          wasShortened
+            ? 'max-h-52 overflow-y-auto whitespace-pre-wrap text-[13px] leading-relaxed text-nimbus-text'
+            : 'whitespace-pre-wrap text-[13px] leading-relaxed text-nimbus-text'
+        }
+      />
 
       <CardBody card={response.card} radio={radio} onReplace={onReplace} />
 
