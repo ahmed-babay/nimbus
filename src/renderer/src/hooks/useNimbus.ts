@@ -302,6 +302,10 @@ export function useNimbus(): NimbusOverlayState {
         .then((res) => {
           setStreamingText('')
           setPendingCapture(null)
+          // Reset before the card renders. If it still held 1 from the last
+          // answer, the new text mounted fully revealed and the reveal never
+          // ran for this turn.
+          speechProgressRef.current = 0
           setResponse(res)
           setState('speaking')
           // Queue the stream rather than starting it now — it would play over
