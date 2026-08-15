@@ -7,7 +7,8 @@ import { registerHotkey, unregisterHotkey } from './hotkey'
 import { handleUtterance } from '../services'
 import { resetConversation, recordTurn } from '../services/conversation'
 import { askAboutScreen } from '../services/vision'
-import { captureScreen, type ScreenCapture } from './screen'
+import { captureDisplayImage, encodeCapture, type ScreenCapture } from './screen'
+import { pickRegion, type RegionChoice } from './region-picker'
 import { captureSelection, pasteIntoWindow, type CapturedSelection } from './selection'
 import { runTextAction } from '../services/text-actions'
 import type { TextActionKind } from '../shared/types'
@@ -25,6 +26,11 @@ dotenv.config()
 // call was silently rejecting and falling back to the robotic native voice
 // every single time — must be set before app is ready.
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
+
+// Time given to the compositor to actually repaint after hiding the overlay,
+// before a screenshot is taken. Without it the overlay is still on screen in
+// the captured frame even though the window reports itself hidden.
+const OVERLAY_HIDE_REPAINT_MS = 180
 
 let overlayWindow: BrowserWindow | null = null
 // Held only between the capture hotkey and the question that follows it, then
@@ -76,8 +82,10 @@ function registerIpcHandlers(): void {
 
   ipcMain.on(IPC.RESET_CONVERSATION, () => {
     resetConversation()
-    // Closing the overlay drops any screenshot that was never asked about.
+    // Closing the overlay drops anything captured but never acted on, so a
+    // later turn can't be answered against stale context.
     pendingCapture = null
+    pendingSelection = null
   })
 
   ipcMain.on(IPC.COPY_TEXT, (_event, text: string) => {
@@ -180,19 +188,51 @@ app.whenReady().then(() => {
 
   registerHotkey(
     () => {
+      // Plain hotkey starts a normal turn, so drop any captured screenshot or
+      // selection — otherwise the next question is answered against them.
       pendingCapture = null
+      pendingSelection = null
       if (overlayWindow) showOverlay(overlayWindow)
     },
     async () => {
       if (!overlayWindow) return
+      // Hidden, not closed: an already-open overlay would otherwise appear in
+      // its own screenshot. Conversation, pending selection and everything
+      // else in the renderer survive, since the window is only hidden.
+      const wasVisible = overlayWindow.isVisible()
+
       try {
-        // Capture before showing the overlay, so Nimbus isn't in its own shot.
-        pendingCapture = await captureScreen()
+        if (wasVisible) {
+          overlayWindow.hide()
+          // Hiding is not instant on screen — without a beat for the
+          // compositor to repaint, the capture still contains the overlay.
+          await new Promise((resolve) => setTimeout(resolve, OVERLAY_HIDE_REPAINT_MS))
+        }
+
+        const { image, bounds } = await captureDisplayImage()
+
+        let choice: RegionChoice = 'full'
+        if (config.screenshot.selectRegion) {
+          // Picker draws over the frozen capture, so the selection maps
+          // exactly onto what gets cropped.
+          const preview = `data:image/jpeg;base64,${image.toJPEG(70).toString('base64')}`
+          choice = await pickRegion(preview, bounds)
+        }
+
+        if (choice === null) {
+          // Cancelled — put the overlay back exactly as it was.
+          if (wasVisible) showOverlay(overlayWindow)
+          return
+        }
+
+        pendingCapture = encodeCapture(image, choice === 'full' ? undefined : choice)
+        pendingSelection = null
         showOverlay(overlayWindow)
         overlayWindow.webContents.send(IPC.SCREEN_CAPTURED, pendingCapture.thumbnail)
       } catch (err) {
         console.error('[screen] capture failed:', err instanceof Error ? err.message : err)
         pendingCapture = null
+        if (wasVisible) showOverlay(overlayWindow)
       }
     },
     async () => {
@@ -218,6 +258,7 @@ app.whenReady().then(() => {
   app.on('browser-window-created', (_event, window) => {
     optimizer.watchWindowShortcuts(window)
   })
+
 })
 
 // Nimbus is tray-only: closing the overlay must never quit the app.

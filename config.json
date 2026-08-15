@@ -18,7 +18,11 @@
     "autoFadeMs": 8000
   },
   "voice": {
-    "endOfSpeechMs": 900
+    "endOfSpeechMs": 900,
+    "speechRate": "+20%"
+  },
+  "screenshot": {
+    "selectRegion": true
   },
   "textActions": {
     "translateTo": "English"

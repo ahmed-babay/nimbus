@@ -1,21 +1,27 @@
 @import 'tailwindcss';
 
 @theme {
-  /* Warm near-black glass, so the orange accent reads as emissive rather than
-     painted on a neutral grey panel. */
-  --color-nimbus-bg: rgb(14 10 9 / 0.78);
-  --color-nimbus-bg-raised: rgb(255 255 255 / 0.04);
-  --color-nimbus-border: rgb(255 168 102 / 0.18);
+  /* Arcade cabinet: near-black CRT with hot neon magenta and cyan, plus
+     coin-op yellow. Token names are unchanged, so every component
+     re-themes from this block alone. */
+  --color-nimbus-bg: rgb(9 6 18 / 0.88);
+  --color-nimbus-bg-raised: rgb(255 62 165 / 0.07);
+  --color-nimbus-border: rgb(255 62 165 / 0.3);
 
-  --color-nimbus-accent: #ff8a3d;
-  --color-nimbus-accent-bright: #ffb067;
-  --color-nimbus-accent-deep: #ff6a1f;
+  --color-nimbus-accent: #ff3ea5;
+  --color-nimbus-accent-bright: #ff8ecb;
+  --color-nimbus-accent-deep: #c81e7a;
 
-  --color-nimbus-text: #fdf6f0;
-  --color-nimbus-text-dim: #a8998f;
+  /* Arcade extras */
+  --color-nimbus-cyan: #22e8ff;
+  --color-nimbus-yellow: #ffd23f;
+  --color-nimbus-green: #3dff7a;
 
-  --color-nimbus-positive: #4ade80;
-  --color-nimbus-negative: #fb7185;
+  --color-nimbus-text: #f4f0ff;
+  --color-nimbus-text-dim: #9b8fb8;
+
+  --color-nimbus-positive: #3dff7a;
+  --color-nimbus-negative: #ff4d6d;
 }
 
 html,
@@ -39,15 +45,22 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Slow conic sweep behind the orb — reads as "active system" without
-   demanding attention. */
-@keyframes nimbus-rotate {
+/* Chunky monospace for labels and readouts — reads as a cabinet display
+   without needing a pixel font file (the CSP blocks remote fonts). */
+.arcade-type {
+  font-family: 'Cascadia Mono', Consolas, 'Courier New', monospace;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+/* CRT scanlines drifting slowly down the panel. */
+@keyframes nimbus-scanlines {
   to {
-    transform: rotate(360deg);
+    background-position-y: 6px;
   }
 }
 
-/* Scanning highlight along the top edge of the panel while thinking. */
+/* Marquee sweep across the top edge. */
 @keyframes nimbus-scan {
   0% {
     transform: translateX(-100%);
@@ -57,14 +70,55 @@ body {
   }
 }
 
-.nimbus-rotate-slow {
-  animation: nimbus-rotate 6s linear infinite;
+/* Neon sign flicker — brief, irregular, never distracting. */
+@keyframes nimbus-flicker {
+  0%,
+  93%,
+  100% {
+    opacity: 1;
+  }
+  94% {
+    opacity: 0.55;
+  }
+  96% {
+    opacity: 1;
+  }
+  97% {
+    opacity: 0.7;
+  }
 }
 
-.nimbus-rotate-reverse {
-  animation: nimbus-rotate 9s linear infinite reverse;
+/* Blocky pop for pixel elements appearing. */
+@keyframes nimbus-pixel-pop {
+  0% {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 .nimbus-scan {
-  animation: nimbus-scan 1.4s ease-in-out infinite;
+  animation: nimbus-scan 1.2s steps(24, end) infinite;
+}
+
+.nimbus-scanlines {
+  background-image: repeating-linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0.32) 0px,
+    rgba(0, 0, 0, 0.32) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  animation: nimbus-scanlines 1.4s linear infinite;
+}
+
+.nimbus-flicker {
+  animation: nimbus-flicker 6s linear infinite;
 }

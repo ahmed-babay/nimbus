@@ -121,6 +121,21 @@ npm run typecheck   # type-check main + renderer
    hotkey. It closes when you say a dismissal ("stop", "that's it for today", "never mind",
    "bye Nimbus"), press `Esc`, or stay silent.
 
+## Typing instead of talking
+
+The overlay has a text field, focused the moment it opens — press the hotkey and start
+typing. Voice is unusable in an open office, a quiet house at night, or a noisy room, and
+without this the app had nothing to offer in those situations.
+
+Typed input goes through the **same router as speech**, so it works everywhere voice does:
+asking a question, following up on a screenshot, or instructing a text action. Two details
+that matter in practice:
+
+- The mic closes on the **first keystroke**, before it can hear typing and submit a
+  competing transcript.
+- After a typed turn the mic **stays closed** — someone who chose to type usually can't
+  talk, and reopening it would defeat the point. The hotkey re-enables voice.
+
 ## Act on selected text
 
 Highlight text in **any** application — Word, VS Code, a browser, a PDF — and press
@@ -153,8 +168,24 @@ process would remove it if that ever becomes annoying.
 
 ## Ask about your screen
 
-Press **Ctrl+Shift+S** (configurable) and Nimbus captures the display your cursor is on,
-then listens for a question about it — *"what does this error mean?"*, *"explain this
+Press **Ctrl+Shift+S** (configurable) and the screen freezes so you can **drag a box around
+the part you care about** — then ask a question about it. `Enter` takes the whole display,
+`Esc` cancels without capturing anything.
+
+Selecting a region isn't only tidier, it's cheaper and sharper. The crop happens at native
+resolution *before* the downscale, so a small selection gives the model a genuinely
+higher-detail view rather than an enlarged blur — and it sends far less:
+
+| Selection | Sent to the model |
+|---|---|
+| Whole screen | 106 KB |
+| Centre 50% | 36 KB |
+| Small region | 3 KB |
+
+Set `screenshot.selectRegion` to `false` in `config.json` to go straight back to
+whole-display capture.
+
+Nimbus captures the display your cursor is on, then listens for a question about it — *"what does this error mean?"*, *"explain this
 chart"*, *"what is this dialog asking me?"*. The answer comes from Gemini's vision support,
 which is part of the same free tier, so it needs no extra key.
 
@@ -162,6 +193,11 @@ Design decisions that matter here, since this reads your screen:
 
 - **Capture only ever happens on that explicit hotkey.** Nothing is captured automatically,
   and no phrase triggers it.
+- **Nimbus hides itself from its own screenshot.** If the overlay is already open it's
+  hidden — not closed — for the capture, then restored with its conversation and state
+  intact. Hiding isn't instant on screen, so there's a short repaint delay before the frame
+  is grabbed; without it the overlay still appeared in the capture despite the window
+  reporting itself hidden.
 - **The screenshot is shown back to you** — as a thumbnail while you ask, and on the answer
   card afterwards — so it's never ambiguous what Nimbus looked at.
 - **It's held only for the turn that uses it.** The image lives in a single main-process

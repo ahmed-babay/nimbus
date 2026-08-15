@@ -34,6 +34,19 @@ export interface NimbusOverlayState {
   levelRef: RefObject<number>
   /** 0..1 progress through the spoken response, for the synced text reveal. */
   speechProgressRef: RefObject<number>
+  /**
+   * Submits typed text through exactly the same router as speech, so typing
+   * works for questions, screenshot follow-ups and selection instructions
+   * without any of those paths needing to know where the text came from.
+   */
+  /** True while the overlay is on screen. */
+  isOpen: boolean
+  submitText: (text: string) => void
+  /** Call when the user starts typing, to close the mic. */
+  onTypingStart: () => void
+  /** Whether speech input is enabled, and its toggle. */
+  micEnabled: boolean
+  toggleMic: () => void
   dismiss: () => void
 }
 
@@ -51,6 +64,13 @@ export function useNimbus(): NimbusOverlayState {
    *  failed (nothing was selected). */
   const [pendingSelection, setPendingSelection] = useState<string | null>(null)
   const [config, setConfig] = useState<NimbusConfig | null>(null)
+  /**
+   * Whether the overlay is showing. Explicit rather than derived from
+   * `state`: visibility used to be inferred from a growing list of
+   * conditions, and every new flow (selection, typing) broke it — typing set
+   * the state to 'idle' to close the mic and the whole overlay vanished.
+   */
+  const [isOpen, setIsOpen] = useState(false)
 
   const radio = useRadioPlayer()
   const radioRef = useRef(radio)
@@ -81,13 +101,30 @@ export function useNimbus(): NimbusOverlayState {
   useEffect(() => {
     pendingSelectionRef.current = pendingSelection
   }, [pendingSelection])
+  /** Explicit user preference. Typing no longer disables speech implicitly —
+   *  only this toggle does, so both input methods stay available. */
+  const [micEnabled, setMicEnabled] = useState(true)
+  const micEnabledRef = useRef(true)
+  useEffect(() => {
+    micEnabledRef.current = micEnabled
+  }, [micEnabled])
   /** Consecutive turns that produced no usable transcript. */
   const emptyTurnsRef = useRef(0)
   /** scheduleAutoFade is declared after listenAgain, so reached by ref. */
   const scheduleAutoFadeRef = useRef<(() => void) | null>(null)
+  /** handleResult is declared after submitText, so reached by ref. */
+  const handleResultRef = useRef<((text: string) => void) | null>(null)
+  /** askQuestion is used as a fallback from runTextAction. */
+  const askQuestionRef = useRef<((text: string) => void) | null>(null)
   /** runTextAction is declared after handleResult, so it's reached by ref. */
   const runTextActionRef = useRef<
-    ((kind: TextActionKind, label: string, instruction?: string) => void) | null
+    | ((
+        kind: TextActionKind,
+        label: string,
+        instruction?: string,
+        onNoSelection?: () => void
+      ) => void)
+    | null
   >(null)
 
   // Mirror of `state` for callbacks that need the current value without
@@ -129,6 +166,7 @@ export function useNimbus(): NimbusOverlayState {
 
   const dismiss = useCallback(() => {
     clearFadeTimer()
+    setIsOpen(false)
     window.speechSynthesis?.cancel()
     stopPlayback()
     radioActiveRef.current = false
@@ -185,6 +223,14 @@ export function useNimbus(): NimbusOverlayState {
     // The player stays on screen; Esc or the hotkey starts a new turn.
     if (radioActiveRef.current) {
       setState('playing')
+      return
+    }
+    // The mic reopens after a typed turn too — typing once shouldn't lock
+    // speech out for the rest of the session. Turning it off is an explicit
+    // choice via the mic toggle, not something inferred from one message.
+    if (!micEnabledRef.current) {
+      setState('idle')
+      scheduleAutoFadeRef.current?.()
       return
     }
     // The answer stays on screen while listening for a follow-up. Clearing it
@@ -277,6 +323,59 @@ export function useNimbus(): NimbusOverlayState {
     [listenAgain, speakNative, stopPlayback]
   )
 
+  /** Sends an utterance through the normal assistant pipeline. */
+  const askQuestion = useCallback(
+    (finalTranscript: string) => {
+      // Previous answer clears here — when a new question actually arrives —
+      // rather than the moment the mic reopens.
+      emptyTurnsRef.current = 0
+      setPendingSelection(null)
+      setResponse(null)
+      setError(null)
+      setStreamingText('')
+      setTranscript(finalTranscript)
+      setState('thinking')
+      window.nimbus
+        .sendTranscript(finalTranscript)
+        .then((res) => {
+          setStreamingText('')
+          setPendingCapture(null)
+          // Reset before the card renders. If it still held 1 from the last
+          // answer, the new text mounted fully revealed and the reveal never
+          // ran for this turn.
+          speechProgressRef.current = 0
+          setResponse(res)
+          setState('speaking')
+          // Queue the stream rather than starting it now — it would play over
+          // the "Playing X" announcement.
+          if (res.card.type === 'radio') {
+            radioActiveRef.current = true
+            const { streamUrl } = res.card.data
+            startPendingRadioRef.current = () => {
+              radioRef.current.play(streamUrl)
+              startPendingRadioRef.current = null
+            }
+          } else {
+            radioActiveRef.current = false
+            startPendingRadioRef.current = null
+            radioRef.current.stop()
+          }
+          speak(res.speech)
+        })
+        .catch((err: unknown) => {
+          const message = err instanceof Error ? err.message : 'Something went wrong.'
+          setError(message)
+          setState('speaking')
+          speak(message)
+        })
+    },
+    [speak]
+  )
+
+  useEffect(() => {
+    askQuestionRef.current = askQuestion
+  }, [askQuestion])
+
   const handleResult = useCallback(
     (finalTranscript: string) => {
       // While something is playing, "stop" means "stop the music" — not
@@ -305,7 +404,12 @@ export function useNimbus(): NimbusOverlayState {
       // about that text — not a question for the assistant.
       if (pendingSelectionRef.current) {
         console.log(`[nimbus] text instruction heard ("${finalTranscript}")`)
-        runTextActionRef.current?.('custom', finalTranscript, finalTranscript)
+        // Falls back to the normal question path if the main process no
+        // longer holds the selection, so a stale flag can't swallow a real
+        // question.
+        runTextActionRef.current?.('custom', finalTranscript, finalTranscript, () =>
+          askQuestionRef.current?.(finalTranscript)
+        )
         return
       }
 
@@ -317,52 +421,24 @@ export function useNimbus(): NimbusOverlayState {
         radioRef.current.stop()
       }
 
-      // Previous answer clears here — when a new question actually arrives —
-      // rather than the moment the mic reopens.
-      emptyTurnsRef.current = 0
-      setResponse(null)
-      setError(null)
-      setStreamingText('')
-      setTranscript(finalTranscript)
-      setState('thinking')
-      window.nimbus
-        .sendTranscript(finalTranscript)
-        .then((res) => {
-          setStreamingText('')
-          setPendingCapture(null)
-          setResponse(res)
-          setState('speaking')
-          // Queue the stream rather than starting it now — it would play over
-          // the "Playing X" announcement.
-          if (res.card.type === 'radio') {
-            radioActiveRef.current = true
-            const { streamUrl } = res.card.data
-            startPendingRadioRef.current = () => {
-              radioRef.current.play(streamUrl)
-              startPendingRadioRef.current = null
-            }
-          } else {
-            radioActiveRef.current = false
-            startPendingRadioRef.current = null
-            radioRef.current.stop()
-          }
-          speak(res.speech)
-        })
-        .catch((err: unknown) => {
-          const message = err instanceof Error ? err.message : 'Something went wrong.'
-          setError(message)
-          setState('speaking')
-          speak(message)
-        })
+      askQuestion(finalTranscript)
     },
-    [speak, dismiss]
+    [askQuestion, dismiss]
   )
 
   /** Runs a transform on the captured selection and shows the result. */
   const runTextAction = useCallback(
-    (kind: TextActionKind, label: string, customInstruction?: string) => {
+    (
+      kind: TextActionKind,
+      label: string,
+      customInstruction?: string,
+      onNoSelection?: () => void
+    ) => {
       const source = pendingSelection
-      if (!source) return
+      if (!source) {
+        onNoSelection?.()
+        return
+      }
 
       clearFadeTimer()
       setStreamingText('')
@@ -395,7 +471,19 @@ export function useNimbus(): NimbusOverlayState {
         })
         .catch((err: unknown) => {
           setStreamingText('')
-          setError(err instanceof Error ? err.message : 'That action failed.')
+          const message = err instanceof Error ? err.message : 'That action failed.'
+
+          // The main process no longer holds the selection (it was pasted, or
+          // a new turn started). Treat what was said as an ordinary question
+          // rather than surfacing an internal error.
+          if (message.includes('no selected text') && onNoSelection) {
+            console.log('[nimbus] selection expired — handling as a question instead')
+            setPendingSelection(null)
+            onNoSelection()
+            return
+          }
+
+          setError(message)
           setState('idle')
           scheduleAutoFade()
         })
@@ -407,6 +495,10 @@ export function useNimbus(): NimbusOverlayState {
     runTextActionRef.current = runTextAction
   }, [runTextAction])
 
+  useEffect(() => {
+    handleResultRef.current = handleResult
+  }, [handleResult])
+
   /** Pastes a result back over the original selection. */
   const replaceSelection = useCallback(
     (text: string) => {
@@ -416,6 +508,9 @@ export function useNimbus(): NimbusOverlayState {
           clearFadeTimer()
           setState('idle')
           setResponse(null)
+          // Main drops its copy once pasted; clear ours in step or the next
+          // thing said is routed as an instruction against nothing.
+          setPendingSelection(null)
           window.nimbus.resetConversation()
         })
         .catch((err: unknown) => {
@@ -424,6 +519,46 @@ export function useNimbus(): NimbusOverlayState {
     },
     [clearFadeTimer]
   )
+
+  /**
+   * Typed input takes the same path as a finished transcript, so stop phrases,
+   * selection instructions and screenshot questions all behave identically
+   * whether spoken or typed. The mic is closed first — otherwise a half-heard
+   * sentence could land on top of what was just typed.
+   */
+  const submitText = useCallback((text: string) => {
+    const trimmed = text.trim()
+    if (!trimmed) return
+    // Only stops the in-flight recording; the mic stays enabled so the next
+    // turn can still be spoken.
+    stopVoiceInputRef.current?.()
+    console.log(`[nimbus] typed input: "${trimmed}"`)
+    handleResultRef.current?.(trimmed)
+  }, [])
+
+  /** Explicit on/off for speech input. */
+  const toggleMic = useCallback(() => {
+    setMicEnabled((on) => {
+      const next = !on
+      micEnabledRef.current = next
+      if (!next) {
+        stopVoiceInputRef.current?.()
+        if (stateRef.current === 'listening') setState('idle')
+      } else if (stateRef.current === 'idle') {
+        setState('listening')
+        startVoiceInputRef.current?.()
+      }
+      return next
+    })
+  }, [])
+
+  /** Closes the mic the moment typing starts, before it hears the keyboard. */
+  const handleTypingStart = useCallback(() => {
+    if (stateRef.current === 'listening') {
+      stopVoiceInputRef.current?.()
+      setState('idle')
+    }
+  }, [])
 
   const handleVoiceEnd = useCallback(() => {
     // Recording ended with nothing usable (silence timeout) — fade out.
@@ -483,6 +618,7 @@ export function useNimbus(): NimbusOverlayState {
 
   useEffect(() => {
     return window.nimbus.onScreenCaptured((thumbnail) => {
+      setIsOpen(true)
       setPendingCapture(thumbnail)
       setPendingSelection(null)
       setResponse(null)
@@ -493,6 +629,7 @@ export function useNimbus(): NimbusOverlayState {
   useEffect(() => {
     return window.nimbus.onSelectionCaptured((text) => {
       clearFadeTimer()
+      setIsOpen(true)
       setPendingSelection(text)
       setPendingCapture(null)
       setResponse(null)
@@ -514,10 +651,15 @@ export function useNimbus(): NimbusOverlayState {
   useEffect(() => {
     const unsubscribeWake = window.nimbus.onWake(() => {
       clearFadeTimer()
+      setIsOpen(true)
       emptyTurnsRef.current = 0
       setMode('assistant')
       setError(null)
       setTranscript(null)
+
+      // Plain hotkey means a fresh question, so drop any selection context —
+      // main clears its copy at the same moment.
+      setPendingSelection(null)
 
       // Hotkey pressed while a station is playing: duck the music so the mic
       // can hear, and keep the player card visible. Saying nothing resumes it.
@@ -528,12 +670,17 @@ export function useNimbus(): NimbusOverlayState {
         setResponse(null)
       }
 
-      setState('listening')
-      startVoiceInput()
+      if (micEnabledRef.current) {
+        setState('listening')
+        startVoiceInput()
+      } else {
+        setState('idle')
+      }
     })
 
     const unsubscribeSettings = window.nimbus.onShowSettings(() => {
       clearFadeTimer()
+      setIsOpen(true)
       setMode('settings')
       setState('idle')
     })
@@ -561,6 +708,11 @@ export function useNimbus(): NimbusOverlayState {
     radio,
     levelRef,
     speechProgressRef,
+    isOpen,
+    submitText,
+    onTypingStart: handleTypingStart,
+    micEnabled,
+    toggleMic,
     dismiss
   }
 }

@@ -4,7 +4,9 @@ import { Orb } from './components/Orb'
 import { Waveform } from './components/Waveform'
 import { ResponseCard } from './components/ResponseCard'
 import { SelectionActions } from './components/SelectionActions'
+import { TextInput } from './components/TextInput'
 import { useNimbus } from './hooks/useNimbus'
+import { useTypewriter } from './hooks/useTypewriter'
 import type { NimbusConfig, NimbusState } from '@shared/types'
 
 const STATE_LABEL: Record<NimbusState, string> = {
@@ -31,12 +33,18 @@ export default function App() {
     radio,
     levelRef,
     speechProgressRef,
+    isOpen,
+    submitText,
+    onTypingStart,
+    micEnabled,
+    toggleMic,
     dismiss
   } = useNimbus()
-  // The selection flow has no mic, so it sits at 'idle' while waiting for the
-  // user to pick an action — visibility can't be driven by state alone.
-  const isVisible =
-    mode === 'settings' || state !== 'idle' || pendingSelection !== null || Boolean(error)
+  // Paced reveal: the model streams in a few big chunks, which otherwise
+  // lands as the whole answer at once.
+  const typedText = useTypewriter(streamingText)
+  // Driven by one explicit flag rather than inferred from state and content.
+  const isVisible = isOpen || mode === 'settings'
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent): void {
@@ -62,26 +70,33 @@ export default function App() {
             className="relative w-[492px] overflow-hidden rounded-[20px] border border-nimbus-border bg-nimbus-bg backdrop-blur-2xl"
             style={{
               boxShadow:
-                '0 20px 60px -12px rgba(0,0,0,0.75), 0 0 0 1px rgba(255,138,61,0.06), inset 0 1px 0 rgba(255,255,255,0.07)'
+                '0 18px 50px -12px rgba(0,0,0,0.85), 0 0 0 2px rgba(255,62,165,0.35), 0 0 26px -4px rgba(255,62,165,0.45), 0 0 46px -10px rgba(34,232,255,0.3)'
             }}
           >
-            {/* Warm top edge highlight */}
+            {/* CRT scanlines over the whole panel */}
+            <div className="nimbus-scanlines pointer-events-none absolute inset-0 opacity-70" />
+            {/* Tube vignette — darker toward the corners, like curved glass */}
             <div
-              className="pointer-events-none absolute inset-x-0 top-0 h-px"
+              className="pointer-events-none absolute inset-0"
               style={{
                 background:
-                  'linear-gradient(90deg, transparent, rgba(255,138,61,0.55), transparent)'
+                  'radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.55) 100%)'
               }}
             />
-            {/* Scanning line while thinking */}
+            {/* Neon marquee edge */}
+            <div
+              className="pointer-events-none absolute inset-x-0 top-0 h-[2px]"
+              style={{
+                background:
+                  'linear-gradient(90deg, var(--color-nimbus-cyan), var(--color-nimbus-accent), var(--color-nimbus-yellow), var(--color-nimbus-accent), var(--color-nimbus-cyan))'
+              }}
+            />
+            {/* Marquee chase while thinking */}
             {state === 'thinking' && (
-              <div className="pointer-events-none absolute inset-x-0 top-0 h-px overflow-hidden">
+              <div className="pointer-events-none absolute inset-x-0 top-0 h-[2px] overflow-hidden">
                 <div
-                  className="nimbus-scan h-full w-1/3"
-                  style={{
-                    background:
-                      'linear-gradient(90deg, transparent, rgba(255,176,103,0.95), transparent)'
-                  }}
+                  className="nimbus-scan h-full w-1/4"
+                  style={{ background: 'rgba(255,255,255,0.95)' }}
                 />
               </div>
             )}
@@ -90,7 +105,12 @@ export default function App() {
               <SettingsPanel config={config} onClose={dismiss} />
             ) : (
               <div className="px-4 py-3.5">
-                <Header state={state} onClose={dismiss} />
+                <Header
+                  state={state}
+                  onClose={dismiss}
+                  micEnabled={micEnabled}
+                  onToggleMic={toggleMic}
+                />
 
                 <div className="mt-2.5 flex items-start gap-3.5">
                   <Orb state={state} levelRef={levelRef} />
@@ -116,10 +136,10 @@ export default function App() {
                             &ldquo;{transcript}&rdquo;
                           </p>
                         )}
-                        {streamingText ? (
+                        {typedText ? (
                           // Live tokens from the model, with a blinking caret.
                           <p className="mt-1 text-[13px] leading-relaxed text-nimbus-text">
-                            {streamingText}
+                            {typedText}
                             <motion.span
                               animate={{ opacity: [1, 0.15, 1] }}
                               transition={{ duration: 0.9, repeat: Infinity }}
@@ -127,7 +147,7 @@ export default function App() {
                             />
                           </p>
                         ) : (
-                          <p className="mt-1 text-[11px] text-nimbus-accent-bright">Thinking…</p>
+                          <p className="arcade-type mt-1 text-[10px] text-nimbus-yellow">Thinking…</p>
                         )}
                       </div>
                     ) : pendingSelection ? (
@@ -156,11 +176,19 @@ export default function App() {
                           </p>
                         </div>
                       </div>
-                    ) : (
+                    ) : state === 'listening' ? (
                       <div className="flex h-14 flex-col justify-center gap-1">
                         <Waveform levelRef={levelRef} />
-                        <p className="text-[11px] text-nimbus-text-dim">
-                          Listening — say &ldquo;stop&rdquo; when you&rsquo;re done
+                        <p className="arcade-type text-[9px] text-nimbus-cyan">
+                          &gt; Listening — say &ldquo;stop&rdquo; when done
+                        </p>
+                      </div>
+                    ) : (
+                      // Mic is closed (typing, or a finished typed turn) — say
+                      // so rather than showing a dead "listening" waveform.
+                      <div className="flex h-14 flex-col justify-center">
+                        <p className="arcade-type text-[9px] text-nimbus-text-dim">
+                          &gt; {micEnabled ? 'Type below, or speak' : 'Voice off — type below'}
                         </p>
                       </div>
                     )}
@@ -175,6 +203,13 @@ export default function App() {
                     then &ldquo;stop the music&rdquo;
                   </div>
                 )}
+
+                {/* Always available — talking isn't possible everywhere. */}
+                <TextInput
+                  onSubmit={submitText}
+                  focusKey={isVisible}
+                  onTypingStart={onTypingStart}
+                />
 
                 {(response || error) && state === 'listening' && (
                   <motion.div
@@ -197,25 +232,55 @@ export default function App() {
   )
 }
 
-function Header({ state, onClose }: { state: NimbusState; onClose: () => void }) {
+function Header({
+  state,
+  onClose,
+  micEnabled,
+  onToggleMic
+}: {
+  state: NimbusState
+  onClose: () => void
+  micEnabled: boolean
+  onToggleMic: () => void
+}) {
   return (
     <div className="flex items-center justify-between">
       <div className="flex items-center gap-2">
-        <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-nimbus-accent">
+        <span
+          className="arcade-type nimbus-flicker text-[11px] font-bold text-nimbus-accent"
+          style={{ textShadow: '0 0 8px rgba(255,62,165,0.9), 0 0 16px rgba(255,62,165,0.5)' }}
+        >
           Nimbus
         </span>
-        <span className="h-3 w-px bg-white/10" />
-        <span className="text-[10px] uppercase tracking-[0.14em] text-nimbus-text-dim">
+        <span className="h-3 w-px bg-nimbus-accent/30" />
+        <span
+          className="arcade-type text-[10px] text-nimbus-cyan"
+          style={{ textShadow: '0 0 8px rgba(34,232,255,0.7)' }}
+        >
           {STATE_LABEL[state]}
         </span>
       </div>
-      <button
-        onClick={onClose}
-        aria-label="Close Nimbus"
-        className="-mr-1 rounded-md px-1.5 py-0.5 text-[11px] text-nimbus-text-dim transition-colors hover:bg-white/[0.07] hover:text-nimbus-text"
-      >
-        Esc
-      </button>
+      <div className="flex items-center gap-1.5">
+        <button
+          onClick={onToggleMic}
+          aria-label={micEnabled ? 'Turn off voice input' : 'Turn on voice input'}
+          title={micEnabled ? 'Voice on — click to mute' : 'Voice off — click to enable'}
+          className={`arcade-type rounded border px-1.5 py-0.5 text-[9px] transition-colors ${
+            micEnabled
+              ? 'border-nimbus-cyan/50 text-nimbus-cyan hover:bg-nimbus-cyan/15'
+              : 'border-nimbus-border text-nimbus-text-dim hover:bg-white/[0.06]'
+          }`}
+        >
+          {micEnabled ? 'Mic on' : 'Mic off'}
+        </button>
+        <button
+          onClick={onClose}
+          aria-label="Close Nimbus"
+          className="arcade-type -mr-1 rounded border border-nimbus-border px-1.5 py-0.5 text-[9px] text-nimbus-text-dim transition-colors hover:bg-nimbus-accent/20 hover:text-nimbus-text"
+        >
+          Esc
+        </button>
+      </div>
     </div>
   )
 }

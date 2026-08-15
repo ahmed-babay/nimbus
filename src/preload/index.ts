@@ -56,6 +56,16 @@ const api = {
   openExternal: (url: string): void => {
     ipcRenderer.send(IPC.OPEN_EXTERNAL, url)
   },
+  onRegionImage: (callback: (dataUri: string) => void): (() => void) => {
+    const listener = (_event: unknown, dataUri: string): void => callback(dataUri)
+    ipcRenderer.on(IPC.REGION_IMAGE, listener)
+    return () => ipcRenderer.removeListener(IPC.REGION_IMAGE, listener)
+  },
+  sendRegion: (
+    region: { x: number; y: number; width: number; height: number } | 'full' | null
+  ): void => {
+    ipcRenderer.send(IPC.REGION_SELECTED, region)
+  },
   copyText: (text: string): void => {
     ipcRenderer.send(IPC.COPY_TEXT, text)
   },

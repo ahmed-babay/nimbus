@@ -53,13 +53,18 @@ export function ResponseCard({ response, speechProgressRef, radio, onReplace }: 
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
     >
-      {wasShortened ? (
-        <p className="max-h-52 overflow-y-auto whitespace-pre-wrap text-[13px] leading-relaxed text-nimbus-text">
-          {displayText}
-        </p>
-      ) : (
-        <SpokenText text={displayText} progressRef={speechProgressRef} />
-      )}
+      {/* Long answers still get the reveal for the part that's read aloud;
+          the tail past the TTS cap stays fully visible. */}
+      <SpokenText
+        text={displayText}
+        progressRef={speechProgressRef}
+        spokenRatio={wasShortened ? response.speech.length / displayText.length : 1}
+        className={
+          wasShortened
+            ? 'max-h-52 overflow-y-auto whitespace-pre-wrap text-[13px] leading-relaxed text-nimbus-text'
+            : 'whitespace-pre-wrap text-[13px] leading-relaxed text-nimbus-text'
+        }
+      />
 
       <CardBody card={response.card} radio={radio} onReplace={onReplace} />
 
@@ -309,8 +314,8 @@ function RadioBody({ data, radio }: { data: RadioCardData; radio: RadioPlayerCon
         aria-label={radio.isPlaying ? 'Pause' : 'Play'}
         className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full transition-transform hover:scale-105"
         style={{
-          background: 'linear-gradient(145deg, #ffb067, #ff6a1f)',
-          boxShadow: '0 0 20px rgba(255,138,61,0.5)'
+          background: 'linear-gradient(145deg, var(--color-nimbus-accent-bright), var(--color-nimbus-violet-deep))',
+          boxShadow: '0 0 20px rgba(79,214,255,0.5)'
         }}
       >
         {radio.isLoading ? (
