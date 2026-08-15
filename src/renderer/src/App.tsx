@@ -130,6 +130,8 @@ export default function App() {
                       <SelectionActions
                         text={pendingSelection}
                         onRun={(kind, label) => runTextAction(kind, label)}
+                        levelRef={levelRef}
+                        listening={state === 'listening'}
                       />
                     ) : pendingCapture ? (
                       // Screen was captured — show it so it's unambiguous what

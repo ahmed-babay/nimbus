@@ -1,9 +1,14 @@
 import { motion } from 'framer-motion'
+import type { RefObject } from 'react'
+import { Waveform } from './Waveform'
 import type { TextActionKind } from '@shared/types'
 
 interface SelectionActionsProps {
   text: string
   onRun: (kind: TextActionKind, label: string) => void
+  /** Present while the mic is open for a spoken instruction. */
+  levelRef?: RefObject<number>
+  listening?: boolean
 }
 
 const ACTIONS: Array<{ kind: TextActionKind; label: string; hint: string }> = [
@@ -15,7 +20,7 @@ const ACTIONS: Array<{ kind: TextActionKind; label: string; hint: string }> = [
 ]
 
 /** Action chooser shown after grabbing text from another application. */
-export function SelectionActions({ text, onRun }: SelectionActionsProps) {
+export function SelectionActions({ text, onRun, levelRef, listening }: SelectionActionsProps) {
   return (
     <div>
       <p className="line-clamp-3 text-[12px] leading-relaxed text-nimbus-text-dim">
@@ -38,9 +43,18 @@ export function SelectionActions({ text, onRun }: SelectionActionsProps) {
         ))}
       </div>
 
-      <p className="mt-2 text-[10px] uppercase tracking-[0.14em] text-nimbus-text-dim">
-        {text.length} characters selected
-      </p>
+      {listening && levelRef ? (
+        <div className="mt-2.5 flex items-center gap-2.5 border-t border-white/[0.06] pt-2">
+          <Waveform levelRef={levelRef} barCount={16} />
+          <span className="text-[10px] uppercase tracking-[0.14em] text-nimbus-text-dim">
+            …or say what to do
+          </span>
+        </div>
+      ) : (
+        <p className="mt-2 text-[10px] uppercase tracking-[0.14em] text-nimbus-text-dim">
+          {text.length} characters selected
+        </p>
+      )}
     </div>
   )
 }
