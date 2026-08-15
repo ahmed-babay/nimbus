@@ -66,35 +66,33 @@ export default function App() {
             className="relative w-[492px] overflow-hidden rounded-[20px] border border-nimbus-border bg-nimbus-bg backdrop-blur-2xl"
             style={{
               boxShadow:
-                '0 20px 60px -12px rgba(0,0,0,0.8), 0 0 0 1px rgba(79,214,255,0.10), 0 0 34px -8px rgba(79,214,255,0.28), inset 0 1px 0 rgba(154,233,255,0.10)'
+                '0 18px 50px -12px rgba(0,0,0,0.85), 0 0 0 2px rgba(255,62,165,0.35), 0 0 26px -4px rgba(255,62,165,0.45), 0 0 46px -10px rgba(34,232,255,0.3)'
             }}
           >
-            {/* Faint hex lattice — hextech texture without competing with content */}
+            {/* CRT scanlines over the whole panel */}
+            <div className="nimbus-scanlines pointer-events-none absolute inset-0 opacity-70" />
+            {/* Tube vignette — darker toward the corners, like curved glass */}
             <div
-              className="pointer-events-none absolute inset-0 opacity-[0.055]"
-              style={{
-                backgroundImage:
-                  'linear-gradient(60deg, var(--color-nimbus-accent) 1px, transparent 1px), linear-gradient(-60deg, var(--color-nimbus-accent) 1px, transparent 1px)',
-                backgroundSize: '22px 38px'
-              }}
-            />
-            {/* Energised top edge */}
-            <div
-              className="pointer-events-none absolute inset-x-0 top-0 h-px"
+              className="pointer-events-none absolute inset-0"
               style={{
                 background:
-                  'linear-gradient(90deg, transparent, rgba(79,214,255,0.65), rgba(169,123,255,0.55), transparent)'
+                  'radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.55) 100%)'
               }}
             />
-            {/* Scanning line while thinking */}
+            {/* Neon marquee edge */}
+            <div
+              className="pointer-events-none absolute inset-x-0 top-0 h-[2px]"
+              style={{
+                background:
+                  'linear-gradient(90deg, var(--color-nimbus-cyan), var(--color-nimbus-accent), var(--color-nimbus-yellow), var(--color-nimbus-accent), var(--color-nimbus-cyan))'
+              }}
+            />
+            {/* Marquee chase while thinking */}
             {state === 'thinking' && (
-              <div className="pointer-events-none absolute inset-x-0 top-0 h-px overflow-hidden">
+              <div className="pointer-events-none absolute inset-x-0 top-0 h-[2px] overflow-hidden">
                 <div
-                  className="nimbus-scan h-full w-1/3"
-                  style={{
-                    background:
-                      'linear-gradient(90deg, transparent, rgba(154,233,255,0.95), transparent)'
-                  }}
+                  className="nimbus-scan h-full w-1/4"
+                  style={{ background: 'rgba(255,255,255,0.95)' }}
                 />
               </div>
             )}
@@ -140,7 +138,7 @@ export default function App() {
                             />
                           </p>
                         ) : (
-                          <p className="mt-1 text-[11px] text-nimbus-accent-bright">Thinking…</p>
+                          <p className="arcade-type mt-1 text-[10px] text-nimbus-yellow">Thinking…</p>
                         )}
                       </div>
                     ) : pendingSelection ? (
@@ -172,8 +170,8 @@ export default function App() {
                     ) : (
                       <div className="flex h-14 flex-col justify-center gap-1">
                         <Waveform levelRef={levelRef} />
-                        <p className="text-[11px] text-nimbus-text-dim">
-                          Listening — say &ldquo;stop&rdquo; when you&rsquo;re done
+                        <p className="arcade-type text-[9px] text-nimbus-cyan">
+                          &gt; Listening — say &ldquo;stop&rdquo; when done
                         </p>
                       </div>
                     )}
@@ -214,18 +212,24 @@ function Header({ state, onClose }: { state: NimbusState; onClose: () => void })
   return (
     <div className="flex items-center justify-between">
       <div className="flex items-center gap-2">
-        <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-nimbus-accent">
+        <span
+          className="arcade-type nimbus-flicker text-[11px] font-bold text-nimbus-accent"
+          style={{ textShadow: '0 0 8px rgba(255,62,165,0.9), 0 0 16px rgba(255,62,165,0.5)' }}
+        >
           Nimbus
         </span>
-        <span className="h-3 w-px bg-white/10" />
-        <span className="text-[10px] uppercase tracking-[0.14em] text-nimbus-text-dim">
+        <span className="h-3 w-px bg-nimbus-accent/30" />
+        <span
+          className="arcade-type text-[10px] text-nimbus-cyan"
+          style={{ textShadow: '0 0 8px rgba(34,232,255,0.7)' }}
+        >
           {STATE_LABEL[state]}
         </span>
       </div>
       <button
         onClick={onClose}
         aria-label="Close Nimbus"
-        className="-mr-1 rounded-md px-1.5 py-0.5 text-[11px] text-nimbus-text-dim transition-colors hover:bg-white/[0.07] hover:text-nimbus-text"
+        className="arcade-type -mr-1 rounded border border-nimbus-border px-1.5 py-0.5 text-[9px] text-nimbus-text-dim transition-colors hover:bg-nimbus-accent/20 hover:text-nimbus-text"
       >
         Esc
       </button>
