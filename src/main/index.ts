@@ -223,6 +223,7 @@ app.whenReady().then(() => {
   app.on('browser-window-created', (_event, window) => {
     optimizer.watchWindowShortcuts(window)
   })
+
 })
 
 // Nimbus is tray-only: closing the overlay must never quit the app.
