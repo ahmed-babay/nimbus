@@ -121,6 +121,21 @@ npm run typecheck   # type-check main + renderer
    hotkey. It closes when you say a dismissal ("stop", "that's it for today", "never mind",
    "bye Nimbus"), press `Esc`, or stay silent.
 
+## Typing instead of talking
+
+The overlay has a text field, focused the moment it opens — press the hotkey and start
+typing. Voice is unusable in an open office, a quiet house at night, or a noisy room, and
+without this the app had nothing to offer in those situations.
+
+Typed input goes through the **same router as speech**, so it works everywhere voice does:
+asking a question, following up on a screenshot, or instructing a text action. Two details
+that matter in practice:
+
+- The mic closes on the **first keystroke**, before it can hear typing and submit a
+  competing transcript.
+- After a typed turn the mic **stays closed** — someone who chose to type usually can't
+  talk, and reopening it would defeat the point. The hotkey re-enables voice.
+
 ## Act on selected text
 
 Highlight text in **any** application — Word, VS Code, a browser, a PDF — and press
