@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import type { RefObject } from 'react'
+import { useState, type RefObject } from 'react'
 import type { RadioPlayerControls } from '../hooks/useRadioPlayer'
 import { ImageCarousel } from './ImageCarousel'
 import { Sparkline } from './Sparkline'
@@ -39,15 +39,50 @@ const mediaIn = {
 
 /** Generic response card; body varies by `card.type`. */
 export function ResponseCard({ response, speechProgressRef, radio, onReplace }: ResponseCardProps) {
+  // When the answer was too long to speak in full, show the whole thing —
+  // and skip the spoken-word reveal, which only tracks the spoken portion.
+  const displayText = response.fullText ?? response.speech
+  const wasShortened = Boolean(response.fullText)
+  // Plain answers are the ones worth copying (drafted emails, messages,
+  // snippets); the structured cards carry their own actions.
+  const showCopy = response.card.type === 'text' || wasShortened
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
     >
-      <SpokenText text={response.speech} progressRef={speechProgressRef} />
+      {wasShortened ? (
+        <p className="max-h-52 overflow-y-auto whitespace-pre-wrap text-[13px] leading-relaxed text-nimbus-text">
+          {displayText}
+        </p>
+      ) : (
+        <SpokenText text={displayText} progressRef={speechProgressRef} />
+      )}
+
       <CardBody card={response.card} radio={radio} onReplace={onReplace} />
+
+      {showCopy && <CopyButton text={displayText} />}
     </motion.div>
+  )
+}
+
+/** Copies an answer, with a brief confirmation so the click registers. */
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false)
+
+  return (
+    <button
+      onClick={() => {
+        window.nimbus.copyText(text)
+        setCopied(true)
+        setTimeout(() => setCopied(false), 1600)
+      }}
+      className="mt-2.5 rounded-lg border border-nimbus-border px-2.5 py-1 text-[11px] text-nimbus-text-dim transition-colors hover:bg-white/[0.06] hover:text-nimbus-text"
+    >
+      {copied ? 'Copied ✓' : 'Copy'}
+    </button>
   )
 }
 
@@ -236,7 +271,7 @@ function SelectionBody({
           </button>
         )}
         <button
-          onClick={() => navigator.clipboard.writeText(data.result)}
+          onClick={() => window.nimbus.copyText(data.result)}
           className="rounded-lg border border-nimbus-border px-2.5 py-1 text-[11px] text-nimbus-text-dim transition-colors hover:bg-white/[0.06] hover:text-nimbus-text"
         >
           Copy
