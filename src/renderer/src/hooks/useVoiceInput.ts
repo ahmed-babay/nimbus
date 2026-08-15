@@ -18,8 +18,13 @@ const CALIBRATION_END_MS = 700
 // a noisy room but must never lower them: a purely relative threshold sank
 // below ambient noise once speech started, so "still talking" stayed true
 // forever and the recording never stopped.
-const ABS_START_THRESHOLD = 11
-const ABS_CONTINUE_THRESHOLD = 7
+// Deliberately forgiving: a threshold set too high ignores quiet microphones
+// entirely (the turn ends with speechDetected=false and nothing is
+// transcribed), whereas one set too low costs at most one short upload that
+// comes back empty. The noise-floor multipliers below still raise the bar in
+// a loud room.
+const ABS_START_THRESHOLD = 7
+const ABS_CONTINUE_THRESHOLD = 5
 // Kept modest on purpose: in a noisy room speech is only ~2x above ambient,
 // and a higher multiplier put the bar above the user's actual voice.
 const START_MULTIPLIER = 1.8 // vs. calibrated floor, to decide talking *started*
@@ -112,6 +117,9 @@ export function useVoiceInput({
     // which uploaded a truncated blob and got "not a valid media file" back.
     const chunks: Blob[] = []
     const speech = { detected: false }
+    // Declared up here so recorder.onstop (assigned before the analyser is
+    // built) can report them.
+    const metrics = { peak: 0, threshold: 0, startedAt: Date.now() }
 
     navigator.mediaDevices
       .getUserMedia({ audio: true })
@@ -137,7 +145,10 @@ export function useVoiceInput({
           cleanup()
 
           console.log(
-            `[voice] turn ended — ${chunks.length} chunks, ${blob.size} bytes, speechDetected=${spoke}, session=${sessionId}/${sessionIdRef.current}`
+            `[voice] turn ended — ${chunks.length} chunks, ${blob.size} bytes, ` +
+              `${Date.now() - metrics.startedAt}ms, speechDetected=${spoke}, ` +
+              `peakLevel=${metrics.peak.toFixed(1)} vs threshold=${metrics.threshold.toFixed(1)}, ` +
+              `session=${sessionId}/${sessionIdRef.current}`
           )
 
           // Superseded by a newer turn — drop this one silently.
@@ -201,7 +212,16 @@ export function useVoiceInput({
         let noiseFloor = 0
         let calibrationSamples = 0
 
-        silenceTimerRef.current = setInterval(() => {
+        const interval = setInterval(() => {
+          // A previous turn's interval used to outlive its session — the
+          // shared ref was overwritten, so it was never cleared, and it went
+          // on calling stop() on whichever recorder was current. That cut new
+          // recordings short after a few hundred milliseconds.
+          if (sessionId !== sessionIdRef.current) {
+            clearInterval(interval)
+            return
+          }
+
           analyser.getByteTimeDomainData(data)
           let sumSquares = 0
           for (let i = 0; i < data.length; i++) {
@@ -240,6 +260,9 @@ export function useVoiceInput({
             ? Math.max(ABS_CONTINUE_THRESHOLD, noiseFloor * CONTINUE_MULTIPLIER)
             : Math.max(ABS_START_THRESHOLD, noiseFloor * START_MULTIPLIER)
 
+          metrics.peak = Math.max(metrics.peak, rms)
+          metrics.threshold = threshold
+
           if (rms > threshold) {
             lastLoudAt = now
             speech.detected = true
@@ -256,7 +279,10 @@ export function useVoiceInput({
           }
         }, 100)
 
-        stopTimeoutRef.current = setTimeout(stop, MAX_RECORDING_MS)
+        silenceTimerRef.current = interval
+        stopTimeoutRef.current = setTimeout(() => {
+          if (sessionId === sessionIdRef.current) stop()
+        }, MAX_RECORDING_MS)
       })
       .catch((err: unknown) => {
         const message = err instanceof Error ? err.message : 'Microphone access was denied.'
