@@ -80,6 +80,12 @@ function registerIpcHandlers(): void {
     pendingCapture = null
   })
 
+  ipcMain.on(IPC.SET_MOUSE_IGNORE, (_event, ignore: boolean) => {
+    // forward:true keeps mousemove flowing to the renderer while ignoring, so
+    // it can still tell when the pointer arrives over the card.
+    overlayWindow?.setIgnoreMouseEvents(ignore, { forward: true })
+  })
+
   ipcMain.on(IPC.OPEN_EXTERNAL, (_event, url: string) => {
     // Only ever hand http(s) to the OS. Card URLs come from third-party API
     // responses, and blindly opening arbitrary schemes (file:, etc.) would

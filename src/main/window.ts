@@ -68,7 +68,12 @@ export function createOverlayWindow(): BrowserWindow {
 }
 
 export function showOverlay(window: BrowserWindow, extraChannel?: string): void {
-  window.setIgnoreMouseEvents(false)
+  // Stay click-through. The window is far larger than the visible card and
+  // fully transparent around it, so making the whole thing interactive put an
+  // invisible block over the top of the screen — you couldn't select text
+  // underneath it. The renderer turns this off only while the pointer is
+  // genuinely over the card (see IPC.SET_MOUSE_IGNORE).
+  window.setIgnoreMouseEvents(true, { forward: true })
   // show() + focus(), not showInactive(): an unfocused window never receives
   // keyboard events, so Escape (and any future shortcuts) silently did
   // nothing. Taking focus is the expected behaviour anyway — the user just

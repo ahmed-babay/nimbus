@@ -55,6 +55,9 @@ const api = {
   },
   openExternal: (url: string): void => {
     ipcRenderer.send(IPC.OPEN_EXTERNAL, url)
+  },
+  setMouseIgnore: (ignore: boolean): void => {
+    ipcRenderer.send(IPC.SET_MOUSE_IGNORE, ignore)
   }
 }
 

@@ -26,5 +26,7 @@ export const IPC = {
   /** renderer -> main (invoke): run an action on the captured selection */
   RUN_TEXT_ACTION: 'nimbus:run-text-action',
   /** renderer -> main (invoke): paste a result back over the original selection */
-  REPLACE_SELECTION: 'nimbus:replace-selection'
+  REPLACE_SELECTION: 'nimbus:replace-selection',
+  /** renderer -> main: toggle click-through as the pointer enters/leaves the card */
+  SET_MOUSE_IGNORE: 'nimbus:set-mouse-ignore'
 } as const

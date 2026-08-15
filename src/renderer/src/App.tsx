@@ -55,6 +55,10 @@ export default function App() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -10, scale: 0.98 }}
             transition={{ duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
+            // Only the card itself captures the mouse; everything around it
+            // stays click-through so the overlay never blocks the screen.
+            onMouseEnter={() => window.nimbus.setMouseIgnore(false)}
+            onMouseLeave={() => window.nimbus.setMouseIgnore(true)}
             className="relative w-[492px] overflow-hidden rounded-[20px] border border-nimbus-border bg-nimbus-bg backdrop-blur-2xl"
             style={{
               boxShadow:
