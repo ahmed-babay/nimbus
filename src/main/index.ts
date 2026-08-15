@@ -76,8 +76,10 @@ function registerIpcHandlers(): void {
 
   ipcMain.on(IPC.RESET_CONVERSATION, () => {
     resetConversation()
-    // Closing the overlay drops any screenshot that was never asked about.
+    // Closing the overlay drops anything captured but never acted on, so a
+    // later turn can't be answered against stale context.
     pendingCapture = null
+    pendingSelection = null
   })
 
   ipcMain.on(IPC.COPY_TEXT, (_event, text: string) => {
@@ -180,7 +182,10 @@ app.whenReady().then(() => {
 
   registerHotkey(
     () => {
+      // Plain hotkey starts a normal turn, so drop any captured screenshot or
+      // selection — otherwise the next question is answered against them.
       pendingCapture = null
+      pendingSelection = null
       if (overlayWindow) showOverlay(overlayWindow)
     },
     async () => {
