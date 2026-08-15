@@ -196,4 +196,9 @@ export interface NimbusConfig {
      *  but tolerates shorter mid-sentence pauses. */
     endOfSpeechMs: number
   }
+  textActions: {
+    /** Target language for the Translate button. Speaking an instruction
+     *  ("translate to Arabic") overrides it per-use. */
+    translateTo: string
+  }
 }

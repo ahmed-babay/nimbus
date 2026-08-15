@@ -19,5 +19,8 @@
   },
   "voice": {
     "endOfSpeechMs": 900
+  },
+  "textActions": {
+    "translateTo": "English"
   }
 }

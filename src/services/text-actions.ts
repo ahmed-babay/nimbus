@@ -1,10 +1,14 @@
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import type { StreamHandler } from './gemini'
 import type { TextActionKind } from '../shared/types'
+import config from '../../config.json'
+
+const translateTarget = config.textActions?.translateTo || 'English'
 
 const INSTRUCTIONS: Record<Exclude<TextActionKind, 'custom'>, string> = {
   translate:
-    'Translate the text into English. If it is already English, translate it into French instead. Output only the translation.',
+    `Translate the text into ${translateTarget}. If it is already in ${translateTarget}, ` +
+    'translate it into English instead. Output only the translation.',
   summarize:
     'Summarise the text in at most three short sentences, keeping concrete details like names, numbers and dates. Output only the summary.',
   explain:
@@ -20,7 +24,11 @@ const INSTRUCTIONS: Record<Exclude<TextActionKind, 'custom'>, string> = {
 // is worse than useless.
 const SYSTEM_PROMPT = `You transform a snippet of text the user selected in another application.
 Return only the transformed text. No preamble, no explanation, no quotes around it, no
-markdown fences. Preserve the original line breaks and list structure where they exist.`
+markdown fences. Preserve the original line breaks and list structure where they exist.
+
+Never pad the output to satisfy an instruction the text can't support — if asked for more
+items, sections or detail than the content actually contains, produce only what genuinely
+follows from it. Repeating a line to reach a requested count is always wrong.`
 
 let client: GoogleGenerativeAI | null = null
 
