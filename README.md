@@ -168,8 +168,24 @@ process would remove it if that ever becomes annoying.
 
 ## Ask about your screen
 
-Press **Ctrl+Shift+S** (configurable) and Nimbus captures the display your cursor is on,
-then listens for a question about it — *"what does this error mean?"*, *"explain this
+Press **Ctrl+Shift+S** (configurable) and the screen freezes so you can **drag a box around
+the part you care about** — then ask a question about it. `Enter` takes the whole display,
+`Esc` cancels without capturing anything.
+
+Selecting a region isn't only tidier, it's cheaper and sharper. The crop happens at native
+resolution *before* the downscale, so a small selection gives the model a genuinely
+higher-detail view rather than an enlarged blur — and it sends far less:
+
+| Selection | Sent to the model |
+|---|---|
+| Whole screen | 106 KB |
+| Centre 50% | 36 KB |
+| Small region | 3 KB |
+
+Set `screenshot.selectRegion` to `false` in `config.json` to go straight back to
+whole-display capture.
+
+Nimbus captures the display your cursor is on, then listens for a question about it — *"what does this error mean?"*, *"explain this
 chart"*, *"what is this dialog asking me?"*. The answer comes from Gemini's vision support,
 which is part of the same free tier, so it needs no extra key.
 
