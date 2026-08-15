@@ -193,6 +193,11 @@ Design decisions that matter here, since this reads your screen:
 
 - **Capture only ever happens on that explicit hotkey.** Nothing is captured automatically,
   and no phrase triggers it.
+- **Nimbus hides itself from its own screenshot.** If the overlay is already open it's
+  hidden — not closed — for the capture, then restored with its conversation and state
+  intact. Hiding isn't instant on screen, so there's a short repaint delay before the frame
+  is grabbed; without it the overlay still appeared in the capture despite the window
+  reporting itself hidden.
 - **The screenshot is shown back to you** — as a thumbnail while you ask, and on the answer
   card afterwards — so it's never ambiguous what Nimbus looked at.
 - **It's held only for the turn that uses it.** The image lives in a single main-process
