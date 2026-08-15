@@ -1,5 +1,6 @@
 import { useCallback, useRef } from 'react'
 import { playListenEndChime, playListenStartChime } from '../lib/chime'
+import { isLikelyNoise } from '../lib/noise-transcripts'
 
 // Electron's Chromium doesn't ship the proprietary Google API key that the
 // Web Speech API's SpeechRecognition needs, so it always fails with a
@@ -49,6 +50,11 @@ const POLL_MS = 60 // detection granularity; also the jitter floor on stopping
 // Opus runs ~3KB/s, so this is well under a second of speech — big enough to
 // reject a truncated container, small enough to keep genuine short answers.
 const MIN_UPLOAD_BYTES = 600
+// Total time actually above the speech threshold. A cough, a keystroke or a
+// chair creak can trip the threshold for a moment; Whisper then invents
+// filler ("." / "you" / "Thank you.") from what is effectively silence.
+// Requiring a real amount of voiced audio filters those out before upload.
+const MIN_VOICED_MS = 320
 
 function pickMimeType(): string {
   if (typeof MediaRecorder === 'undefined') return ''
@@ -134,7 +140,7 @@ export function useVoiceInput({
     const speech = { detected: false }
     // Declared up here so recorder.onstop (assigned before the analyser is
     // built) can report them.
-    const metrics = { peak: 0, threshold: 0, startedAt: Date.now() }
+    const metrics = { peak: 0, threshold: 0, startedAt: Date.now(), voicedMs: 0 }
 
     navigator.mediaDevices
       .getUserMedia({ audio: true })
@@ -175,10 +181,13 @@ export function useVoiceInput({
           // Never transcribe a turn with no detected speech — uploading near
           // silence is what made Whisper invent replies out of nothing. The
           // size floor also avoids shipping a truncated container.
-          if (blob.size < MIN_UPLOAD_BYTES || !spoke) {
-            console.log(
-              `[voice] skipping transcription (${!spoke ? 'no speech detected' : `only ${blob.size} bytes`})`
-            )
+          if (blob.size < MIN_UPLOAD_BYTES || !spoke || metrics.voicedMs < MIN_VOICED_MS) {
+            const why = !spoke
+              ? 'no speech detected'
+              : metrics.voicedMs < MIN_VOICED_MS
+                ? `only ${metrics.voicedMs}ms of voiced audio`
+                : `only ${blob.size} bytes`
+            console.log(`[voice] skipping transcription (${why})`)
             onEnd?.()
             return
           }
@@ -187,13 +196,18 @@ export function useVoiceInput({
             .arrayBuffer()
             .then((buffer) => window.nimbus.transcribeAudio(buffer, blob.type))
             .then((transcript) => {
-              if (transcript) {
-                console.log(`[voice] transcript: "${transcript}"`)
-                onResult(transcript)
-              } else {
+              if (!transcript) {
                 console.log('[voice] transcription returned empty text')
                 onEnd?.()
+                return
               }
+              if (isLikelyNoise(transcript)) {
+                console.log(`[voice] discarding noise transcript: "${transcript}"`)
+                onEnd?.()
+                return
+              }
+              console.log(`[voice] transcript: "${transcript}"`)
+              onResult(transcript)
             })
             .catch((err: unknown) => {
               const message = err instanceof Error ? err.message : 'Transcription failed.'
@@ -283,6 +297,7 @@ export function useVoiceInput({
             lastLoudAt = now
             if (!speech.detected) speechStartedAt = now
             speech.detected = true
+            metrics.voicedMs += POLL_MS
           }
 
           const quietFor = now - lastLoudAt
