@@ -15,5 +15,8 @@
   },
   "overlay": {
     "autoFadeMs": 8000
+  },
+  "voice": {
+    "endOfSpeechMs": 900
   }
 }

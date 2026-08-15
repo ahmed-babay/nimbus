@@ -169,4 +169,9 @@ export interface NimbusConfig {
   overlay: {
     autoFadeMs: number
   }
+  voice: {
+    /** Quiet time before a turn is considered finished. Lower = snappier,
+     *  but tolerates shorter mid-sentence pauses. */
+    endOfSpeechMs: number
+  }
 }

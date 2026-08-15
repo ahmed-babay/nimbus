@@ -343,7 +343,8 @@ export function useNimbus(): NimbusOverlayState {
     onResult: handleResult,
     onEnd: handleVoiceEnd,
     onError: handleVoiceError,
-    onLevel: handleLevel
+    onLevel: handleLevel,
+    endOfSpeechMs: config?.voice?.endOfSpeechMs
   })
 
   // Keep stable refs so `dismiss`/`listenAgain` (defined above the hook
