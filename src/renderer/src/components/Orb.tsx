@@ -1,5 +1,4 @@
 import { useEffect, useRef, type RefObject } from 'react'
-import { motion } from 'framer-motion'
 import type { NimbusState } from '@shared/types'
 
 interface OrbProps {
@@ -7,160 +6,139 @@ interface OrbProps {
   levelRef: RefObject<number>
 }
 
-/** Evenly spaced tick marks around a ring, drawn as an SVG dash pattern. */
-function runeDashes(radius: number, count: number): string {
-  const circumference = 2 * Math.PI * radius
-  const segment = circumference / count
-  return `${segment * 0.34} ${segment * 0.66}`
-}
+const BLOCK_COUNT = 12
+const RING_RADIUS = 24
+const BLOCK = 5
+
+/** Positions for the pixel blocks arranged around the ring. */
+const BLOCKS = Array.from({ length: BLOCK_COUNT }, (_, i) => {
+  const angle = (i / BLOCK_COUNT) * Math.PI * 2 - Math.PI / 2
+  return {
+    x: 32 + Math.cos(angle) * RING_RADIUS - BLOCK / 2,
+    y: 32 + Math.sin(angle) * RING_RADIUS - BLOCK / 2
+  }
+})
 
 /**
- * Hextech-style indicator: counter-rotating runic rings around a charged core,
- * with motes drifting off it. While listening the glow tracks the real mic
- * level via requestAnimationFrame reading a ref, so the orb reacts to the
- * user's actual voice without re-rendering React on every audio frame.
+ * Arcade-cabinet indicator: a ring of pixel blocks with a light chasing round
+ * it, and a chunky core that pulses. Everything is driven by direct style
+ * writes on an animation frame — the chase and the mic-reactive core would
+ * otherwise re-render React 60 times a second.
  */
 export function Orb({ state, levelRef }: OrbProps) {
+  const blocksRef = useRef<SVGRectElement[]>([])
+  const coreRef = useRef<SVGRectElement>(null)
   const glowRef = useRef<HTMLDivElement>(null)
-  const coreRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (state !== 'listening') {
-      if (glowRef.current) glowRef.current.style.transform = 'scale(1)'
-      if (coreRef.current) coreRef.current.style.transform = 'scale(1)'
-      return
-    }
+    const blocks = blocksRef.current.filter(Boolean)
+    if (blocks.length === 0) return
 
     let frame = 0
     let smoothed = 0
-    const tick = (): void => {
+    const startedAt = performance.now()
+
+    // Steps rather than a smooth sweep — the chase should tick like a cabinet
+    // light, not glide.
+    const speedMs = state === 'thinking' ? 55 : state === 'listening' ? 95 : 150
+
+    const tick = (now: number): void => {
+      const elapsed = now - startedAt
       smoothed += (levelRef.current - smoothed) * 0.2
-      if (glowRef.current) {
-        glowRef.current.style.transform = `scale(${1 + smoothed * 0.95})`
-        glowRef.current.style.opacity = `${0.4 + smoothed * 0.55}`
+
+      if (state === 'idle') {
+        blocks.forEach((b) => {
+          b.style.opacity = '0.22'
+          b.setAttribute('fill', 'var(--color-nimbus-accent-deep)')
+        })
+      } else {
+        const head = Math.floor(elapsed / speedMs) % BLOCK_COUNT
+        blocks.forEach((b, i) => {
+          // Distance behind the chase head, wrapped.
+          const behind = (head - i + BLOCK_COUNT) % BLOCK_COUNT
+          if (behind === 0) {
+            b.style.opacity = '1'
+            b.setAttribute('fill', 'var(--color-nimbus-cyan)')
+          } else if (behind <= 3) {
+            b.style.opacity = String(0.75 - behind * 0.18)
+            b.setAttribute('fill', 'var(--color-nimbus-accent)')
+          } else {
+            b.style.opacity = '0.2'
+            b.setAttribute('fill', 'var(--color-nimbus-accent-deep)')
+          }
+        })
       }
+
+      // Core reacts to the mic while listening, otherwise beats steadily.
+      const beat =
+        state === 'listening'
+          ? 1 + smoothed * 0.55
+          : state === 'speaking'
+            ? 1 + Math.abs(Math.sin(elapsed / 130)) * 0.22
+            : state === 'thinking'
+              ? 1 + Math.abs(Math.sin(elapsed / 220)) * 0.12
+              : 1
+
       if (coreRef.current) {
-        coreRef.current.style.transform = `scale(${1 + smoothed * 0.3})`
+        const size = 14 * beat
+        coreRef.current.setAttribute('x', String(32 - size / 2))
+        coreRef.current.setAttribute('y', String(32 - size / 2))
+        coreRef.current.setAttribute('width', String(size))
+        coreRef.current.setAttribute('height', String(size))
       }
+      if (glowRef.current) {
+        glowRef.current.style.opacity = String(0.35 + (beat - 1) * 1.2)
+      }
+
       frame = requestAnimationFrame(tick)
     }
+
     frame = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(frame)
   }, [state, levelRef])
 
-  const isActive = state !== 'idle'
-  const isThinking = state === 'thinking'
-
   return (
     <div className="relative flex h-16 w-16 shrink-0 items-center justify-center">
-      {/* Runic rings */}
-      <svg viewBox="0 0 64 64" className="absolute inset-0 h-full w-full">
-        <defs>
-          <linearGradient id="nimbus-ring" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="var(--color-nimbus-accent-bright)" />
-            <stop offset="55%" stopColor="var(--color-nimbus-accent)" />
-            <stop offset="100%" stopColor="var(--color-nimbus-violet)" />
-          </linearGradient>
-        </defs>
-
-        <g
-          className={isActive ? 'nimbus-rotate-slow' : undefined}
-          style={{ transformOrigin: '32px 32px' }}
-        >
-          <circle
-            cx="32"
-            cy="32"
-            r="29"
-            fill="none"
-            stroke="url(#nimbus-ring)"
-            strokeWidth="1.2"
-            strokeDasharray={runeDashes(29, 16)}
-            opacity={isActive ? 0.85 : 0.3}
-          />
-        </g>
-
-        <g
-          className={isActive ? 'nimbus-rotate-reverse' : undefined}
-          style={{ transformOrigin: '32px 32px' }}
-        >
-          <circle
-            cx="32"
-            cy="32"
-            r="23"
-            fill="none"
-            stroke="url(#nimbus-ring)"
-            strokeWidth="0.9"
-            strokeDasharray={runeDashes(23, 9)}
-            opacity={isActive ? 0.6 : 0.22}
-          />
-        </g>
-
-        {/* Thinking: a bright arc races the outer ring. */}
-        {isThinking && (
-          <g className="nimbus-rotate-slow" style={{ transformOrigin: '32px 32px' }}>
-            <circle
-              cx="32"
-              cy="32"
-              r="26"
-              fill="none"
-              stroke="var(--color-nimbus-accent-bright)"
-              strokeWidth="1.6"
-              strokeLinecap="round"
-              strokeDasharray="20 143"
-            />
-          </g>
-        )}
-      </svg>
-
-      {/* Reactive glow */}
+      {/* Neon bloom behind the core */}
       <div
         ref={glowRef}
-        className="absolute h-10 w-10 rounded-full blur-md will-change-transform"
+        className="pointer-events-none absolute h-9 w-9 blur-md"
         style={{
           background:
-            'radial-gradient(circle, rgba(79,214,255,0.95), rgba(169,123,255,0.35) 55%, rgba(109,75,214,0) 75%)',
-          opacity: 0.45
+            'radial-gradient(circle, rgba(34,232,255,0.9), rgba(255,62,165,0.45) 55%, transparent 75%)',
+          opacity: 0.35
         }}
       />
 
-      {/* Charged core */}
-      <motion.div
-        ref={coreRef}
-        className="relative h-[22px] w-[22px] rounded-full will-change-transform"
-        style={{
-          background:
-            'radial-gradient(circle at 35% 30%, #eafcff, var(--color-nimbus-accent) 45%, var(--color-nimbus-violet-deep) 100%)',
-          boxShadow:
-            '0 0 18px rgba(79,214,255,0.7), 0 0 34px rgba(169,123,255,0.35), inset 0 1px 2px rgba(255,255,255,0.55)'
-        }}
-        animate={
-          state === 'speaking'
-            ? { scale: [1, 1.16, 1] }
-            : isThinking
-              ? { opacity: [0.6, 1, 0.6] }
-              : { scale: 1, opacity: 1 }
-        }
-        transition={{
-          duration: state === 'speaking' ? 0.6 : 1.2,
-          repeat: state === 'speaking' || isThinking ? Infinity : 0,
-          ease: 'easeInOut'
-        }}
-      />
-
-      {/* Motes lifting off the core while it's doing something */}
-      {isActive &&
-        [0, 1, 2, 3].map((i) => (
-          <span
+      <svg viewBox="0 0 64 64" className="absolute inset-0 h-full w-full">
+        {BLOCKS.map((b, i) => (
+          <rect
             key={i}
-            className="pointer-events-none absolute h-[3px] w-[3px] rounded-full bg-nimbus-accent-bright"
-            style={{
-              left: `${28 + (i % 2 === 0 ? -9 : 9) + i * 2}px`,
-              bottom: '20px',
-              boxShadow: '0 0 6px var(--color-nimbus-accent)',
-              animation: `nimbus-float ${2.2 + i * 0.35}s ease-out ${i * 0.5}s infinite`
+            ref={(el) => {
+              if (el) blocksRef.current[i] = el
             }}
+            x={b.x}
+            y={b.y}
+            width={BLOCK}
+            height={BLOCK}
+            fill="var(--color-nimbus-accent-deep)"
+            opacity={0.22}
           />
         ))}
+
+        {/* Chunky square core — deliberately not a circle */}
+        <rect
+          ref={coreRef}
+          x={25}
+          y={25}
+          width={14}
+          height={14}
+          fill="var(--color-nimbus-accent)"
+          style={{ filter: 'drop-shadow(0 0 5px rgba(255,62,165,0.9))' }}
+        />
+        {/* Highlight pixel, like a specular block on a sprite */}
+        <rect x={27} y={27} width={3} height={3} fill="var(--color-nimbus-accent-bright)" />
+      </svg>
     </div>
   )
 }
