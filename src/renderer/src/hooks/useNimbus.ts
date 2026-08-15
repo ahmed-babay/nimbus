@@ -85,9 +85,17 @@ export function useNimbus(): NimbusOverlayState {
   const emptyTurnsRef = useRef(0)
   /** scheduleAutoFade is declared after listenAgain, so reached by ref. */
   const scheduleAutoFadeRef = useRef<(() => void) | null>(null)
+  /** askQuestion is used as a fallback from runTextAction. */
+  const askQuestionRef = useRef<((text: string) => void) | null>(null)
   /** runTextAction is declared after handleResult, so it's reached by ref. */
   const runTextActionRef = useRef<
-    ((kind: TextActionKind, label: string, instruction?: string) => void) | null
+    | ((
+        kind: TextActionKind,
+        label: string,
+        instruction?: string,
+        onNoSelection?: () => void
+      ) => void)
+    | null
   >(null)
 
   // Mirror of `state` for callbacks that need the current value without
@@ -277,49 +285,13 @@ export function useNimbus(): NimbusOverlayState {
     [listenAgain, speakNative, stopPlayback]
   )
 
-  const handleResult = useCallback(
+  /** Sends an utterance through the normal assistant pipeline. */
+  const askQuestion = useCallback(
     (finalTranscript: string) => {
-      // While something is playing, "stop" means "stop the music" — not
-      // "close Nimbus". Checked first so playback commands win.
-      if (radioActiveRef.current && isStopPlaybackPhrase(finalTranscript)) {
-        console.log(`[nimbus] stop-playback heard ("${finalTranscript}")`)
-        radioActiveRef.current = false
-        pausedForListeningRef.current = false
-        radioRef.current.stop()
-        setResponse(null)
-        setTranscript(null)
-        setState('listening')
-        startVoiceInputRef.current?.()
-        return
-      }
-
-      // "stop", "that's it for today", etc. close the overlay rather than
-      // being treated as a question. Handled here so it's instant.
-      if (isStopPhrase(finalTranscript)) {
-        console.log(`[nimbus] stop phrase heard ("${finalTranscript}") — closing`)
-        dismiss()
-        return
-      }
-
-      // Text is waiting to be worked on, so anything said is an instruction
-      // about that text — not a question for the assistant.
-      if (pendingSelectionRef.current) {
-        console.log(`[nimbus] text instruction heard ("${finalTranscript}")`)
-        runTextActionRef.current?.('custom', finalTranscript, finalTranscript)
-        return
-      }
-
-      // A real question while music is paused for listening: the music is
-      // finished with, so drop it rather than resuming underneath the answer.
-      if (pausedForListeningRef.current) {
-        pausedForListeningRef.current = false
-        radioActiveRef.current = false
-        radioRef.current.stop()
-      }
-
       // Previous answer clears here — when a new question actually arrives —
       // rather than the moment the mic reopens.
       emptyTurnsRef.current = 0
+      setPendingSelection(null)
       setResponse(null)
       setError(null)
       setStreamingText('')
@@ -355,14 +327,76 @@ export function useNimbus(): NimbusOverlayState {
           speak(message)
         })
     },
-    [speak, dismiss]
+    [speak]
+  )
+
+  useEffect(() => {
+    askQuestionRef.current = askQuestion
+  }, [askQuestion])
+
+  const handleResult = useCallback(
+    (finalTranscript: string) => {
+      // While something is playing, "stop" means "stop the music" — not
+      // "close Nimbus". Checked first so playback commands win.
+      if (radioActiveRef.current && isStopPlaybackPhrase(finalTranscript)) {
+        console.log(`[nimbus] stop-playback heard ("${finalTranscript}")`)
+        radioActiveRef.current = false
+        pausedForListeningRef.current = false
+        radioRef.current.stop()
+        setResponse(null)
+        setTranscript(null)
+        setState('listening')
+        startVoiceInputRef.current?.()
+        return
+      }
+
+      // "stop", "that's it for today", etc. close the overlay rather than
+      // being treated as a question. Handled here so it's instant.
+      if (isStopPhrase(finalTranscript)) {
+        console.log(`[nimbus] stop phrase heard ("${finalTranscript}") — closing`)
+        dismiss()
+        return
+      }
+
+      // Text is waiting to be worked on, so anything said is an instruction
+      // about that text — not a question for the assistant.
+      if (pendingSelectionRef.current) {
+        console.log(`[nimbus] text instruction heard ("${finalTranscript}")`)
+        // Falls back to the normal question path if the main process no
+        // longer holds the selection, so a stale flag can't swallow a real
+        // question.
+        runTextActionRef.current?.('custom', finalTranscript, finalTranscript, () =>
+          askQuestionRef.current?.(finalTranscript)
+        )
+        return
+      }
+
+      // A real question while music is paused for listening: the music is
+      // finished with, so drop it rather than resuming underneath the answer.
+      if (pausedForListeningRef.current) {
+        pausedForListeningRef.current = false
+        radioActiveRef.current = false
+        radioRef.current.stop()
+      }
+
+      askQuestion(finalTranscript)
+    },
+    [askQuestion, dismiss]
   )
 
   /** Runs a transform on the captured selection and shows the result. */
   const runTextAction = useCallback(
-    (kind: TextActionKind, label: string, customInstruction?: string) => {
+    (
+      kind: TextActionKind,
+      label: string,
+      customInstruction?: string,
+      onNoSelection?: () => void
+    ) => {
       const source = pendingSelection
-      if (!source) return
+      if (!source) {
+        onNoSelection?.()
+        return
+      }
 
       clearFadeTimer()
       setStreamingText('')
@@ -395,7 +429,19 @@ export function useNimbus(): NimbusOverlayState {
         })
         .catch((err: unknown) => {
           setStreamingText('')
-          setError(err instanceof Error ? err.message : 'That action failed.')
+          const message = err instanceof Error ? err.message : 'That action failed.'
+
+          // The main process no longer holds the selection (it was pasted, or
+          // a new turn started). Treat what was said as an ordinary question
+          // rather than surfacing an internal error.
+          if (message.includes('no selected text') && onNoSelection) {
+            console.log('[nimbus] selection expired — handling as a question instead')
+            setPendingSelection(null)
+            onNoSelection()
+            return
+          }
+
+          setError(message)
           setState('idle')
           scheduleAutoFade()
         })
@@ -416,6 +462,9 @@ export function useNimbus(): NimbusOverlayState {
           clearFadeTimer()
           setState('idle')
           setResponse(null)
+          // Main drops its copy once pasted; clear ours in step or the next
+          // thing said is routed as an instruction against nothing.
+          setPendingSelection(null)
           window.nimbus.resetConversation()
         })
         .catch((err: unknown) => {
@@ -518,6 +567,10 @@ export function useNimbus(): NimbusOverlayState {
       setMode('assistant')
       setError(null)
       setTranscript(null)
+
+      // Plain hotkey means a fresh question, so drop any selection context —
+      // main clears its copy at the same moment.
+      setPendingSelection(null)
 
       // Hotkey pressed while a station is playing: duck the music so the mic
       // can hear, and keep the player card visible. Saying nothing resumes it.
