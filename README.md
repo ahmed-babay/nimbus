@@ -128,6 +128,14 @@ Highlight text in **any** application — Word, VS Code, a browser, a PDF — an
 Explain · Translate*, then either copies the result or **pastes it back over the original
 selection**.
 
+The mic also opens, so anything the buttons don't cover you can just say:
+
+> *"translate this to German"* · *"make it shorter and more polite"* ·
+> *"turn this into bullet points"* · *"explain it like I'm five"*
+
+The Translate **button** targets `textActions.translateTo` in `config.json` (default
+English); speaking a language overrides it for that one use.
+
 How it reads another app's selection, since there's no API for that:
 
 1. Records which window has focus, then sends it **Ctrl+C** (via PowerShell `SendKeys`) —
