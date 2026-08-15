@@ -1,0 +1,10 @@
+node_modules/
+out/
+dist/
+dist-electron/
+.env
+*.log
+*.tsbuildinfo
+voice-samples/
+.DS_Store
+Thumbs.db

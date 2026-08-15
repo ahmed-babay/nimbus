@@ -1,0 +1,18 @@
+{
+  "integrations": {
+    "weather": true,
+    "stocks": true,
+    "crypto": true,
+    "news": true,
+    "github": true,
+    "search": true,
+    "music": true
+  },
+  "hotkey": {
+    "enabled": true,
+    "accelerator": "CommandOrControl+Shift+Space"
+  },
+  "overlay": {
+    "autoFadeMs": 8000
+  }
+}
