@@ -30,5 +30,9 @@ export const IPC = {
   /** renderer -> main: toggle click-through as the pointer enters/leaves the card */
   SET_MOUSE_IGNORE: 'nimbus:set-mouse-ignore',
   /** renderer -> main: put an answer on the clipboard */
-  COPY_TEXT: 'nimbus:copy-text'
+  COPY_TEXT: 'nimbus:copy-text',
+  /** main -> region picker: the frozen screenshot to drag a selection over */
+  REGION_IMAGE: 'nimbus:region-image',
+  /** region picker -> main: chosen region (0..1), or null to cancel */
+  REGION_SELECTED: 'nimbus:region-selected'
 } as const
