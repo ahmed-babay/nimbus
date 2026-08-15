@@ -86,25 +86,42 @@ function sweep({
   })
 }
 
-/** Rising sweep — Nimbus has opened the mic and is listening. */
+/**
+ * Rising sweep with a shimmer on top — a hextech core spinning up. Two
+ * layers an octave-and-a-fifth apart give it a crystalline ring rather than
+ * the plain electronic blip of a single sweep.
+ */
 export function playListenStartChime(): void {
   sweep({
-    fromHz: 420,
-    toHz: 1180,
-    durationMs: 190,
-    filterFromHz: 700,
-    filterToHz: 7000
+    fromHz: 392,
+    toHz: 1174,
+    durationMs: 210,
+    filterFromHz: 600,
+    filterToHz: 7600
   })
+  // Delayed harmonic, so the cue blooms instead of arriving all at once.
+  setTimeout(
+    () =>
+      sweep({
+        fromHz: 1174,
+        toHz: 1568,
+        durationMs: 240,
+        filterFromHz: 3000,
+        filterToHz: 9000,
+        peakGain: 0.07
+      }),
+    70
+  )
 }
 
-/** Falling sweep — the mic has closed and Nimbus is processing. */
+/** Falling sweep — the core powering back down. */
 export function playListenEndChime(): void {
   sweep({
-    fromHz: 1040,
-    toHz: 400,
-    durationMs: 230,
-    filterFromHz: 6000,
-    filterToHz: 600,
-    peakGain: 0.13
+    fromHz: 988,
+    toHz: 330,
+    durationMs: 260,
+    filterFromHz: 6500,
+    filterToHz: 520,
+    peakGain: 0.12
   })
 }
