@@ -74,6 +74,15 @@ export function useNimbus(): NimbusOverlayState {
   /** True while the station is paused purely so the mic can hear the user —
    *  resumed if they say nothing, dropped if they ask something new. */
   const pausedForListeningRef = useRef(false)
+  /** Mirrors pendingSelection so handleResult (declared earlier) can see it. */
+  const pendingSelectionRef = useRef<string | null>(null)
+  useEffect(() => {
+    pendingSelectionRef.current = pendingSelection
+  }, [pendingSelection])
+  /** runTextAction is declared after handleResult, so it's reached by ref. */
+  const runTextActionRef = useRef<
+    ((kind: TextActionKind, label: string, instruction?: string) => void) | null
+  >(null)
 
   // Mirror of `state` for callbacks that need the current value without
   // being re-created (or reading it inside a setState updater).
@@ -83,8 +92,10 @@ export function useNimbus(): NimbusOverlayState {
   }, [state])
 
   useEffect(() => {
-    hasContentRef.current = Boolean(response || error)
-  }, [response, error])
+    // Pending selections count as content: if the user says nothing, the
+    // buttons must stay up long enough to click rather than fading in 8s.
+    hasContentRef.current = Boolean(response || error || pendingSelection)
+  }, [response, error, pendingSelection])
 
   const handleLevel = useCallback((level: number) => {
     levelRef.current = level
@@ -271,6 +282,14 @@ export function useNimbus(): NimbusOverlayState {
         return
       }
 
+      // Text is waiting to be worked on, so anything said is an instruction
+      // about that text — not a question for the assistant.
+      if (pendingSelectionRef.current) {
+        console.log(`[nimbus] text instruction heard ("${finalTranscript}")`)
+        runTextActionRef.current?.('custom', finalTranscript, finalTranscript)
+        return
+      }
+
       // A real question while music is paused for listening: the music is
       // finished with, so drop it rather than resuming underneath the answer.
       if (pausedForListeningRef.current) {
@@ -357,6 +376,10 @@ export function useNimbus(): NimbusOverlayState {
     },
     [pendingSelection, clearFadeTimer, scheduleAutoFade]
   )
+
+  useEffect(() => {
+    runTextActionRef.current = runTextAction
+  }, [runTextAction])
 
   /** Pastes a result back over the original selection. */
   const replaceSelection = useCallback(
@@ -447,9 +470,17 @@ export function useNimbus(): NimbusOverlayState {
       setPendingCapture(null)
       setResponse(null)
       setError(text ? null : 'Select some text first, then press the shortcut.')
-      setState('idle')
-      // No mic here — the selection flow is driven by the action buttons.
-      stopVoiceInputRef.current?.()
+
+      if (text) {
+        // Listen as well as showing the buttons: the buttons cover the common
+        // cases, speaking covers everything else ("translate to Arabic",
+        // "make this more formal", "turn it into bullet points").
+        setState('listening')
+        startVoiceInputRef.current?.()
+      } else {
+        setState('idle')
+        stopVoiceInputRef.current?.()
+      }
     })
   }, [clearFadeTimer])
 
