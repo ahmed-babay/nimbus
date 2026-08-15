@@ -4,6 +4,7 @@ import { Orb } from './components/Orb'
 import { Waveform } from './components/Waveform'
 import { ResponseCard } from './components/ResponseCard'
 import { SelectionActions } from './components/SelectionActions'
+import { TextInput } from './components/TextInput'
 import { useNimbus } from './hooks/useNimbus'
 import { useTypewriter } from './hooks/useTypewriter'
 import type { NimbusConfig, NimbusState } from '@shared/types'
@@ -32,6 +33,8 @@ export default function App() {
     radio,
     levelRef,
     speechProgressRef,
+    submitText,
+    onTypingStart,
     dismiss
   } = useNimbus()
   // Paced reveal: the model streams in a few big chunks, which otherwise
@@ -39,8 +42,14 @@ export default function App() {
   const typedText = useTypewriter(streamingText)
   // The selection flow has no mic, so it sits at 'idle' while waiting for the
   // user to pick an action — visibility can't be driven by state alone.
+  // Typed turns end at 'idle' with the answer still up, so visibility can't
+  // be driven by state alone.
   const isVisible =
-    mode === 'settings' || state !== 'idle' || pendingSelection !== null || Boolean(error)
+    mode === 'settings' ||
+    state !== 'idle' ||
+    response !== null ||
+    pendingSelection !== null ||
+    Boolean(error)
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent): void {
@@ -186,6 +195,13 @@ export default function App() {
                     then &ldquo;stop the music&rdquo;
                   </div>
                 )}
+
+                {/* Always available — talking isn't possible everywhere. */}
+                <TextInput
+                  onSubmit={submitText}
+                  focusKey={isVisible}
+                  onTypingStart={onTypingStart}
+                />
 
                 {(response || error) && state === 'listening' && (
                   <motion.div
