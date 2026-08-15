@@ -39,6 +39,8 @@ export interface NimbusOverlayState {
    * works for questions, screenshot follow-ups and selection instructions
    * without any of those paths needing to know where the text came from.
    */
+  /** True while the overlay is on screen. */
+  isOpen: boolean
   submitText: (text: string) => void
   /** Call when the user starts typing, to close the mic. */
   onTypingStart: () => void
@@ -59,6 +61,13 @@ export function useNimbus(): NimbusOverlayState {
    *  failed (nothing was selected). */
   const [pendingSelection, setPendingSelection] = useState<string | null>(null)
   const [config, setConfig] = useState<NimbusConfig | null>(null)
+  /**
+   * Whether the overlay is showing. Explicit rather than derived from
+   * `state`: visibility used to be inferred from a growing list of
+   * conditions, and every new flow (selection, typing) broke it — typing set
+   * the state to 'idle' to close the mic and the whole overlay vanished.
+   */
+  const [isOpen, setIsOpen] = useState(false)
 
   const radio = useRadioPlayer()
   const radioRef = useRef(radio)
@@ -150,6 +159,7 @@ export function useNimbus(): NimbusOverlayState {
 
   const dismiss = useCallback(() => {
     clearFadeTimer()
+    setIsOpen(false)
     window.speechSynthesis?.cancel()
     stopPlayback()
     radioActiveRef.current = false
@@ -586,6 +596,7 @@ export function useNimbus(): NimbusOverlayState {
 
   useEffect(() => {
     return window.nimbus.onScreenCaptured((thumbnail) => {
+      setIsOpen(true)
       setPendingCapture(thumbnail)
       setPendingSelection(null)
       setResponse(null)
@@ -596,6 +607,7 @@ export function useNimbus(): NimbusOverlayState {
   useEffect(() => {
     return window.nimbus.onSelectionCaptured((text) => {
       clearFadeTimer()
+      setIsOpen(true)
       setPendingSelection(text)
       setPendingCapture(null)
       setResponse(null)
@@ -617,6 +629,7 @@ export function useNimbus(): NimbusOverlayState {
   useEffect(() => {
     const unsubscribeWake = window.nimbus.onWake(() => {
       clearFadeTimer()
+      setIsOpen(true)
       emptyTurnsRef.current = 0
       typedInputRef.current = false
       setMode('assistant')
@@ -642,6 +655,7 @@ export function useNimbus(): NimbusOverlayState {
 
     const unsubscribeSettings = window.nimbus.onShowSettings(() => {
       clearFadeTimer()
+      setIsOpen(true)
       setMode('settings')
       setState('idle')
     })
@@ -669,6 +683,7 @@ export function useNimbus(): NimbusOverlayState {
     radio,
     levelRef,
     speechProgressRef,
+    isOpen,
     submitText,
     onTypingStart: handleTypingStart,
     dismiss
