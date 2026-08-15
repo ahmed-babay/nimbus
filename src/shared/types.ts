@@ -164,7 +164,14 @@ export interface SynthesizedSpeech {
 }
 
 export interface NimbusResponse {
+  /** What gets read aloud — length-capped so it can't monologue. */
   speech: string
+  /**
+   * The complete answer when `speech` had to be shortened for TTS. Displaying
+   * and copying use this, so asking for something long (an email, a draft
+   * message) doesn't silently lose everything past the spoken portion.
+   */
+  fullText?: string
   card: ResponseCardData
 }
 
