@@ -373,7 +373,9 @@ export function useNimbus(): NimbusOverlayState {
         .runTextAction(kind, customInstruction)
         .then(({ result, canReplace }) => {
           setStreamingText('')
-          setPendingSelection(null)
+          // Keep the selection context alive so a spoken follow-up chains
+          // onto this result rather than being treated as a new question.
+          setPendingSelection(result)
           setResponse({
             speech: result,
             card: {
@@ -383,9 +385,13 @@ export function useNimbus(): NimbusOverlayState {
           })
           // Deliberately silent: this flow is for text you're reading and
           // pasting, and speaking a rewritten paragraph aloud is just noise.
-          setState('speaking')
           speechProgressRef.current = 1
-          scheduleAutoFade()
+          // Stay open and listening rather than counting down to close — the
+          // usual next step is a follow-up ("now make it shorter") or hitting
+          // Replace, and closing on them mid-read was infuriating.
+          emptyTurnsRef.current = 0
+          setState('listening')
+          startVoiceInputRef.current?.()
         })
         .catch((err: unknown) => {
           setStreamingText('')
