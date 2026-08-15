@@ -43,7 +43,14 @@ export async function handleUtterance(
   onChunk?: StreamHandler
 ): Promise<NimbusResponse> {
   const resolved = await resolveUtterance(utterance, onChunk)
-  const response: NimbusResponse = { ...resolved, speech: capSpokenLength(resolved.speech) }
+  const spoken = capSpokenLength(resolved.speech)
+  const response: NimbusResponse = {
+    ...resolved,
+    speech: spoken,
+    // Only set when shortening actually happened, so the UI can tell whether
+    // there's more to read than was said.
+    ...(spoken !== resolved.speech ? { fullText: resolved.speech } : {})
+  }
   // Recorded only after resolving, so the in-flight utterance isn't already
   // sitting in history when chat() appends it to its own `contents`.
   recordTurn('user', utterance)

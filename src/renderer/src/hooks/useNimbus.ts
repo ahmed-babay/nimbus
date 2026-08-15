@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
-import type { NimbusConfig, NimbusResponse, NimbusState } from '@shared/types'
+import type { NimbusConfig, NimbusResponse, NimbusState, TextActionKind } from '@shared/types'
 import { useVoiceInput } from './useVoiceInput'
 import { useRadioPlayer, type RadioPlayerControls } from './useRadioPlayer'
 import { isStopPhrase, isStopPlaybackPhrase } from '../lib/stop-phrases'
@@ -9,6 +9,8 @@ const DEFAULT_AUTO_FADE_MS = 8000
 // an extract take far longer to take in than the fade meant for an empty
 // overlay, and closing at 8s made results feel like they vanished instantly.
 const READING_AUTO_FADE_MS = 45000
+// Consecutive turns with nothing said before the overlay gives up.
+const MAX_EMPTY_TURNS = 2
 
 export interface NimbusOverlayState {
   state: NimbusState
@@ -20,6 +22,10 @@ export interface NimbusOverlayState {
   streamingText: string
   /** Screenshot captured and awaiting a question. */
   pendingCapture: string | null
+  /** Text captured from another app, awaiting an action. */
+  pendingSelection: string | null
+  runTextAction: (kind: TextActionKind, label: string, customInstruction?: string) => void
+  replaceSelection: (text: string) => void
   config: NimbusConfig | null
   /** In-app radio playback state and controls. */
   radio: RadioPlayerControls
@@ -41,6 +47,9 @@ export function useNimbus(): NimbusOverlayState {
   const [streamingText, setStreamingText] = useState('')
   /** Screenshot awaiting a question about it, shown above the waveform. */
   const [pendingCapture, setPendingCapture] = useState<string | null>(null)
+  /** Text grabbed from another app, awaiting an action. '' means the grab
+   *  failed (nothing was selected). */
+  const [pendingSelection, setPendingSelection] = useState<string | null>(null)
   const [config, setConfig] = useState<NimbusConfig | null>(null)
 
   const radio = useRadioPlayer()
@@ -67,6 +76,19 @@ export function useNimbus(): NimbusOverlayState {
   /** True while the station is paused purely so the mic can hear the user —
    *  resumed if they say nothing, dropped if they ask something new. */
   const pausedForListeningRef = useRef(false)
+  /** Mirrors pendingSelection so handleResult (declared earlier) can see it. */
+  const pendingSelectionRef = useRef<string | null>(null)
+  useEffect(() => {
+    pendingSelectionRef.current = pendingSelection
+  }, [pendingSelection])
+  /** Consecutive turns that produced no usable transcript. */
+  const emptyTurnsRef = useRef(0)
+  /** scheduleAutoFade is declared after listenAgain, so reached by ref. */
+  const scheduleAutoFadeRef = useRef<(() => void) | null>(null)
+  /** runTextAction is declared after handleResult, so it's reached by ref. */
+  const runTextActionRef = useRef<
+    ((kind: TextActionKind, label: string, instruction?: string) => void) | null
+  >(null)
 
   // Mirror of `state` for callbacks that need the current value without
   // being re-created (or reading it inside a setState updater).
@@ -76,8 +98,10 @@ export function useNimbus(): NimbusOverlayState {
   }, [state])
 
   useEffect(() => {
-    hasContentRef.current = Boolean(response || error)
-  }, [response, error])
+    // Pending selections count as content: if the user says nothing, the
+    // buttons must stay up long enough to click rather than fading in 8s.
+    hasContentRef.current = Boolean(response || error || pendingSelection)
+  }, [response, error, pendingSelection])
 
   const handleLevel = useCallback((level: number) => {
     levelRef.current = level
@@ -116,6 +140,7 @@ export function useNimbus(): NimbusOverlayState {
     setError(null)
     setTranscript(null)
     setPendingCapture(null)
+    setPendingSelection(null)
     // Each time the overlay closes the conversation ends, so the next
     // session doesn't inherit stale context from an old topic.
     window.nimbus.resetConversation()
@@ -134,6 +159,10 @@ export function useNimbus(): NimbusOverlayState {
     fadeTimer.current = setTimeout(dismiss, autoFadeMs)
   }, [clearFadeTimer, config, dismiss])
 
+  useEffect(() => {
+    scheduleAutoFadeRef.current = scheduleAutoFade
+  }, [scheduleAutoFade])
+
   // After Nimbus finishes speaking, listen again for a follow-up instead of
   // immediately fading out — otherwise every turn required pressing the
   // hotkey again, which reads as "it won't let me speak anymore." If the
@@ -142,6 +171,15 @@ export function useNimbus(): NimbusOverlayState {
   // own once the user stops responding.
   const listenAgain = useCallback(() => {
     clearFadeTimer()
+    // Two silent turns in a row means the user has walked away or the room is
+    // just noisy. Reopening the mic forever kept the overlay alive and fed
+    // Whisper more silence to hallucinate from.
+    if (emptyTurnsRef.current >= MAX_EMPTY_TURNS) {
+      console.log('[nimbus] no speech for two turns — closing instead of listening again')
+      scheduleAutoFadeRef.current?.()
+      setState('idle')
+      return
+    }
     // Don't reopen the mic over a playing station: the speakers feed straight
     // back into it, and Whisper happily transcribes the music as commands.
     // The player stays on screen; Esc or the hotkey starts a new turn.
@@ -263,6 +301,14 @@ export function useNimbus(): NimbusOverlayState {
         return
       }
 
+      // Text is waiting to be worked on, so anything said is an instruction
+      // about that text — not a question for the assistant.
+      if (pendingSelectionRef.current) {
+        console.log(`[nimbus] text instruction heard ("${finalTranscript}")`)
+        runTextActionRef.current?.('custom', finalTranscript, finalTranscript)
+        return
+      }
+
       // A real question while music is paused for listening: the music is
       // finished with, so drop it rather than resuming underneath the answer.
       if (pausedForListeningRef.current) {
@@ -273,6 +319,7 @@ export function useNimbus(): NimbusOverlayState {
 
       // Previous answer clears here — when a new question actually arrives —
       // rather than the moment the mic reopens.
+      emptyTurnsRef.current = 0
       setResponse(null)
       setError(null)
       setStreamingText('')
@@ -311,11 +358,79 @@ export function useNimbus(): NimbusOverlayState {
     [speak, dismiss]
   )
 
+  /** Runs a transform on the captured selection and shows the result. */
+  const runTextAction = useCallback(
+    (kind: TextActionKind, label: string, customInstruction?: string) => {
+      const source = pendingSelection
+      if (!source) return
+
+      clearFadeTimer()
+      setStreamingText('')
+      setError(null)
+      setState('thinking')
+
+      window.nimbus
+        .runTextAction(kind, customInstruction)
+        .then(({ result, canReplace }) => {
+          setStreamingText('')
+          // Keep the selection context alive so a spoken follow-up chains
+          // onto this result rather than being treated as a new question.
+          setPendingSelection(result)
+          setResponse({
+            speech: result,
+            card: {
+              type: 'selection',
+              data: { source, action: kind, actionLabel: label, result, canReplace }
+            }
+          })
+          // Deliberately silent: this flow is for text you're reading and
+          // pasting, and speaking a rewritten paragraph aloud is just noise.
+          speechProgressRef.current = 1
+          // Stay open and listening rather than counting down to close — the
+          // usual next step is a follow-up ("now make it shorter") or hitting
+          // Replace, and closing on them mid-read was infuriating.
+          emptyTurnsRef.current = 0
+          setState('listening')
+          startVoiceInputRef.current?.()
+        })
+        .catch((err: unknown) => {
+          setStreamingText('')
+          setError(err instanceof Error ? err.message : 'That action failed.')
+          setState('idle')
+          scheduleAutoFade()
+        })
+    },
+    [pendingSelection, clearFadeTimer, scheduleAutoFade]
+  )
+
+  useEffect(() => {
+    runTextActionRef.current = runTextAction
+  }, [runTextAction])
+
+  /** Pastes a result back over the original selection. */
+  const replaceSelection = useCallback(
+    (text: string) => {
+      window.nimbus
+        .replaceSelection(text)
+        .then(() => {
+          clearFadeTimer()
+          setState('idle')
+          setResponse(null)
+          window.nimbus.resetConversation()
+        })
+        .catch((err: unknown) => {
+          setError(err instanceof Error ? err.message : "I couldn't paste that back.")
+        })
+    },
+    [clearFadeTimer]
+  )
+
   const handleVoiceEnd = useCallback(() => {
     // Recording ended with nothing usable (silence timeout) — fade out.
     // Reads state from a ref rather than triggering the side effect inside a
     // setState updater, which React StrictMode double-invokes.
     console.log(`[nimbus] voice turn ended with no transcript (state: ${stateRef.current})`)
+    emptyTurnsRef.current += 1
 
     // Interrupted the music but then said nothing? Put it back on.
     if (pausedForListeningRef.current) {
@@ -343,7 +458,8 @@ export function useNimbus(): NimbusOverlayState {
     onResult: handleResult,
     onEnd: handleVoiceEnd,
     onError: handleVoiceError,
-    onLevel: handleLevel
+    onLevel: handleLevel,
+    endOfSpeechMs: config?.voice?.endOfSpeechMs
   })
 
   // Keep stable refs so `dismiss`/`listenAgain` (defined above the hook
@@ -368,14 +484,37 @@ export function useNimbus(): NimbusOverlayState {
   useEffect(() => {
     return window.nimbus.onScreenCaptured((thumbnail) => {
       setPendingCapture(thumbnail)
+      setPendingSelection(null)
       setResponse(null)
       setError(null)
     })
   }, [])
 
   useEffect(() => {
+    return window.nimbus.onSelectionCaptured((text) => {
+      clearFadeTimer()
+      setPendingSelection(text)
+      setPendingCapture(null)
+      setResponse(null)
+      setError(text ? null : 'Select some text first, then press the shortcut.')
+
+      if (text) {
+        // Listen as well as showing the buttons: the buttons cover the common
+        // cases, speaking covers everything else ("translate to Arabic",
+        // "make this more formal", "turn it into bullet points").
+        setState('listening')
+        startVoiceInputRef.current?.()
+      } else {
+        setState('idle')
+        stopVoiceInputRef.current?.()
+      }
+    })
+  }, [clearFadeTimer])
+
+  useEffect(() => {
     const unsubscribeWake = window.nimbus.onWake(() => {
       clearFadeTimer()
+      emptyTurnsRef.current = 0
       setMode('assistant')
       setError(null)
       setTranscript(null)
@@ -415,6 +554,9 @@ export function useNimbus(): NimbusOverlayState {
     transcript,
     streamingText,
     pendingCapture,
+    pendingSelection,
+    runTextAction,
+    replaceSelection,
     config,
     radio,
     levelRef,

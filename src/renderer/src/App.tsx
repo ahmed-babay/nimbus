@@ -3,6 +3,7 @@ import { useEffect } from 'react'
 import { Orb } from './components/Orb'
 import { Waveform } from './components/Waveform'
 import { ResponseCard } from './components/ResponseCard'
+import { SelectionActions } from './components/SelectionActions'
 import { useNimbus } from './hooks/useNimbus'
 import type { NimbusConfig, NimbusState } from '@shared/types'
 
@@ -23,13 +24,19 @@ export default function App() {
     transcript,
     streamingText,
     pendingCapture,
+    pendingSelection,
+    runTextAction,
+    replaceSelection,
     config,
     radio,
     levelRef,
     speechProgressRef,
     dismiss
   } = useNimbus()
-  const isVisible = mode === 'settings' || state !== 'idle'
+  // The selection flow has no mic, so it sits at 'idle' while waiting for the
+  // user to pick an action — visibility can't be driven by state alone.
+  const isVisible =
+    mode === 'settings' || state !== 'idle' || pendingSelection !== null || Boolean(error)
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent): void {
@@ -48,6 +55,10 @@ export default function App() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -10, scale: 0.98 }}
             transition={{ duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
+            // Only the card itself captures the mouse; everything around it
+            // stays click-through so the overlay never blocks the screen.
+            onMouseEnter={() => window.nimbus.setMouseIgnore(false)}
+            onMouseLeave={() => window.nimbus.setMouseIgnore(true)}
             className="relative w-[492px] overflow-hidden rounded-[20px] border border-nimbus-border bg-nimbus-bg backdrop-blur-2xl"
             style={{
               boxShadow:
@@ -94,6 +105,7 @@ export default function App() {
                         response={response}
                         speechProgressRef={speechProgressRef}
                         radio={radio}
+                        onReplace={replaceSelection}
                       />
                     ) : error ? (
                       <p className="text-[13px] leading-relaxed text-nimbus-negative">{error}</p>
@@ -118,6 +130,13 @@ export default function App() {
                           <p className="mt-1 text-[11px] text-nimbus-accent-bright">Thinking…</p>
                         )}
                       </div>
+                    ) : pendingSelection ? (
+                      <SelectionActions
+                        text={pendingSelection}
+                        onRun={(kind, label) => runTextAction(kind, label)}
+                        levelRef={levelRef}
+                        listening={state === 'listening'}
+                      />
                     ) : pendingCapture ? (
                       // Screen was captured — show it so it's unambiguous what
                       // Nimbus is about to look at.

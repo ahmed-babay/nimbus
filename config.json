@@ -11,9 +11,16 @@
   "hotkey": {
     "enabled": true,
     "accelerator": "CommandOrControl+Shift+Space",
-    "captureAccelerator": "CommandOrControl+Shift+S"
+    "captureAccelerator": "CommandOrControl+Shift+S",
+    "selectionAccelerator": "CommandOrControl+Shift+A"
   },
   "overlay": {
     "autoFadeMs": 8000
+  },
+  "voice": {
+    "endOfSpeechMs": 900
+  },
+  "textActions": {
+    "translateTo": "English"
   }
 }

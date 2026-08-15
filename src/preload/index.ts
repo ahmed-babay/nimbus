@@ -1,6 +1,11 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/ipc-channels'
-import type { NimbusConfig, NimbusResponse, SynthesizedSpeech } from '../shared/types'
+import type {
+  NimbusConfig,
+  NimbusResponse,
+  SynthesizedSpeech,
+  TextActionKind
+} from '../shared/types'
 
 const api = {
   getConfig: (): Promise<NimbusConfig> => ipcRenderer.invoke(IPC.GET_CONFIG),
@@ -19,6 +24,18 @@ const api = {
     ipcRenderer.on(IPC.SCREEN_CAPTURED, listener)
     return () => ipcRenderer.removeListener(IPC.SCREEN_CAPTURED, listener)
   },
+  onSelectionCaptured: (callback: (text: string) => void): (() => void) => {
+    const listener = (_event: unknown, text: string): void => callback(text)
+    ipcRenderer.on(IPC.SELECTION_CAPTURED, listener)
+    return () => ipcRenderer.removeListener(IPC.SELECTION_CAPTURED, listener)
+  },
+  runTextAction: (
+    kind: TextActionKind,
+    customInstruction?: string
+  ): Promise<{ result: string; canReplace: boolean }> =>
+    ipcRenderer.invoke(IPC.RUN_TEXT_ACTION, kind, customInstruction),
+  replaceSelection: (text: string): Promise<void> =>
+    ipcRenderer.invoke(IPC.REPLACE_SELECTION, text),
   onShowSettings: (callback: () => void): (() => void) => {
     const listener = (): void => callback()
     ipcRenderer.on(IPC.SHOW_SETTINGS, listener)
@@ -38,6 +55,12 @@ const api = {
   },
   openExternal: (url: string): void => {
     ipcRenderer.send(IPC.OPEN_EXTERNAL, url)
+  },
+  copyText: (text: string): void => {
+    ipcRenderer.send(IPC.COPY_TEXT, text)
+  },
+  setMouseIgnore: (ignore: boolean): void => {
+    ipcRenderer.send(IPC.SET_MOUSE_IGNORE, ignore)
   }
 }
 

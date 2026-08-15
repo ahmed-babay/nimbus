@@ -20,5 +20,15 @@ export const IPC = {
   /** renderer -> main: open a result link in the user's default browser */
   OPEN_EXTERNAL: 'nimbus:open-external',
   /** main -> renderer: screen captured; payload is a thumbnail data URI to display */
-  SCREEN_CAPTURED: 'nimbus:screen-captured'
+  SCREEN_CAPTURED: 'nimbus:screen-captured',
+  /** main -> renderer: text selected in another app is ready to act on */
+  SELECTION_CAPTURED: 'nimbus:selection-captured',
+  /** renderer -> main (invoke): run an action on the captured selection */
+  RUN_TEXT_ACTION: 'nimbus:run-text-action',
+  /** renderer -> main (invoke): paste a result back over the original selection */
+  REPLACE_SELECTION: 'nimbus:replace-selection',
+  /** renderer -> main: toggle click-through as the pointer enters/leaves the card */
+  SET_MOUSE_IGNORE: 'nimbus:set-mouse-ignore',
+  /** renderer -> main: put an answer on the clipboard */
+  COPY_TEXT: 'nimbus:copy-text'
 } as const

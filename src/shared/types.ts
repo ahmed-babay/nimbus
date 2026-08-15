@@ -120,6 +120,25 @@ export interface RadioCardData {
   query: string
 }
 
+export type TextActionKind =
+  | 'translate'
+  | 'summarize'
+  | 'explain'
+  | 'rewrite'
+  | 'grammar'
+  | 'custom'
+
+export interface SelectionCardData {
+  /** The text that was selected, for reference while reading the result. */
+  source: string
+  action: TextActionKind
+  /** Human-readable label of what was done, e.g. "Fixed grammar". */
+  actionLabel: string
+  result: string
+  /** False when the source window can no longer be targeted for paste-back. */
+  canReplace: boolean
+}
+
 export interface ScreenCardData {
   /** Data URI of what was captured, shown so it's clear what Nimbus saw. */
   thumbnail: string
@@ -136,6 +155,7 @@ export type ResponseCardData =
   | { type: 'music'; data: MusicCardData }
   | { type: 'radio'; data: RadioCardData }
   | { type: 'screen'; data: ScreenCardData }
+  | { type: 'selection'; data: SelectionCardData }
   | { type: 'text' }
 
 export interface SynthesizedSpeech {
@@ -144,7 +164,14 @@ export interface SynthesizedSpeech {
 }
 
 export interface NimbusResponse {
+  /** What gets read aloud — length-capped so it can't monologue. */
   speech: string
+  /**
+   * The complete answer when `speech` had to be shortened for TTS. Displaying
+   * and copying use this, so asking for something long (an email, a draft
+   * message) doesn't silently lose everything past the spoken portion.
+   */
+  fullText?: string
   card: ResponseCardData
 }
 
@@ -165,8 +192,20 @@ export interface NimbusConfig {
     accelerator: string
     /** Captures the screen, then listens for a question about it. */
     captureAccelerator: string
+    /** Grabs the highlighted text in the focused app and offers actions on it. */
+    selectionAccelerator: string
   }
   overlay: {
     autoFadeMs: number
+  }
+  voice: {
+    /** Quiet time before a turn is considered finished. Lower = snappier,
+     *  but tolerates shorter mid-sentence pauses. */
+    endOfSpeechMs: number
+  }
+  textActions: {
+    /** Target language for the Translate button. Speaking an instruction
+     *  ("translate to Arabic") overrides it per-use. */
+    translateTo: string
   }
 }

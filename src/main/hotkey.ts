@@ -25,7 +25,11 @@ function register(accelerator: string, label: string, handler: () => void): void
   console.log(`[hotkey] "${accelerator}" ${label}`)
 }
 
-export function registerHotkey(onTrigger: () => void, onCapture?: () => void): void {
+export function registerHotkey(
+  onTrigger: () => void,
+  onCapture?: () => void,
+  onSelection?: () => void
+): void {
   if (!config.hotkey.enabled) {
     console.log('[hotkey] disabled in config.json')
     return
@@ -34,6 +38,9 @@ export function registerHotkey(onTrigger: () => void, onCapture?: () => void): v
   register(config.hotkey.accelerator, 'opens Nimbus', onTrigger)
   if (onCapture) {
     register(config.hotkey.captureAccelerator, 'captures the screen', onCapture)
+  }
+  if (onSelection) {
+    register(config.hotkey.selectionAccelerator, 'acts on selected text', onSelection)
   }
 }
 
