@@ -21,6 +21,9 @@
     "endOfSpeechMs": 900,
     "speechRate": "+20%"
   },
+  "screenshot": {
+    "selectRegion": true
+  },
   "textActions": {
     "translateTo": "English"
   }

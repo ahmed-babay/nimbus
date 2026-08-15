@@ -7,7 +7,8 @@ import { registerHotkey, unregisterHotkey } from './hotkey'
 import { handleUtterance } from '../services'
 import { resetConversation, recordTurn } from '../services/conversation'
 import { askAboutScreen } from '../services/vision'
-import { captureScreen, type ScreenCapture } from './screen'
+import { captureDisplayImage, encodeCapture, type ScreenCapture } from './screen'
+import { pickRegion, type RegionChoice } from './region-picker'
 import { captureSelection, pasteIntoWindow, type CapturedSelection } from './selection'
 import { runTextAction } from '../services/text-actions'
 import type { TextActionKind } from '../shared/types'
@@ -191,8 +192,22 @@ app.whenReady().then(() => {
     async () => {
       if (!overlayWindow) return
       try {
-        // Capture before showing the overlay, so Nimbus isn't in its own shot.
-        pendingCapture = await captureScreen()
+        // Capture before anything is shown, so neither the overlay nor the
+        // region picker can appear in the shot.
+        const { image, bounds } = await captureDisplayImage()
+
+        let choice: RegionChoice = 'full'
+        if (config.screenshot.selectRegion) {
+          // Picker draws over the frozen capture, so the selection maps
+          // exactly onto what gets cropped.
+          const preview = `data:image/jpeg;base64,${image.toJPEG(70).toString('base64')}`
+          choice = await pickRegion(preview, bounds)
+          // Esc — no capture, no overlay.
+          if (choice === null) return
+        }
+
+        pendingCapture = encodeCapture(image, choice === 'full' ? undefined : choice)
+        pendingSelection = null
         showOverlay(overlayWindow)
         overlayWindow.webContents.send(IPC.SCREEN_CAPTURED, pendingCapture.thumbnail)
       } catch (err) {
