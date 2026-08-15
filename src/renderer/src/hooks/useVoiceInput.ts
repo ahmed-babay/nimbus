@@ -30,11 +30,22 @@ const ABS_CONTINUE_THRESHOLD = 5
 const START_MULTIPLIER = 1.8 // vs. calibrated floor, to decide talking *started*
 const CONTINUE_MULTIPLIER = 1.6 // lower bar to stay "still talking" (hysteresis)
 
-const SILENCE_MS = 1500 // auto-stop after this much continuous quiet
+// How long to wait for more speech before deciding the turn is over. This is
+// adaptive: early in an utterance someone is often still assembling the
+// sentence, so pauses get more room. Once they've been speaking for a while a
+// pause much more likely means "done", and waiting the full early window just
+// feels laggy.
+const SILENCE_MS_EARLY = 1300
+const SILENCE_MS_SETTLED = 900
+const SPEECH_SETTLED_MS = 1500 // speech duration after which the shorter window applies
+
 const MIN_RECORDING_MS = 500 // never cut off before this, avoids instant truncation
 const NO_SPEECH_TIMEOUT_MS = 7000 // give up if the user never starts talking
 const MAX_RECORDING_MS = 20000 // hard safety cap once they *are* talking
-const TAIL_PADDING_MS = 350 // keep recording briefly after silence so final words aren't clipped
+// Small margin so a trailing consonant isn't clipped. The hysteresis below
+// does most of that work, so this stays short — it's pure added latency.
+const TAIL_PADDING_MS = 150
+const POLL_MS = 60 // detection granularity; also the jitter floor on stopping
 // Opus runs ~3KB/s, so this is well under a second of speech — big enough to
 // reject a truncated container, small enough to keep genuine short answers.
 const MIN_UPLOAD_BYTES = 600
@@ -51,6 +62,9 @@ export interface UseVoiceInputOptions {
   onError?: (error: string) => void
   /** Live mic level, 0..1 — drives the waveform visualisation. */
   onLevel?: (level: number) => void
+  /** Overrides SILENCE_MS_SETTLED from config, so end-of-turn responsiveness
+   *  is tunable without editing code. */
+  endOfSpeechMs?: number
 }
 
 export interface VoiceInputControls {
@@ -63,7 +77,8 @@ export function useVoiceInput({
   onResult,
   onEnd,
   onError,
-  onLevel
+  onLevel,
+  endOfSpeechMs
 }: UseVoiceInputOptions): VoiceInputControls {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
@@ -205,6 +220,7 @@ export function useVoiceInput({
         const data = new Uint8Array(analyser.frequencyBinCount)
         const startedAt = Date.now()
         let lastLoudAt = Date.now()
+        let speechStartedAt = Date.now()
 
         // Calibrate against the actual room instead of a hardcoded level: a
         // fixed threshold clipped people with quiet mics, and treated fan
@@ -265,19 +281,28 @@ export function useVoiceInput({
 
           if (rms > threshold) {
             lastLoudAt = now
+            if (!speech.detected) speechStartedAt = now
             speech.detected = true
           }
 
           const quietFor = now - lastLoudAt
 
           if (speech.detected) {
-            if (elapsed > MIN_RECORDING_MS && quietFor > SILENCE_MS + TAIL_PADDING_MS) stop()
+            // Someone a few seconds into a sentence who goes quiet is very
+            // likely finished; someone who just started may still be
+            // assembling it. Shortening the window once they're settled is
+            // what makes the end of a turn feel immediate.
+            const settled = endOfSpeechMs ?? SILENCE_MS_SETTLED
+            const speakingFor = now - speechStartedAt
+            const silenceWindow =
+              speakingFor > SPEECH_SETTLED_MS ? settled : Math.max(settled, SILENCE_MS_EARLY)
+            if (elapsed > MIN_RECORDING_MS && quietFor > silenceWindow + TAIL_PADDING_MS) stop()
           } else if (elapsed > NO_SPEECH_TIMEOUT_MS) {
             // Nothing said at all — close the turn promptly instead of
             // holding the mic open for the full cap.
             stop()
           }
-        }, 100)
+        }, POLL_MS)
 
         silenceTimerRef.current = interval
         stopTimeoutRef.current = setTimeout(() => {
@@ -288,7 +313,7 @@ export function useVoiceInput({
         const message = err instanceof Error ? err.message : 'Microphone access was denied.'
         onError?.(message)
       })
-  }, [isSupported, onResult, onEnd, onError, onLevel, cleanup, stop])
+  }, [isSupported, onResult, onEnd, onError, onLevel, endOfSpeechMs, cleanup, stop])
 
   return { start, stop, isSupported }
 }
