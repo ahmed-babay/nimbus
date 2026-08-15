@@ -18,5 +18,7 @@ export const IPC = {
   /** main -> renderer: a token chunk of the answer as the model generates it */
   SPEECH_CHUNK: 'nimbus:speech-chunk',
   /** renderer -> main: open a result link in the user's default browser */
-  OPEN_EXTERNAL: 'nimbus:open-external'
+  OPEN_EXTERNAL: 'nimbus:open-external',
+  /** main -> renderer: screen captured; payload is a thumbnail data URI to display */
+  SCREEN_CAPTURED: 'nimbus:screen-captured'
 } as const

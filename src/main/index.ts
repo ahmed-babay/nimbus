@@ -5,7 +5,9 @@ import { createTray } from './tray'
 import { createOverlayWindow, showOverlay, hideOverlay } from './window'
 import { registerHotkey, unregisterHotkey } from './hotkey'
 import { handleUtterance } from '../services'
-import { resetConversation } from '../services/conversation'
+import { resetConversation, recordTurn } from '../services/conversation'
+import { askAboutScreen } from '../services/vision'
+import { captureScreen, type ScreenCapture } from './screen'
 import { transcribeAudio } from '../services/whisper'
 import { synthesizeSpeech } from '../services/tts'
 import { IPC } from '../shared/ipc-channels'
@@ -22,14 +24,37 @@ dotenv.config()
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
 
 let overlayWindow: BrowserWindow | null = null
+// Held only between the capture hotkey and the question that follows it, then
+// cleared — the screenshot is never retained beyond the turn that uses it.
+let pendingCapture: ScreenCapture | null = null
 
 function registerIpcHandlers(): void {
   ipcMain.handle(IPC.TRANSCRIPT, async (event, utterance: string): Promise<NimbusResponse> => {
     // Forward tokens as the model produces them, so the overlay can show the
     // answer building up instead of sitting on "Thinking…" until it's done.
-    const response = await handleUtterance(utterance, (chunk) => {
+    const stream = (chunk: string): void => {
       if (!event.sender.isDestroyed()) event.sender.send(IPC.SPEECH_CHUNK, chunk)
-    })
+    }
+
+    // A screenshot is waiting: this question is about the screen, so answer
+    // from the image instead of routing through the normal intent pipeline.
+    if (pendingCapture) {
+      const capture = pendingCapture
+      pendingCapture = null
+      try {
+        const speech = await askAboutScreen(utterance, capture, stream)
+        recordTurn('user', utterance)
+        recordTurn('model', speech)
+        return { speech, card: { type: 'screen', data: { thumbnail: capture.thumbnail } } }
+      } catch (err) {
+        return {
+          speech: err instanceof Error ? err.message : "I couldn't read that screenshot.",
+          card: { type: 'text' }
+        }
+      }
+    }
+
+    const response = await handleUtterance(utterance, stream)
 
     // "Play X" means play it — open the video straight away in the default
     // browser, which uses YouTube's own player and the user's own session.
@@ -46,6 +71,8 @@ function registerIpcHandlers(): void {
 
   ipcMain.on(IPC.RESET_CONVERSATION, () => {
     resetConversation()
+    // Closing the overlay drops any screenshot that was never asked about.
+    pendingCapture = null
   })
 
   ipcMain.on(IPC.OPEN_EXTERNAL, (_event, url: string) => {
@@ -107,9 +134,24 @@ app.whenReady().then(() => {
     onQuit: () => app.quit()
   })
 
-  registerHotkey(() => {
-    if (overlayWindow) showOverlay(overlayWindow)
-  })
+  registerHotkey(
+    () => {
+      pendingCapture = null
+      if (overlayWindow) showOverlay(overlayWindow)
+    },
+    async () => {
+      if (!overlayWindow) return
+      try {
+        // Capture before showing the overlay, so Nimbus isn't in its own shot.
+        pendingCapture = await captureScreen()
+        showOverlay(overlayWindow)
+        overlayWindow.webContents.send(IPC.SCREEN_CAPTURED, pendingCapture.thumbnail)
+      } catch (err) {
+        console.error('[screen] capture failed:', err instanceof Error ? err.message : err)
+        pendingCapture = null
+      }
+    }
+  )
 
   app.on('browser-window-created', (_event, window) => {
     optimizer.watchWindowShortcuts(window)

@@ -120,6 +120,11 @@ export interface RadioCardData {
   query: string
 }
 
+export interface ScreenCardData {
+  /** Data URI of what was captured, shown so it's clear what Nimbus saw. */
+  thumbnail: string
+}
+
 export type ResponseCardData =
   | { type: 'weather'; data: WeatherCardData }
   | { type: 'stock'; data: StockCardData }
@@ -130,6 +135,7 @@ export type ResponseCardData =
   | { type: 'entity'; data: EntityCardData }
   | { type: 'music'; data: MusicCardData }
   | { type: 'radio'; data: RadioCardData }
+  | { type: 'screen'; data: ScreenCardData }
   | { type: 'text' }
 
 export interface SynthesizedSpeech {
@@ -157,6 +163,8 @@ export interface NimbusConfig {
   hotkey: {
     enabled: boolean
     accelerator: string
+    /** Captures the screen, then listens for a question about it. */
+    captureAccelerator: string
   }
   overlay: {
     autoFadeMs: number

@@ -18,6 +18,8 @@ export interface NimbusOverlayState {
   transcript: string | null
   /** Partial answer text while the model is still generating. */
   streamingText: string
+  /** Screenshot captured and awaiting a question. */
+  pendingCapture: string | null
   config: NimbusConfig | null
   /** In-app radio playback state and controls. */
   radio: RadioPlayerControls
@@ -37,6 +39,8 @@ export function useNimbus(): NimbusOverlayState {
   const [transcript, setTranscript] = useState<string | null>(null)
   /** Answer text accumulating live from the model, shown while thinking. */
   const [streamingText, setStreamingText] = useState('')
+  /** Screenshot awaiting a question about it, shown above the waveform. */
+  const [pendingCapture, setPendingCapture] = useState<string | null>(null)
   const [config, setConfig] = useState<NimbusConfig | null>(null)
 
   const radio = useRadioPlayer()
@@ -111,6 +115,7 @@ export function useNimbus(): NimbusOverlayState {
     setResponse(null)
     setError(null)
     setTranscript(null)
+    setPendingCapture(null)
     // Each time the overlay closes the conversation ends, so the next
     // session doesn't inherit stale context from an old topic.
     window.nimbus.resetConversation()
@@ -277,6 +282,7 @@ export function useNimbus(): NimbusOverlayState {
         .sendTranscript(finalTranscript)
         .then((res) => {
           setStreamingText('')
+          setPendingCapture(null)
           setResponse(res)
           setState('speaking')
           // Queue the stream rather than starting it now — it would play over
@@ -360,6 +366,14 @@ export function useNimbus(): NimbusOverlayState {
   }, [])
 
   useEffect(() => {
+    return window.nimbus.onScreenCaptured((thumbnail) => {
+      setPendingCapture(thumbnail)
+      setResponse(null)
+      setError(null)
+    })
+  }, [])
+
+  useEffect(() => {
     const unsubscribeWake = window.nimbus.onWake(() => {
       clearFadeTimer()
       setMode('assistant')
@@ -400,6 +414,7 @@ export function useNimbus(): NimbusOverlayState {
     error,
     transcript,
     streamingText,
+    pendingCapture,
     config,
     radio,
     levelRef,

@@ -14,6 +14,11 @@ const api = {
     ipcRenderer.on(IPC.SPEECH_CHUNK, listener)
     return () => ipcRenderer.removeListener(IPC.SPEECH_CHUNK, listener)
   },
+  onScreenCaptured: (callback: (thumbnail: string) => void): (() => void) => {
+    const listener = (_event: unknown, thumbnail: string): void => callback(thumbnail)
+    ipcRenderer.on(IPC.SCREEN_CAPTURED, listener)
+    return () => ipcRenderer.removeListener(IPC.SCREEN_CAPTURED, listener)
+  },
   onShowSettings: (callback: () => void): (() => void) => {
     const listener = (): void => callback()
     ipcRenderer.on(IPC.SHOW_SETTINGS, listener)
