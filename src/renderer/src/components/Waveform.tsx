@@ -36,9 +36,18 @@ export function Waveform({ levelRef, barCount = 28 }: WaveformProps) {
           const value = history[i]
           // Taper the edges so the waveform fades out rather than clipping.
           const edgeFade = Math.sin((i / (bars.length - 1)) * Math.PI) * 0.35 + 0.65
-          const height = Math.max(2, value * 26 * edgeFade)
-          bars[i].style.height = `${height}px`
-          bars[i].style.opacity = `${0.25 + Math.min(1, value * 2) * 0.75}`
+          // Quantise to whole blocks — a smooth bar reads as a modern meter,
+          // stepped blocks read as a cabinet VU display.
+          const steps = Math.max(1, Math.round((value * 26 * edgeFade) / 4))
+          bars[i].style.height = `${steps * 4}px`
+          bars[i].style.opacity = `${0.3 + Math.min(1, value * 2) * 0.7}`
+          // Colour by level, like an arcade level meter topping out.
+          bars[i].style.background =
+            steps >= 5
+              ? 'var(--color-nimbus-yellow)'
+              : steps >= 3
+                ? 'var(--color-nimbus-accent)'
+                : 'var(--color-nimbus-cyan)'
         }
       }
       frame = requestAnimationFrame(tick)
@@ -52,8 +61,8 @@ export function Waveform({ levelRef, barCount = 28 }: WaveformProps) {
       {Array.from({ length: barCount }).map((_, i) => (
         <span
           key={i}
-          className="w-[2px] rounded-full bg-gradient-to-t from-nimbus-accent-deep to-nimbus-accent-bright"
-          style={{ height: 2, opacity: 0.25 }}
+          className="w-[3px] bg-nimbus-cyan"
+          style={{ height: 4, opacity: 0.3 }}
         />
       ))}
     </div>
