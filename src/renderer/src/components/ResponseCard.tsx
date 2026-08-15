@@ -13,6 +13,7 @@ import type {
   NimbusResponse,
   RadioCardData,
   ResponseCardData,
+  ScreenCardData,
   SearchCardData,
   StockCardData,
   WeatherCardData
@@ -68,6 +69,8 @@ function CardBody({ card, radio }: { card: ResponseCardData; radio: RadioPlayerC
       return <MusicBody data={card.data} />
     case 'radio':
       return <RadioBody data={card.data} radio={radio} />
+    case 'screen':
+      return <ScreenBody data={card.data} />
     default:
       return null
   }
@@ -192,6 +195,22 @@ function MusicBody({ data }: { data: MusicCardData }) {
         </div>
       </div>
     </button>
+  )
+}
+
+/** Shows the exact frame the answer was based on. */
+function ScreenBody({ data }: { data: ScreenCardData }) {
+  return (
+    <motion.div {...mediaIn} className="mt-2.5">
+      <img
+        src={data.thumbnail}
+        alt="Captured screen"
+        className="w-full rounded-lg object-cover shadow-lg ring-1 ring-white/15"
+      />
+      <div className="mt-1.5 text-[10px] uppercase tracking-[0.14em] text-nimbus-text-dim">
+        Answered from this screenshot
+      </div>
+    </motion.div>
   )
 }
 
