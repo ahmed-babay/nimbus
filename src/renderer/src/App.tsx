@@ -36,6 +36,8 @@ export default function App() {
     isOpen,
     submitText,
     onTypingStart,
+    micEnabled,
+    toggleMic,
     dismiss
   } = useNimbus()
   // Paced reveal: the model streams in a few big chunks, which otherwise
@@ -103,7 +105,12 @@ export default function App() {
               <SettingsPanel config={config} onClose={dismiss} />
             ) : (
               <div className="px-4 py-3.5">
-                <Header state={state} onClose={dismiss} />
+                <Header
+                  state={state}
+                  onClose={dismiss}
+                  micEnabled={micEnabled}
+                  onToggleMic={toggleMic}
+                />
 
                 <div className="mt-2.5 flex items-start gap-3.5">
                   <Orb state={state} levelRef={levelRef} />
@@ -181,8 +188,7 @@ export default function App() {
                       // so rather than showing a dead "listening" waveform.
                       <div className="flex h-14 flex-col justify-center">
                         <p className="arcade-type text-[9px] text-nimbus-text-dim">
-                          &gt; Type below, or press {config?.hotkey.accelerator ?? 'the hotkey'} to
-                          talk
+                          &gt; {micEnabled ? 'Type below, or speak' : 'Voice off — type below'}
                         </p>
                       </div>
                     )}
@@ -226,7 +232,17 @@ export default function App() {
   )
 }
 
-function Header({ state, onClose }: { state: NimbusState; onClose: () => void }) {
+function Header({
+  state,
+  onClose,
+  micEnabled,
+  onToggleMic
+}: {
+  state: NimbusState
+  onClose: () => void
+  micEnabled: boolean
+  onToggleMic: () => void
+}) {
   return (
     <div className="flex items-center justify-between">
       <div className="flex items-center gap-2">
@@ -244,13 +260,27 @@ function Header({ state, onClose }: { state: NimbusState; onClose: () => void })
           {STATE_LABEL[state]}
         </span>
       </div>
-      <button
-        onClick={onClose}
-        aria-label="Close Nimbus"
-        className="arcade-type -mr-1 rounded border border-nimbus-border px-1.5 py-0.5 text-[9px] text-nimbus-text-dim transition-colors hover:bg-nimbus-accent/20 hover:text-nimbus-text"
-      >
-        Esc
-      </button>
+      <div className="flex items-center gap-1.5">
+        <button
+          onClick={onToggleMic}
+          aria-label={micEnabled ? 'Turn off voice input' : 'Turn on voice input'}
+          title={micEnabled ? 'Voice on — click to mute' : 'Voice off — click to enable'}
+          className={`arcade-type rounded border px-1.5 py-0.5 text-[9px] transition-colors ${
+            micEnabled
+              ? 'border-nimbus-cyan/50 text-nimbus-cyan hover:bg-nimbus-cyan/15'
+              : 'border-nimbus-border text-nimbus-text-dim hover:bg-white/[0.06]'
+          }`}
+        >
+          {micEnabled ? 'Mic on' : 'Mic off'}
+        </button>
+        <button
+          onClick={onClose}
+          aria-label="Close Nimbus"
+          className="arcade-type -mr-1 rounded border border-nimbus-border px-1.5 py-0.5 text-[9px] text-nimbus-text-dim transition-colors hover:bg-nimbus-accent/20 hover:text-nimbus-text"
+        >
+          Esc
+        </button>
+      </div>
     </div>
   )
 }
