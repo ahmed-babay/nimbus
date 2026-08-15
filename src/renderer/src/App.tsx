@@ -22,6 +22,7 @@ export default function App() {
     error,
     transcript,
     streamingText,
+    pendingCapture,
     config,
     radio,
     levelRef,
@@ -116,6 +117,25 @@ export default function App() {
                         ) : (
                           <p className="mt-1 text-[11px] text-nimbus-accent-bright">Thinking…</p>
                         )}
+                      </div>
+                    ) : pendingCapture ? (
+                      // Screen was captured — show it so it's unambiguous what
+                      // Nimbus is about to look at.
+                      <div className="flex items-center gap-3">
+                        <motion.img
+                          initial={{ opacity: 0, scale: 0.94 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+                          src={pendingCapture}
+                          alt="Captured screen"
+                          className="h-14 w-24 shrink-0 rounded-md object-cover object-top ring-1 ring-nimbus-accent/40"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <Waveform levelRef={levelRef} barCount={18} />
+                          <p className="mt-1 text-[11px] text-nimbus-accent-bright">
+                            Screen captured — ask about it
+                          </p>
+                        </div>
                       </div>
                     ) : (
                       <div className="flex h-14 flex-col justify-center gap-1">
