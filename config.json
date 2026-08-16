@@ -24,7 +24,7 @@
   "screenshot": {
     "selectRegion": true
   },
-  "textActions": {
-    "translateTo": "English"
+  "language": {
+    "native": "English"
   }
 }

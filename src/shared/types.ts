@@ -126,6 +126,7 @@ export type TextActionKind =
   | 'explain'
   | 'rewrite'
   | 'grammar'
+  | 'reply'
   | 'custom'
 
 export interface SelectionCardData {
@@ -209,9 +210,12 @@ export interface NimbusConfig {
     /** Drag to pick a region instead of grabbing the whole display. */
     selectRegion: boolean
   }
-  textActions: {
-    /** Target language for the Translate button. Speaking an instruction
-     *  ("translate to Arabic") overrides it per-use. */
-    translateTo: string
+  language: {
+    /**
+     * The language you think in. Explanations, summaries and translations
+     * arrive in this; replies are drafted in whatever language the original
+     * text was written in.
+     */
+    native: string
   }
 }
