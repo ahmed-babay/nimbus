@@ -3,20 +3,34 @@ import type { StreamHandler } from './gemini'
 import type { TextActionKind } from '../shared/types'
 import config from '../../config.json'
 
-const translateTarget = config.textActions?.translateTo || 'English'
+const native = config.language?.native || 'English'
 
 const INSTRUCTIONS: Record<Exclude<TextActionKind, 'custom'>, string> = {
   translate:
-    `Translate the text into ${translateTarget}. If it is already in ${translateTarget}, ` +
-    'translate it into English instead. Output only the translation.',
+    `Translate the text into ${native}. If it is already in ${native}, return it unchanged. ` +
+    'Output only the translation.',
   summarize:
-    'Summarise the text in at most three short sentences, keeping concrete details like names, numbers and dates. Output only the summary.',
+    `Summarise the text in at most three short sentences, in ${native}, keeping concrete ` +
+    'details like names, numbers, dates and amounts. Output only the summary.',
   explain:
-    'Explain what the text means in plain language, as if to a smart person unfamiliar with the subject. Three sentences maximum.',
+    `Explain in ${native} what the text means and what it is asking of the reader, in plain ` +
+    'language. If it states a deadline, an amount of money, or an action the reader must ' +
+    'take, say so explicitly. Four sentences maximum.',
   rewrite:
-    'Rewrite the text so it reads clearly and professionally. Preserve the meaning, tone and approximate length. Output only the rewritten text.',
+    'Rewrite the text so it reads clearly and professionally, in the same language as the ' +
+    'original. Preserve the meaning, tone and approximate length. Output only the rewritten text.',
   grammar:
-    'Correct spelling, grammar and punctuation. Change nothing else — keep the wording, tone and formatting as close to the original as possible. Output only the corrected text.'
+    'Correct spelling, grammar and punctuation, keeping the original language. Change nothing ' +
+    'else — keep the wording, tone and formatting as close to the original as possible. ' +
+    'Output only the corrected text.',
+  // The point of this one: you understand the letter in your language, but the
+  // reply has to go back in theirs.
+  reply:
+    'Draft a reply to this message or letter. Write the reply in the SAME language as the ' +
+    'original text, not in any other language. Match its level of formality — formal and ' +
+    'polite for official or business correspondence. Keep it concise and to the point. ' +
+    'Use [square brackets] for anything only the sender can fill in, such as names, dates, ' +
+    'reference numbers or account details. Output only the reply itself.'
 }
 
 // Rewrites replace what the user had, so the output must be the text itself
@@ -28,7 +42,10 @@ markdown fences. Preserve the original line breaks and list structure where they
 
 Never pad the output to satisfy an instruction the text can't support — if asked for more
 items, sections or detail than the content actually contains, produce only what genuinely
-follows from it. Repeating a line to reach a requested count is always wrong.`
+follows from it. Repeating a line to reach a requested count is always wrong.
+
+The user's own language is ${native}. Text they are working with is often in another
+language; keep the two straight and follow whichever the instruction asks for.`
 
 let client: GoogleGenerativeAI | null = null
 
@@ -48,9 +65,7 @@ export async function runTextAction(
   onChunk?: StreamHandler
 ): Promise<string> {
   const instruction =
-    kind === 'custom'
-      ? (customInstruction ?? 'Improve this text.')
-      : INSTRUCTIONS[kind]
+    kind === 'custom' ? (customInstruction ?? 'Improve this text.') : INSTRUCTIONS[kind]
 
   const model = getClient().getGenerativeModel({
     model: process.env.GEMINI_MODEL || 'gemini-flash-lite-latest',
