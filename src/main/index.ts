@@ -11,6 +11,7 @@ import { registerHotkey, unregisterHotkey } from './hotkey'
 import { handleUtterance } from '../services'
 import { resetConversation, recordTurn } from '../services/conversation'
 import { askAboutScreen } from '../services/vision'
+import { looksLikePaperwork, readDocument } from '../services/paperwork'
 import { captureDisplayImage, encodeCapture, type ScreenCapture } from './screen'
 import { pickRegion, type RegionChoice } from './region-picker'
 import { captureSelection, pasteIntoWindow, type CapturedSelection } from './selection'
@@ -70,6 +71,36 @@ function registerIpcHandlers(): void {
     if (pendingCapture) {
       const capture = pendingCapture
       pendingCapture = null
+
+      // A letter or form gets the structured reading rather than prose: what
+      // it wants, by when, how much. Same explicit capture, different answer.
+      if (looksLikePaperwork(utterance)) {
+        try {
+          const data = await withDeadline(
+            readDocument(utterance, capture),
+            TURN_DEADLINE_MS,
+            'Reading the document'
+          )
+          const spoken = [
+            data.summary,
+            data.actionRequired && `You need to: ${data.actionRequired}.`,
+            data.deadlineLabel && `Deadline: ${data.deadlineLabel}.`
+          ]
+            .filter(Boolean)
+            .join(' ')
+          recordTurn('user', utterance)
+          recordTurn('model', spoken)
+          return {
+            speech: spoken,
+            card: { type: 'paperwork', data: { ...data, thumbnail: capture.thumbnail } }
+          }
+        } catch (err) {
+          console.error('[paperwork] falling back to a plain reading:', err)
+          // Structured extraction failed — a prose answer is still useful, so
+          // fall through rather than losing the capture entirely.
+        }
+      }
+
       try {
         const speech = await withDeadline(
           askAboutScreen(utterance, capture, stream),
