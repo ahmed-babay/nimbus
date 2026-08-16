@@ -52,12 +52,15 @@ const PROVIDER_LABELS: Record<AiProvider, string> = {
 }
 
 /**
- * Providers whose answer path is actually implemented. Keys and model listing
- * work for all three, but until a provider's adapter exists, choosing it would
- * store a preference that nothing acts on — a settings screen that lies is
- * worse than one that admits a gap.
+ * Providers whose answer path is implemented. All three go through
+ * `src/services/llm.ts`, so switching is a setting rather than a rewrite.
+ *
+ * Only Gemini has been exercised end to end here; OpenAI and Anthropic are
+ * built to their documented APIs and verified as far as authentication, but
+ * have not been run against a live paid key. Failures surface as a spoken
+ * error rather than a wrong answer.
  */
-const WIRED_PROVIDERS: AiProvider[] = ['gemini']
+const WIRED_PROVIDERS: AiProvider[] = ['gemini', 'openai', 'anthropic']
 
 /**
  * Lets someone run Nimbus without ever creating a `.env` file.
@@ -143,7 +146,7 @@ export function KeySettings() {
             <button
               key={which}
               disabled={lockedByEnv || !wired}
-              title={wired ? undefined : 'Key and model list work; answers not switched over yet'}
+              title={wired ? undefined : 'Not available yet'}
               onClick={() => chooseProvider(which)}
               className={`flex-1 rounded-lg border px-2 py-1 text-[10.5px] transition-colors disabled:opacity-40 ${
                 provider === which
@@ -152,7 +155,6 @@ export function KeySettings() {
               }`}
             >
               {PROVIDER_LABELS[which]}
-              {!wired && <span className="ml-1 text-[8px] text-nimbus-yellow">soon</span>}
             </button>
           )
         })}
