@@ -7,6 +7,8 @@ import { getTrendingRepos } from './github'
 import { webSearch } from './search'
 import { research } from './research'
 import { tryIllustrate } from './illustrate'
+import { addReminder, cancelReminders, pendingReminders } from './reminders'
+import { planDepartureAlarm } from './departure-alarm'
 import {
   forgetFacts,
   getFacts,
@@ -48,6 +50,16 @@ function capSpokenLength(text: string): string {
   const trimmed = lastStop > MAX_SPOKEN_CHARS * 0.5 ? clipped.slice(0, lastStop + 1) : clipped
   console.warn(`[nimbus] response capped from ${text.length} to ${trimmed.length} chars`)
   return trimmed
+}
+
+/** "in 20 minutes" / "at 18:00" — how a new reminder is confirmed aloud. */
+function describeWhen(at: Date): string {
+  const minutes = Math.round((at.getTime() - Date.now()) / 60_000)
+  if (minutes <= 1) return "I'll tell you in a moment"
+  if (minutes < 90) return `I'll tell you in ${minutes} minutes`
+  const clock = at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  const sameDay = at.toDateString() === new Date().toDateString()
+  return `I'll tell you at ${clock}${sameDay ? '' : ` on ${at.toLocaleDateString([], { weekday: 'long' })}`}`
 }
 
 /** Card shown after storing or dropping a fact: the profile as it now stands. */
@@ -229,6 +241,59 @@ async function runIntent(
         return {
           speech: `Got it — I'll remember that.`,
           card: { type: 'memory', data: memoryCard('') }
+        }
+      }
+
+      case 'remind': {
+        if (params.cancel !== undefined && !params.task && !params.when && !params.leaveFor) {
+          const cancelled = cancelReminders(params.cancel)
+          return {
+            speech:
+              cancelled.length > 0
+                ? `Cancelled ${cancelled.length === 1 ? 'it' : `${cancelled.length} reminders`}.`
+                : "You don't have a reminder like that.",
+            card: { type: 'reminder', data: { created: null, pending: pendingReminders() } }
+          }
+        }
+
+        // "Tell me when to leave" — worked out from the timetable, not a clock
+        // time the user had to know in advance.
+        if (params.leaveFor) {
+          const alarm = await planDepartureAlarm(params.leaveFor, params.from)
+          const created = addReminder({
+            at: alarm.at,
+            text: alarm.text,
+            departure: alarm.departure
+          })
+          const leaveIn = Math.max(
+            0,
+            Math.round((new Date(alarm.at).getTime() - Date.now()) / 60_000)
+          )
+          return {
+            speech: `The ${alarm.departure.line} leaves at ${alarm.departure.departs}. I'll tell you to go in ${leaveIn} minutes.`,
+            card: { type: 'reminder', data: { created, pending: pendingReminders() } }
+          }
+        }
+
+        if (!params.task && !params.when) {
+          const pending = pendingReminders()
+          return {
+            speech:
+              pending.length > 0
+                ? `You have ${pending.length} reminder${pending.length === 1 ? '' : 's'} coming up.`
+                : "You don't have any reminders set.",
+            card: { type: 'reminder', data: { created: null, pending } }
+          }
+        }
+
+        const at = new Date(params.when ?? '')
+        if (Number.isNaN(at.getTime())) {
+          throw new Error("I didn't catch when you want to be reminded.")
+        }
+        const created = addReminder({ at: at.toISOString(), text: params.task || 'Reminder.' })
+        return {
+          speech: `Right — ${describeWhen(at)}.`,
+          card: { type: 'reminder', data: { created, pending: pendingReminders() } }
         }
       }
 

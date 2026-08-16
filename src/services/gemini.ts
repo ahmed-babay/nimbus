@@ -98,6 +98,18 @@ the relevant parameter for it, leaving the others empty:
   "Remind me…" is not automatically recall: "remind me what the weather is"
   wants today's weather, not something said before. Use "recall" only when
   they are asking about a past conversation.
+- "remind": asking to be told something later, or asking what reminders exist.
+  -> params.task (what to remind them about, phrased as the spoken line:
+     "call the landlord". Omit when they're just asking what's pending.)
+  -> params.when (ISO 8601 datetime for when it should fire — work it out from
+     the current time given below, so "in 20 minutes" and "at 6pm" both become
+     a real timestamp)
+  -> params.leaveFor (set INSTEAD of params.when when they want to be told when
+     to *set off* somewhere rather than at a clock time — "tell me when I need
+     to leave for Frankfurt", "let me know when to leave to catch the last
+     train to Wiesbaden". Give the destination.)
+  -> params.cancel (set when they want a reminder dropped — the phrase
+     identifying it, or empty text to cancel all of them)
 - "chat": only for things needing no external information at all — greetings,
   small talk, jokes, opinions, or rephrasing/reasoning about what was already said.
 
@@ -150,6 +162,9 @@ const CLASSIFY_SCHEMA: GenerationConfig = {
           topic: { type: SchemaType.STRING },
           fact: { type: SchemaType.STRING },
           forget: { type: SchemaType.STRING },
+          task: { type: SchemaType.STRING },
+          leaveFor: { type: SchemaType.STRING },
+          cancel: { type: SchemaType.STRING },
           mode: {
             type: SchemaType.STRING,
             enum: ['driving', 'cycling', 'walking', 'transit'],
