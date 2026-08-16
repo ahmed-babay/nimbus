@@ -398,9 +398,11 @@ The limitation to know about: everyone on the far end is one speaker called "The
 Splitting three colleagues out of one mixed stream isn't possible here, and guessing would
 produce a transcript that is confidently wrong about who said what.
 
-The transcript builds on screen while it records, so you can see it working rather than
-finding out at the end that it wasn't. Nothing is written to disk unless you press **Save to
-a file** and choose where. **Summarise** returns what was decided, what someone now has to
+The transcript is **collapsed while recording** — during a meeting the screen belongs to the
+meeting, and live captions unrolling over the call are in the way. What stays visible is
+proof of life: that it's running, how long for, and how many lines it has heard. It opens by
+itself once you stop, which is when the transcript becomes the point. Nothing is written to
+disk unless you press **Save to a file** and choose where. **Summarise** returns what was decided, what someone now has to
 do, and what was left open — all four fields are required of the model, because with only
 the summary required it returned an empty actions list for a transcript that plainly
 contained three, and buried one in the prose instead.
@@ -413,9 +415,18 @@ bottom of the screen. Nothing is spoken, the microphone is never opened, and no 
 — a sound effect every few seconds during a film would be unbearable.
 
 **This is delayed subtitling, not simultaneous interpretation.** A phrase has to finish
-before it can be transcribed, so a line lands roughly one phrase behind the audio plus about
-half a second. Measured end to end on German broadcast speech: 280-500ms to transcribe,
+before it can be transcribed, so a line lands roughly one phrase behind the audio plus the
+round trip. Measured end to end on German broadcast speech: 280-500ms to transcribe,
 45-900ms to translate.
+
+Subtitles cut audio into much shorter pieces than meetings do (1.1s minimum, 3.5s maximum,
+against 2.5s/7s), which is a deliberate trade of transcription context for lag. Measured on
+the same clip, that roughly doubled the number of lines — 3 to 6 — while the delay after a
+phrase ends stayed at about 800ms. That 800ms is the network round trip and it is the floor:
+shortening the pieces makes text *track* the speaker instead of arriving in paragraphs, but
+nothing short of running the models locally makes a line appear while the word is still being
+said. The cost is slightly more fragmentation, since a sentence spoken without pauses now
+gets split across two lines.
 
 Three things were found by measurement here, and each one is load-bearing:
 
