@@ -9,6 +9,7 @@ import { research } from './research'
 import { tryIllustrate } from './illustrate'
 import { addReminder, cancelReminders, pendingReminders } from './reminders'
 import { planDepartureAlarm } from './departure-alarm'
+import { buildBriefing } from './briefing'
 import {
   forgetFacts,
   getFacts,
@@ -295,6 +296,35 @@ async function runIntent(
           speech: `Right — ${describeWhen(at)}.`,
           card: { type: 'reminder', data: { created, pending: pendingReminders() } }
         }
+      }
+
+      case 'briefing': {
+        const data = await buildBriefing()
+        if (!data.weather && !data.commute && !data.news && data.reminders.length === 0) {
+          throw new Error("I couldn't put a briefing together — nothing was reachable.")
+        }
+        // Only the parts that came back are described, so a failed section is
+        // simply absent rather than being apologised for.
+        const speech = await formatResponse(
+          'briefing',
+          utterance,
+          {
+            weather: data.weather && {
+              city: data.weather.city,
+              temp: data.weather.temp,
+              condition: data.weather.condition
+            },
+            nextDepartures: data.commute?.journeys.slice(0, 2).map((journey) => ({
+              departs: journey.departs,
+              line: journey.legs[0]?.line,
+              to: data.commute?.to
+            })),
+            reminders: data.reminders.map((reminder) => reminder.text),
+            headlines: data.news?.articles.map((article) => article.title)
+          },
+          onChunk
+        )
+        return { speech, card: { type: 'briefing', data } }
       }
 
       case 'recall': {

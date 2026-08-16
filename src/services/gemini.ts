@@ -24,6 +24,7 @@ const VALID_INTENTS: NimbusIntent[] = [
   'remember',
   'recall',
   'alarm',
+  'briefing',
   'chat'
 ]
 
@@ -111,6 +112,11 @@ the relevant parameter for it, leaving the others empty:
      train to Wiesbaden". Give the destination.)
   -> params.cancel (set when they want a reminder dropped — the phrase
      identifying it, or empty text to cancel all of them)
+- "briefing": asking for the overall picture of their day rather than one
+  fact — "what does my day look like", "brief me", "catch me up", "what's
+  happening today", "good morning" said as a request rather than a greeting.
+  No parameters. Use this only for the *combined* rundown; "what's the weather"
+  on its own is still "weather".
 - "chat": only for things needing no external information at all — greetings,
   small talk, jokes, opinions, or rephrasing/reasoning about what was already said.
 
