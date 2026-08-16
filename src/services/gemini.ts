@@ -1,5 +1,5 @@
 import { SchemaType, type GenerationConfig } from '@google/generative-ai'
-import { buildModel, withModelFallback } from './gemini-client'
+import { complete, streamComplete } from './llm'
 import type { IntentClassification, NimbusIntent } from '../shared/types'
 import { getHistoryAsContents, getHistorySummary } from './conversation'
 import { currentTimeContext } from './now'
@@ -10,6 +10,20 @@ import { factsContext } from './memory'
 // If recognition quality is ever a problem, a free-tier Whisper API call
 // could replace SpeechRecognition here without touching the rest of the
 // pipeline — swap the transcript source, keep everything downstream as-is.
+
+/**
+ * Providers without constrained decoding sometimes wrap JSON in a code fence
+ * despite being told not to. Gemini never does, but the same parse path now
+ * serves all three.
+ */
+function stripFences(text: string): string {
+  const trimmed = text.trim()
+  if (!trimmed.startsWith('```')) return trimmed
+  return trimmed
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/, '')
+    .trim()
+}
 
 const VALID_INTENTS: NimbusIntent[] = [
   'weather',
@@ -224,12 +238,15 @@ export async function classifyIntent(utterance: string): Promise<IntentClassific
     .filter((part) => part !== '')
     .join('\n')
 
-  const result = await withModelFallback((name) =>
-    buildModel(name, systemInstruction, CLASSIFY_SCHEMA).generateContent(utterance)
-  )
+  const text = await complete({
+    system: systemInstruction,
+    messages: [{ role: 'user', text: utterance }],
+    jsonSchema: CLASSIFY_SCHEMA.responseSchema as unknown as Record<string, unknown>,
+    temperature: 0
+  })
 
   try {
-    const parsed = JSON.parse(result.response.text())
+    const parsed = JSON.parse(stripFences(text))
     const intent: NimbusIntent = VALID_INTENTS.includes(parsed.intent) ? parsed.intent : 'chat'
     const rawParams: Record<string, string> =
       parsed.params && typeof parsed.params === 'object' ? parsed.params : {}
@@ -288,11 +305,14 @@ export async function extractEvent(utterance: string): Promise<{
   location?: string
 }> {
   const systemInstruction = `${EVENT_PROMPT}\n\n${currentTimeContext()}\n\n${placeContext()}`
-  const result = await withModelFallback((name) =>
-    buildModel(name, systemInstruction, EVENT_SCHEMA).generateContent(utterance)
-  )
+  const text = await complete({
+    system: systemInstruction,
+    messages: [{ role: 'user', text: utterance }],
+    jsonSchema: EVENT_SCHEMA.responseSchema as unknown as Record<string, unknown>,
+    temperature: 0
+  })
 
-  const parsed = JSON.parse(result.response.text())
+  const parsed = JSON.parse(stripFences(text))
   const clean = (value: unknown): string | undefined =>
     typeof value === 'string' && value.trim() ? value.trim() : undefined
 
@@ -307,21 +327,6 @@ export async function extractEvent(utterance: string): Promise<{
 /** Called with each token chunk as the model generates it. */
 export type StreamHandler = (chunk: string) => void
 
-/** Drains a streaming response, forwarding chunks and returning the full text. */
-async function collectStream(
-  stream: AsyncGenerator<{ text: () => string }>,
-  onChunk?: StreamHandler
-): Promise<string> {
-  let full = ''
-  for await (const part of stream) {
-    const chunk = part.text()
-    if (!chunk) continue
-    full += chunk
-    onChunk?.(chunk)
-  }
-  return full.trim()
-}
-
 export async function chat(utterance: string, onChunk?: StreamHandler): Promise<string> {
   const systemInstruction =
     'You are Nimbus, a concise, friendly voice assistant living in a desktop overlay. ' +
@@ -334,21 +339,16 @@ export async function chat(utterance: string, onChunk?: StreamHandler): Promise<
 
   // Full prior turns (not just a summary) so the model can genuinely follow
   // the thread rather than answering each utterance in isolation.
-  const request = {
-    contents: [...getHistoryAsContents(), { role: 'user', parts: [{ text: utterance }] }]
-  }
+  const messages = [
+    ...getHistoryAsContents().map((entry) => ({
+      role: entry.role,
+      text: entry.parts.map((part) => part.text).join('')
+    })),
+    { role: 'user' as const, text: utterance }
+  ]
 
-  if (!onChunk) {
-    const result = await withModelFallback((name) =>
-      buildModel(name, systemInstruction).generateContent(request)
-    )
-    return result.response.text().trim()
-  }
-
-  const { stream } = await withModelFallback((name) =>
-    buildModel(name, systemInstruction).generateContentStream(request)
-  )
-  return collectStream(stream, onChunk)
+  if (!onChunk) return complete({ system: systemInstruction, messages })
+  return streamComplete({ system: systemInstruction, messages }, onChunk)
 }
 
 export async function formatResponse(
@@ -376,17 +376,9 @@ export async function formatResponse(
     .filter(Boolean)
     .join('\n')
 
-  if (!onChunk) {
-    const result = await withModelFallback((name) =>
-      buildModel(name, systemInstruction).generateContent(prompt)
-    )
-    return result.response.text().trim()
-  }
-
+  const messages = [{ role: 'user' as const, text: prompt }]
+  if (!onChunk) return complete({ system: systemInstruction, messages })
   // Streaming can't retry mid-flight without replaying tokens the UI already
-  // showed, so the fallback applies to opening the stream only.
-  const { stream } = await withModelFallback((name) =>
-    buildModel(name, systemInstruction).generateContentStream(prompt)
-  )
-  return collectStream(stream, onChunk)
+  // showed, so any fallback applies to opening the stream only.
+  return streamComplete({ system: systemInstruction, messages }, onChunk)
 }

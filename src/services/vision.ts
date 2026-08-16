@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from '@google/generative-ai'
+import { complete, streamComplete } from './llm'
 import { getHistorySummary } from './conversation'
 import type { StreamHandler } from './gemini'
 import config from '../../config.json'
@@ -18,17 +18,6 @@ invoice or official notice, lead with what it actually means for them: what is b
 any deadline, and any amount of money. Quote names, dates, reference numbers and amounts
 exactly as written rather than translating them.`
 
-let client: GoogleGenerativeAI | null = null
-
-function getClient(): GoogleGenerativeAI {
-  if (!client) {
-    const apiKey = process.env.GEMINI_API_KEY
-    if (!apiKey) throw new Error('GEMINI_API_KEY is not set. Add it to your .env file.')
-    client = new GoogleGenerativeAI(apiKey)
-  }
-  return client
-}
-
 /**
  * Answers a question about a screenshot. Uses the same free-tier Gemini model
  * as everything else — its vision support needs no separate key or endpoint.
@@ -39,30 +28,14 @@ export async function askAboutScreen(
   onChunk?: StreamHandler
 ): Promise<string> {
   const context = getHistorySummary(4)
-  const model = getClient().getGenerativeModel({
-    model: process.env.GEMINI_MODEL || 'gemini-flash-lite-latest',
-    systemInstruction:
+  const request = {
+    system:
       `${SYSTEM_PROMPT}\n\n${currentTimeContext()}` +
-      (context ? `\n\nRecent conversation:\n${context}` : '')
-  })
-
-  const parts = [
-    { text: question },
-    { inlineData: { mimeType: image.mimeType, data: image.base64 } }
-  ]
-
-  if (!onChunk) {
-    const result = await model.generateContent(parts)
-    return result.response.text().trim()
+      (context ? `\n\nRecent conversation:\n${context}` : ''),
+    messages: [{ role: 'user' as const, text: question }],
+    image
   }
 
-  const { stream } = await model.generateContentStream(parts)
-  let full = ''
-  for await (const part of stream) {
-    const chunk = part.text()
-    if (!chunk) continue
-    full += chunk
-    onChunk(chunk)
-  }
-  return full.trim()
+  if (!onChunk) return complete(request)
+  return streamComplete(request, onChunk)
 }
