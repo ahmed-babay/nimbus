@@ -8,6 +8,7 @@ import { applyStoredSecrets, secretStatuses, setSecret } from './secrets'
 import { aiChoiceLockedByEnv, applyAiChoice, getAiChoice, setAiChoice } from './ai-choice'
 import { listModels } from '../services/providers'
 import { registerHotkey, unregisterHotkey } from './hotkey'
+import { enableSystemAudioCapture } from './system-audio'
 import { handleUtterance } from '../services'
 import { resetConversation, recordTurn } from '../services/conversation'
 import { askAboutScreen } from '../services/vision'
@@ -254,6 +255,10 @@ app.whenReady().then(() => {
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
     callback(permission === 'media')
   })
+
+  // Meeting capture and live subtitles both need to hear what the machine is
+  // playing, not just the microphone.
+  enableSystemAudioCapture()
 
   // Before anything can read a key: .env first, then whatever settings hold.
   applyStoredSecrets()
