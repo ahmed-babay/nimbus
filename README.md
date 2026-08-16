@@ -121,6 +121,35 @@ npm run typecheck   # type-check main + renderer
    hotkey. It closes when you say a dismissal ("stop", "that's it for today", "never mind",
    "bye Nimbus"), press `Esc`, or stay silent.
 
+## Living in a language that isn't yours
+
+Set the language you think in:
+
+```json
+"language": { "native": "English" }
+```
+
+Nimbus then keeps **two** languages straight — yours, and whatever is on screen:
+
+- **Explanations arrive in your language.** Screenshot a letter, a form or an error in any
+  language and the answer comes back in yours, leading with what it actually means for you:
+  what's being asked, any deadline, any amount. Names, dates, reference numbers and sums are
+  quoted exactly rather than translated.
+- **Replies are drafted in *their* language.** The **Reply** button on selected text writes
+  back in the language of the original, matching its formality, with `[square brackets]`
+  for anything only you can fill in.
+- **Translate** targets your language, since the common case is a foreign document you need
+  to read.
+
+The point is the round trip. A German rent-increase notice, with `native` set to Arabic:
+
+> **Explain** → *"هذا النص عبارة عن إشعار رسمي … زيادة الإيجار بمقدار 78 يورو … الموعد النهائي 31 يناير 2027"*
+> **Reply** → *"Sehr geehrte Damen und Herren, … stimme ich der Mieterhöhung auf 858,00 EUR
+> zum 1. März 2027 hiermit zu … Vorgangsnummer: MV-2027-4471"*
+
+You understand it in your language; the reply goes back in theirs, correctly formal, without
+you writing a word of it.
+
 ## Typing instead of talking
 
 The overlay has a text field, focused the moment it opens — press the hotkey and start
