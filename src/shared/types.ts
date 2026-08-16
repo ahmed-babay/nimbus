@@ -343,6 +343,22 @@ export interface SelectionCardData {
   canReplace: boolean
 }
 
+export interface PaperworkCardData {
+  summary: string
+  sender: string
+  documentType: string
+  actionRequired: string
+  /** YYYY-MM-DD, or empty when the document sets no deadline. */
+  deadline: string
+  /** The document's own wording for the deadline, quoted. */
+  deadlineLabel: string
+  amount: string
+  reference: string
+  keyPoints: string[]
+  /** What was captured, so it's clear what Nimbus read. */
+  thumbnail: string
+}
+
 export interface ScreenCardData {
   /** Data URI of what was captured, shown so it's clear what Nimbus saw. */
   thumbnail: string
@@ -360,6 +376,7 @@ export type ResponseCardData =
   | { type: 'radio'; data: RadioCardData }
   | { type: 'transit'; data: TransitCardData }
   | { type: 'screen'; data: ScreenCardData }
+  | { type: 'paperwork'; data: PaperworkCardData }
   | { type: 'selection'; data: SelectionCardData }
   | { type: 'directions'; data: DirectionsCardData }
   | { type: 'memory'; data: MemoryCardData }
