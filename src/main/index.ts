@@ -2,7 +2,8 @@ import { app, BrowserWindow, clipboard, ipcMain, session, shell } from 'electron
 import { electronApp, optimizer } from '@electron-toolkit/utils'
 import dotenv from 'dotenv'
 import { createTray } from './tray'
-import { createOverlayWindow, showOverlay, hideOverlay } from './window'
+import { createOverlayWindow, showOverlay, hideOverlay, presentOverlay } from './window'
+import { startReminderScheduler, stopReminderScheduler } from './reminder-scheduler'
 import { registerHotkey, unregisterHotkey } from './hotkey'
 import { handleUtterance } from '../services'
 import { resetConversation, recordTurn } from '../services/conversation'
@@ -195,6 +196,12 @@ app.whenReady().then(() => {
   overlayWindow = createOverlayWindow()
   registerIpcHandlers()
 
+  startReminderScheduler({
+    onDue: (reminder) => {
+      if (overlayWindow) presentOverlay(overlayWindow, IPC.REMINDER_DUE, reminder)
+    }
+  })
+
   createTray({
     onShow: () => {
       if (overlayWindow) showOverlay(overlayWindow)
@@ -286,5 +293,6 @@ app.on('window-all-closed', () => {
 })
 
 app.on('will-quit', () => {
+  stopReminderScheduler()
   unregisterHotkey()
 })

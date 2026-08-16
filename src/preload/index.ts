@@ -3,6 +3,7 @@ import { IPC } from '../shared/ipc-channels'
 import type {
   NimbusConfig,
   NimbusResponse,
+  Reminder,
   SynthesizedSpeech,
   TextActionKind
 } from '../shared/types'
@@ -28,6 +29,11 @@ const api = {
     const listener = (_event: unknown, text: string): void => callback(text)
     ipcRenderer.on(IPC.SELECTION_CAPTURED, listener)
     return () => ipcRenderer.removeListener(IPC.SELECTION_CAPTURED, listener)
+  },
+  onReminderDue: (callback: (reminder: Reminder) => void): (() => void) => {
+    const listener = (_event: unknown, reminder: Reminder): void => callback(reminder)
+    ipcRenderer.on(IPC.REMINDER_DUE, listener)
+    return () => ipcRenderer.removeListener(IPC.REMINDER_DUE, listener)
   },
   runTextAction: (
     kind: TextActionKind,
