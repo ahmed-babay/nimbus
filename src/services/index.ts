@@ -218,11 +218,11 @@ async function runIntent(
         const destination = params.to
         if (!destination) throw new Error("I didn't catch where you're heading.")
 
-        // "…and keep me posted" turns a lookup into a standing watch. Handled
-        // here rather than as a separate intent because the classifier already
-        // extracts the from/to/when correctly — the only extra bit is whether
-        // the answer should also be followed.
-        if (wantsWatching(utterance)) {
+        // "…and keep me posted" turns a lookup into a standing watch. The
+        // classifier's own flag is checked first and the phrase test is the
+        // backstop: the router is better at "notify me if it's delayed" than a
+        // regex can be, but the regex catches the case where it forgets.
+        if (params.watch === 'yes' || wantsWatching(utterance)) {
           const { watch, speech } = await watchJourney(params.from, destination, params.when)
           const data = await findJourneys(params.from, destination, watch.scheduledDeparture)
           return { speech, card: { type: 'transit', data } }
