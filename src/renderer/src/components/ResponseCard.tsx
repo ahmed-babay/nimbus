@@ -11,6 +11,7 @@ import type {
   ExplainerCardData,
   GithubCardData,
   Illustration,
+  MemoryCardData,
   MusicCardData,
   NewsCardData,
   NimbusResponse,
@@ -125,6 +126,8 @@ function CardBody({
       return <TransitBody data={card.data} />
     case 'directions':
       return <DirectionsBody data={card.data} />
+    case 'memory':
+      return <MemoryBody data={card.data} />
     case 'explainer':
       return <ExplainerBody data={card.data} />
     case 'screen':
@@ -883,6 +886,71 @@ function Illustrations({ items }: { items: Illustration[] }) {
             </motion.button>
           ))}
         </div>
+      )}
+    </div>
+  )
+}
+
+/** "3 days ago" / "just now" — when an archived answer was given. */
+function whenAgo(iso: string): string {
+  const minutes = Math.round((Date.now() - new Date(iso).getTime()) / 60000)
+  if (!Number.isFinite(minutes) || minutes < 1) return 'just now'
+  if (minutes < 60) return `${minutes} min ago`
+  const hours = Math.round(minutes / 60)
+  if (hours < 24) return `${hours} h ago`
+  const days = Math.round(hours / 24)
+  return days === 1 ? 'yesterday' : `${days} days ago`
+}
+
+function MemoryBody({ data }: { data: MemoryCardData }) {
+  const hasAnswers = data.answers.length > 0
+  return (
+    <div className={panel}>
+      {hasAnswers && (
+        <>
+          <div className="text-[10px] uppercase tracking-wide text-nimbus-text-dim">
+            {data.query ? `Earlier: ${data.query}` : 'Recently'}
+          </div>
+          <ul className="mt-1.5 space-y-2">
+            {data.answers.map((entry) => (
+              <li key={entry.id} className="border-l-2 border-nimbus-accent/40 pl-2">
+                <div className="flex items-baseline gap-1.5">
+                  <span className="min-w-0 flex-1 truncate text-[11.5px] text-nimbus-text">
+                    {entry.question}
+                  </span>
+                  <span className="shrink-0 text-[9.5px] text-nimbus-text-dim">
+                    {whenAgo(entry.at)}
+                  </span>
+                </div>
+                <div className="mt-0.5 line-clamp-3 text-[11px] leading-snug text-nimbus-text-dim">
+                  {entry.answer}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      {/* After "remember that…" there are no search results — the useful
+          feedback is the profile as it now stands. */}
+      {data.facts.length > 0 && (
+        <div className={hasAnswers ? 'mt-2.5 border-t border-white/[0.07] pt-2' : ''}>
+          <div className="text-[10px] uppercase tracking-wide text-nimbus-text-dim">
+            What I know about you
+          </div>
+          <ul className="mt-1 space-y-1">
+            {data.facts.slice(-6).map((fact) => (
+              <li key={fact.id} className="flex gap-1.5 text-[11px] text-nimbus-text">
+                <span className="text-nimbus-cyan">•</span>
+                <span className="min-w-0 flex-1">{fact.text}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {!hasAnswers && data.facts.length === 0 && (
+        <div className="text-[11px] text-nimbus-text-dim">Nothing saved yet.</div>
       )}
     </div>
   )
