@@ -1,3 +1,35 @@
+export type AiProvider = 'gemini' | 'openai' | 'anthropic'
+
+export type SecretName =
+  | 'GEMINI_API_KEY'
+  | 'OPENAI_API_KEY'
+  | 'ANTHROPIC_API_KEY'
+  | 'GROQ_API_KEY'
+  | 'TAVILY_API_KEY'
+  | 'OPENWEATHER_API_KEY'
+  | 'GNEWS_API_KEY'
+  | 'GITHUB_TOKEN'
+
+export interface SecretStatus {
+  name: SecretName
+  set: boolean
+  /** Where the value came from. "env" cannot be overridden from settings. */
+  source: 'env' | 'settings' | 'none'
+  /** Masked fragment, so you can tell which key is stored. Never the key. */
+  hint: string | null
+}
+
+export interface AiChoice {
+  provider: AiProvider
+  /** Empty means "use the built-in default for this provider". */
+  model: string
+}
+
+export interface ProviderModel {
+  id: string
+  label: string
+}
+
 export type NimbusIntent =
   | 'weather'
   | 'stocks'
@@ -11,6 +43,7 @@ export type NimbusIntent =
   | 'remember'
   | 'recall'
   | 'alarm'
+  | 'event'
   | 'briefing'
   | 'chat'
 
@@ -174,9 +207,29 @@ export interface TransitCardData {
   journeys: TransitJourney[]
 }
 
+/** Something happening on a given day (or range), as told to Nimbus. */
+export interface CalendarEvent {
+  id: string
+  title: string
+  /** YYYY-MM-DD. Day granularity: "the 24th" has no meaningful time of day. */
+  startDate: string
+  /** Last day, for multi-day events. Absent means a single day. */
+  endDate?: string
+  location?: string
+  createdAt: string
+}
+
+export interface EventCardData {
+  created: CalendarEvent | null
+  upcoming: CalendarEvent[]
+}
+
 export interface BriefingCardData {
   weather: WeatherCardData | null
-  /** Next departures on the usual route, when one is configured. */
+  /** Days you told Nimbus about: today first, then what is coming up. */
+  today: CalendarEvent[]
+  upcoming: CalendarEvent[]
+  /** Departures to an event that starts today or tomorrow somewhere else. */
   commute: TransitCardData | null
   news: NewsCardData | null
   /** Reminders due within the next few hours. */
@@ -290,6 +343,22 @@ export interface SelectionCardData {
   canReplace: boolean
 }
 
+export interface PaperworkCardData {
+  summary: string
+  sender: string
+  documentType: string
+  actionRequired: string
+  /** YYYY-MM-DD, or empty when the document sets no deadline. */
+  deadline: string
+  /** The document's own wording for the deadline, quoted. */
+  deadlineLabel: string
+  amount: string
+  reference: string
+  keyPoints: string[]
+  /** What was captured, so it's clear what Nimbus read. */
+  thumbnail: string
+}
+
 export interface ScreenCardData {
   /** Data URI of what was captured, shown so it's clear what Nimbus saw. */
   thumbnail: string
@@ -307,11 +376,13 @@ export type ResponseCardData =
   | { type: 'radio'; data: RadioCardData }
   | { type: 'transit'; data: TransitCardData }
   | { type: 'screen'; data: ScreenCardData }
+  | { type: 'paperwork'; data: PaperworkCardData }
   | { type: 'selection'; data: SelectionCardData }
   | { type: 'directions'; data: DirectionsCardData }
   | { type: 'memory'; data: MemoryCardData }
   | { type: 'reminder'; data: ReminderCardData }
   | { type: 'briefing'; data: BriefingCardData }
+  | { type: 'event'; data: EventCardData }
   | { type: 'explainer'; data: ExplainerCardData }
   | { type: 'text' }
 
@@ -369,8 +440,6 @@ export interface NimbusConfig {
     selectRegion: boolean
   }
   briefing: {
-    /** Where the next departures come from, e.g. "Frankfurt". Omit to skip. */
-    commuteTo: string
     /** City for the weather line; defaults to the first part of location.region. */
     weatherCity: string
     /** Headline topic, or empty for the top stories. */
@@ -402,4 +471,32 @@ export interface NimbusConfig {
      */
     native: string
   }
+}
+
+/** One line of a live translation, produced from a few seconds of audio. */
+export interface Subtitle {
+  /** What was actually said, in the source language. */
+  original: string
+  /** The same line in the user's language. */
+  translated: string
+  /** ISO code of the detected source language, when known. */
+  detected: string
+  /** Position within the session, so lines can't render out of order. */
+  offsetMs: number
+}
+
+/** One utterance in a captured meeting. */
+export interface MeetingLine {
+  /** 'you' is this microphone; 'them' is everyone on the far end. */
+  speaker: 'you' | 'them'
+  text: string
+  /** Milliseconds since capture began, used for ordering and timestamps. */
+  offsetMs: number
+}
+
+export interface MeetingSummary {
+  summary: string
+  decisions: string[]
+  actions: string[]
+  openQuestions: string[]
 }

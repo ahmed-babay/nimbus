@@ -1,9 +1,17 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/ipc-channels'
 import type {
+  AiChoice,
+  AiProvider,
   NimbusConfig,
   NimbusResponse,
+  ProviderModel,
   Reminder,
+  MeetingLine,
+  MeetingSummary,
+  SecretName,
+  SecretStatus,
+  Subtitle,
   SynthesizedSpeech,
   TextActionKind
 } from '../shared/types'
@@ -30,6 +38,14 @@ const api = {
     ipcRenderer.on(IPC.SELECTION_CAPTURED, listener)
     return () => ipcRenderer.removeListener(IPC.SELECTION_CAPTURED, listener)
   },
+  getSecrets: (): Promise<SecretStatus[]> => ipcRenderer.invoke(IPC.GET_SECRETS),
+  setSecret: (name: SecretName, value: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke(IPC.SET_SECRET, name, value),
+  listModels: (provider: AiProvider): Promise<ProviderModel[]> =>
+    ipcRenderer.invoke(IPC.LIST_MODELS, provider),
+  getAiChoice: (): Promise<AiChoice & { lockedByEnv: boolean }> =>
+    ipcRenderer.invoke(IPC.GET_AI_CHOICE),
+  setAiChoice: (choice: AiChoice): Promise<void> => ipcRenderer.invoke(IPC.SET_AI_CHOICE, choice),
   onReminderDue: (callback: (reminder: Reminder) => void): (() => void) => {
     const listener = (_event: unknown, reminder: Reminder): void => callback(reminder)
     ipcRenderer.on(IPC.REMINDER_DUE, listener)
@@ -51,6 +67,23 @@ const api = {
     ipcRenderer.invoke(IPC.TRANSCRIPT, utterance),
   transcribeAudio: (audio: ArrayBuffer, mimeType: string): Promise<string> =>
     ipcRenderer.invoke(IPC.TRANSCRIBE_AUDIO, audio, mimeType),
+  subtitleFor: (
+    audio: ArrayBuffer,
+    mimeType: string,
+    offsetMs: number,
+    previous: string,
+    sourceHint: string
+  ): Promise<Subtitle | null> =>
+    ipcRenderer.invoke(IPC.SUBTITLE_FOR, audio, mimeType, offsetMs, previous, sourceHint),
+  meetingPiece: (audio: ArrayBuffer, mimeType: string, previous: string): Promise<string | null> =>
+    ipcRenderer.invoke(IPC.MEETING_PIECE, audio, mimeType, previous),
+  saveMeeting: (
+    lines: MeetingLine[],
+    startedAt: number
+  ): Promise<{ ok: boolean; path?: string; error?: string }> =>
+    ipcRenderer.invoke(IPC.SAVE_MEETING, lines, startedAt),
+  summarizeMeeting: (lines: MeetingLine[], startedAt: number): Promise<MeetingSummary> =>
+    ipcRenderer.invoke(IPC.SUMMARIZE_MEETING, lines, startedAt),
   synthesizeSpeech: (text: string): Promise<SynthesizedSpeech> =>
     ipcRenderer.invoke(IPC.SYNTHESIZE_SPEECH, text),
   hide: (): void => {

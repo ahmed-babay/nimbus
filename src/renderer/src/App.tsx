@@ -5,7 +5,12 @@ import { Waveform } from './components/Waveform'
 import { ResponseCard } from './components/ResponseCard'
 import { SelectionActions } from './components/SelectionActions'
 import { TextInput } from './components/TextInput'
+import { KeySettings } from './components/KeySettings'
+import { SubtitleBar } from './components/SubtitleBar'
+import { MeetingPanel } from './components/MeetingPanel'
 import { useNimbus } from './hooks/useNimbus'
+import { useSubtitles } from './hooks/useSubtitles'
+import { useMeeting } from './hooks/useMeeting'
 import { useTypewriter } from './hooks/useTypewriter'
 import type { NimbusConfig, NimbusState } from '@shared/types'
 
@@ -40,21 +45,48 @@ export default function App() {
     toggleMic,
     ttsEnabled,
     toggleTts,
+    openSettings,
+    setHoldOpen,
     dismiss
   } = useNimbus()
   // Paced reveal: the model streams in a few big chunks, which otherwise
   // lands as the whole answer at once.
   const typedText = useTypewriter(streamingText)
+  const subtitles = useSubtitles()
+  const meeting = useMeeting()
   // Driven by one explicit flag rather than inferred from state and content.
-  const isVisible = isOpen || mode === 'settings'
+  // The card steps aside while subtitles run: they belong over the video, and
+  // a panel on top of the picture is exactly what nobody wants there.
+  const isVisible = (isOpen || mode === 'settings') && !subtitles.active
+
+  // Without this the overlay would fade out mid-film and take the subtitles
+  // with it.
+  const meetingOpen = meeting.phase !== 'idle'
+  useEffect(() => {
+    setHoldOpen(subtitles.active || meetingOpen)
+  }, [subtitles.active, meetingOpen, setHoldOpen])
+
+  const stopSubtitles = (): void => {
+    subtitles.stop()
+    setHoldOpen(false)
+    dismiss()
+  }
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent): void {
-      if (event.key === 'Escape') dismiss()
+      if (event.key !== 'Escape') return
+      // Escape means "end what's running", which during a film is the
+      // subtitles rather than the overlay behind them.
+      if (subtitles.active) stopSubtitles()
+      // Escape during a recording stops it rather than throwing the
+      // transcript away -- twenty minutes of a meeting is not something a
+      // stray keypress should be able to destroy.
+      else if (meeting.phase === 'recording') meeting.stop()
+      else dismiss()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [dismiss])
+  })
 
   return (
     <div className="flex h-screen w-screen items-start justify-center pt-2">
@@ -117,6 +149,7 @@ export default function App() {
                   onToggleMic={toggleMic}
                   ttsEnabled={ttsEnabled}
                   onToggleTts={toggleTts}
+                  onSettings={openSettings}
                 />
 
                 {/* No items-start here: it would let the scrolling child size
@@ -136,6 +169,7 @@ export default function App() {
                         speechProgressRef={speechProgressRef}
                         radio={radio}
                         onReplace={replaceSelection}
+                        onAsk={submitText}
                       />
                     ) : error ? (
                       <p className="text-[13px] leading-relaxed text-nimbus-negative">{error}</p>
@@ -214,9 +248,18 @@ export default function App() {
                   </div>
                 )}
 
+                {meetingOpen && <MeetingPanel meeting={meeting} />}
+
                 {/* Always available — talking isn't possible everywhere. */}
                 <TextInput
                   onSubmit={submitText}
+                  onAction={(action) =>
+                    action === 'subtitles'
+                      ? void subtitles.start()
+                      : action === 'meeting'
+                        ? void meeting.start()
+                        : openSettings()
+                  }
                   focusKey={isVisible}
                   onTypingStart={onTypingStart}
                 />
@@ -238,6 +281,15 @@ export default function App() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {subtitles.active && (
+        <SubtitleBar
+          lines={subtitles.visible}
+          detected={subtitles.detected}
+          error={subtitles.error}
+          onStop={stopSubtitles}
+        />
+      )}
     </div>
   )
 }
@@ -248,7 +300,8 @@ function Header({
   micEnabled,
   onToggleMic,
   ttsEnabled,
-  onToggleTts
+  onToggleTts,
+  onSettings
 }: {
   state: NimbusState
   onClose: () => void
@@ -256,6 +309,7 @@ function Header({
   onToggleMic: () => void
   ttsEnabled: boolean
   onToggleTts: () => void
+  onSettings: () => void
 }) {
   return (
     <div className="flex items-center justify-between">
@@ -302,6 +356,14 @@ function Header({
           }`}
         >
           {ttsEnabled ? 'Sound on' : 'Sound off'}
+        </button>
+        <button
+          onClick={onSettings}
+          aria-label="Settings and API keys"
+          title="Settings — API keys and model"
+          className="arcade-type rounded border border-nimbus-border px-1.5 py-0.5 text-[9px] text-nimbus-text-dim transition-colors hover:bg-nimbus-accent/20 hover:text-nimbus-text"
+        >
+          Setup
         </button>
         <button
           onClick={onClose}
@@ -363,9 +425,10 @@ function SettingsPanel({ config, onClose }: { config: NimbusConfig | null; onClo
               </div>
             ))}
           </dl>
-          <p className="mt-3 border-t border-white/[0.06] pt-2 text-[10px] text-nimbus-text-dim">
+          <p className="mt-2 text-[10px] text-nimbus-text-dim">
             Edit config.json and restart Nimbus to change these.
           </p>
+          <KeySettings />
         </>
       )}
     </div>

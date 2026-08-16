@@ -189,6 +189,94 @@ The point is the round trip. A German rent-increase notice, with `native` set to
 You understand it in your language; the reply goes back in theirs, correctly formal, without
 you writing a word of it.
 
+## Settings: API keys without a .env file
+
+Open settings from the tray and every key can be pasted in directly, so Nimbus is usable by
+someone who will never create a `.env`. Two rules shape it:
+
+- **`.env` always wins.** A key in the environment is what a developer expects to be
+  running, so stored keys only fill gaps and environment-supplied ones are shown as locked.
+  Opening this panel on an already-configured machine cannot silently shadow a working key.
+- **Stored keys are encrypted at rest** with Electron's `safeStorage`, which on Windows is
+  DPAPI tied to your user account. Plain JSON would have been *worse* than the `.env` it
+  replaces: `.env` is at least gitignored and obviously secret-shaped, while a settings file
+  gets copied around. A store copied to another machine simply fails to decrypt, which is
+  the intended outcome.
+
+Saving a key applies it immediately rather than at the next launch — being told to restart
+after typing a key is a poor first run. The panel never displays a stored key, only a masked
+fragment (`AIz••••x9Qk`) so you can tell which one is in there.
+
+Keys are pushed into `process.env` once at startup, so every service goes on reading
+`process.env.X` exactly as before and none of them needs to know settings exist.
+
+### Choosing the answer model
+
+The panel lists the models **your key can actually use**, fetched from the provider rather
+than hardcoded — a hardcoded list is wrong within weeks, and wrong in a way you can't fix.
+Embedding, TTS and image-generation models are filtered out since they can't answer a
+prompt. Verified live: 34 usable Gemini models.
+
+All three provider endpoints are implemented and reachable — a deliberately invalid key
+returns "That key was rejected" from OpenAI and Anthropic alike, confirming the auth shapes.
+
+### Switching provider
+
+Every model call — intent routing, chat, research synthesis, screen reading — goes through
+`src/services/llm.ts`, so the provider is a setting rather than a rewrite. The prompts were
+already provider-independent; only the transport differs.
+
+Structured output is the one place the three genuinely diverge. Gemini *constrains
+generation* to a schema, which is stronger than anything the others expose, so it keeps
+doing that. OpenAI is asked for JSON mode and Anthropic is asked in the prompt, with the
+shape described either way — a weaker guarantee, which is why the JSON parse strips code
+fences and every caller already degrades to a plain answer rather than failing.
+
+Gemini keeps its two-model race (see `gemini-client.ts`): free-tier congestion shows up as a
+request that takes 20-30 seconds rather than one that fails, so the fallback model is raced
+alongside after 6 seconds. That tuning is specific to its free tier and doesn't apply to the
+paid providers.
+
+**What's verified, precisely:** Gemini is exercised end to end through the adapter —
+classification 4/4, event extraction, streaming and non-streaming, all matching the
+behaviour before the refactor. OpenAI and Anthropic are built to their documented APIs and
+confirmed as far as authentication (a deliberately invalid key returns the right error from
+both), but have **not** been run against a live paid key. A failure surfaces as a spoken
+error, not a wrong answer.
+
+## Finding out what it can do
+
+Features here are reached by *saying* them, not by pressing something. That's what keeps the
+app at **three global hotkeys** no matter how much it learns to do — a hotkey is only
+justified when the action needs the state of the app you're currently in (the screenshot and
+the text selection qualify; nothing else does). Everything added since then — briefings,
+reminders, events, memory, directions — added zero shortcuts.
+
+The cost of that is discoverability: an invisible feature is worse than an awkwardly bound
+one. So there is exactly one thing to learn. **Type `/`** and every capability is listed,
+filterable, grouped:
+
+```
+/ trans
+  Getting around
+    Next departures        “when is the next train to Frankfurt”
+    Tell me when to leave  “tell me when I need to leave for Frankfurt”
+  On your screen
+    Ask about the screen   “what does this letter say”   Ctrl+Shift+S first
+```
+
+The detail that makes it more than a menu: picking an entry **types its example into the
+input** instead of running a hidden command. You see a phrasing that works, can edit it
+before sending, and learn it — so the palette is a training wheel that removes itself. Next
+time you just say it.
+
+Arrow keys move, Enter or Tab picks, Esc closes the palette *only* — it stops propagation so
+the global Escape handler doesn't close the whole overlay, which is a startling answer to
+backing out of a menu. Only a leading slash opens it, so "what's 8/3" types normally.
+
+The list lives in `src/shared/capabilities.ts`. Anything not in it is, in practice, a feature
+nobody will find — so it's the file to update when adding one.
+
 ## Typing instead of talking
 
 The overlay has a text field, focused the moment it opens — press the hotkey and start
@@ -233,6 +321,131 @@ How it reads another app's selection, since there's no API for that:
 
 The capture costs roughly 0.7s, which is PowerShell's start-up time — a persistent helper
 process would remove it if that ever becomes annoying.
+
+## Paperwork mode
+
+Capture an official letter (Ctrl+Shift+S) and ask about it — "what does this letter say",
+"was steht in diesem Schreiben" — and instead of prose you get the four things that actually
+matter from a Behörde letter: **what it is, what it wants from you, by when, and how much.**
+Those are the hardest things to find in a formal letter written in a language you don't read
+well, and the most expensive to get wrong.
+
+Verified against a rendered Stadtwerke electricity bill:
+
+```
+type      : Invoice              sender    : Stadtwerke Darmstadt AG
+amount    : 284,60 EUR           reference : R-2026-88134
+deadline  : 2026-08-31   ← from "bis zum 31.08.2026"
+action    : Transfer the requested amount quoting the invoice number before the deadline.
+also      : late interest 5pp above base rate · monthly payment auto-rises to
+            96,00 EUR on 01.09.2026 · right to object in writing within six weeks
+```
+
+It picked the invoice number over the customer number, preserved the German decimal comma,
+resolved the deadline to a real date, and caught all three consequential clauses — while
+answering in `language.native`.
+
+The deadline is a **button**, not a line of text: one click sets a reminder for it, because a
+due date you have to re-enter by hand is a due date you forget. "Draft a reply" and "More
+detail" sit next to it.
+
+Routing is a **keyword test**, not another model call — instant, free and predictable, in
+both your language and German (`Schreiben`, `Rechnung`, `Bescheid`, `Mahnung`, `Frist`…).
+"What is on my screen" and "what is this error" deliberately stay on the prose path. If the
+structured read fails for any reason, it falls through to the ordinary screen answer rather
+than losing the capture.
+
+### On ambient capture, deliberately not built
+
+Two features were designed and then **cut on privacy grounds**, and the reasoning is worth
+keeping:
+
+- **Screen rewind** (a rolling buffer of screenshots so you could ask about something that
+  already scrolled past)
+- **Clipboard watching** (offering actions on whatever you copy)
+
+Everything Nimbus reads today is *explicitly captured*: you press a hotkey, one frame or one
+selection is taken, used for that turn, and dropped. Consent is per-capture and the blast
+radius is the thing you chose. Both cut features invert that — consent once, capture forever
+— and you cannot pre-approve what will be on screen or on your clipboard in two minutes.
+Password managers work by putting secrets on the clipboard; a screen buffer is a new
+on-disk archive of banking, messages and internal tools, and answering from it means
+sending those frames to a model. The payoff was convenience. Bad trade, so: not built.
+
+The rule this leaves: **explicit capture is fine, ambient capture of content is not.** Wake
+word is the interesting edge — ambient *listening* but not ambient *disclosure*, since Vosk
+runs offline and nothing leaves the machine until the wake word fires.
+
+## Listening along: meetings and subtitles
+
+Two modes where Nimbus listens for a long time and says nothing at all. Both are started
+explicitly — `/` then **Record a meeting** or **Live subtitles** — and both stay within the
+rule above: you turn them on, you can see they are running, and you turn them off.
+
+Both need to hear what the *computer* is playing, not just the microphone, which Electron
+allows through a display-media handler (`src/main/system-audio.ts`). A screen source has to
+be named because an audio-only stream isn't offered, so the renderer stops the video track
+the moment it arrives — no frame is ever decoded or stored.
+
+### Recording a meeting
+
+Nimbus captures your microphone and the system's output as **two separate streams**, and
+that is the whole trick behind the dialogue transcript. Real diarisation — working out who
+is who from a single mixed track — isn't available on the free tier, but a call already
+arrives as two physically distinct signals: your mic is you, everything else is them.
+
+The limitation to know about: everyone on the far end is one speaker called "Them".
+Splitting three colleagues out of one mixed stream isn't possible here, and guessing would
+produce a transcript that is confidently wrong about who said what.
+
+The transcript is **collapsed while recording** — during a meeting the screen belongs to the
+meeting, and live captions unrolling over the call are in the way. What stays visible is
+proof of life: that it's running, how long for, and how many lines it has heard. It opens by
+itself once you stop, which is when the transcript becomes the point. Nothing is written to
+disk unless you press **Save to a file** and choose where. **Summarise** returns what was decided, what someone now has to
+do, and what was left open — all four fields are required of the model, because with only
+the summary required it returned an empty actions list for a transcript that plainly
+contained three, and buried one in the prose instead.
+
+### Live subtitles
+
+For a film or video in a language you don't read, with no subtitle track. It listens to the
+system audio, transcribes it, translates it, and puts plain white-on-dark lines at the
+bottom of the screen. Nothing is spoken, the microphone is never opened, and no chime plays
+— a sound effect every few seconds during a film would be unbearable.
+
+**This is delayed subtitling, not simultaneous interpretation.** A phrase has to finish
+before it can be transcribed, so a line lands roughly one phrase behind the audio plus the
+round trip. Measured end to end on German broadcast speech: 280-500ms to transcribe,
+45-900ms to translate.
+
+Subtitles cut audio into much shorter pieces than meetings do (1.1s minimum, 3.5s maximum,
+against 2.5s/7s), which is a deliberate trade of transcription context for lag. Measured on
+the same clip, that roughly doubled the number of lines — 3 to 6 — while the delay after a
+phrase ends stayed at about 800ms. That 800ms is the network round trip and it is the floor:
+shortening the pieces makes text *track* the speaker instead of arriving in paragraphs, but
+nothing short of running the models locally makes a line appear while the word is still being
+said. The cost is slightly more fragmentation, since a sentence spoken without pauses now
+gets split across two lines.
+
+Three things were found by measurement here, and each one is load-bearing:
+
+- **Whisper's translate endpoint doesn't translate.** Groq's `/audio/translations` returned
+  German audio as German text — with an English prompt, and at temperature 0 — and
+  `whisper-large-v3-turbo` rejects that endpoint outright with a 400. Translation is
+  therefore a separate hop through `src/services/translate.ts`, which is also *faster* than
+  the model would be and costs no model quota at all.
+- **Every piece needs its own recorder.** A single MediaRecorder started with a timeslice
+  puts the container header only in the first blob; every later piece is an undecodable
+  fragment.
+- **Cut at pauses, not on a stopwatch.** A fixed interval splits sentences mid-phrase and
+  the translations come out as fragments. Recording strictly back to back also *loses* the
+  audio between one recorder stopping and the next starting — four consecutive words
+  vanished at one boundary in testing — so the next recorder now starts before the previous
+  one stops.
+
+Rate limits are not a problem in practice: Groq allows 7200 audio-seconds per hour, and an
+hour of film costs about 4500 with the overlap.
 
 ## Ask about your screen
 
@@ -465,8 +678,43 @@ than asking the questions separately) and each is settled independently, so a se
 fails is simply absent rather than taking the briefing down with it. A real run assembles in
 about 2.4 seconds.
 
-Configure it under `briefing` in `config.json`: `commuteTo` for the departures, `weatherCity`,
-and `newsTopic` (empty is fine — see below).
+Configure it under `briefing` in `config.json`: `weatherCity` and `newsTopic` (empty is
+fine — see below).
+
+### Your own days
+
+Tell Nimbus what's happening and it carries it: *"I need to go to Düsseldorf for the Reply
+Leadvise event from the 24th to the 27th"*, *"I'm at my girlfriend's this weekend"*,
+*"dentist on Tuesday"*. Ask *"what have I got coming up"* to hear the list, or *"cancel the
+Düsseldorf trip"* to drop one.
+
+Events are a third kind of thing, deliberately separate from the other two: a **fact** is
+true until you change it, a **reminder** fires once at a minute and is done, an **event**
+occupies whole days, is worth mentioning on each of them, and *stops existing on its own*
+once its last day passes. Expiry happens on read rather than on a timer, so a finished event
+is never mentioned again no matter how long the app was shut. Dates are stored day-granular
+(`YYYY-MM-DD`) because "the 24th to the 27th" has no meaningful time of day, and pretending
+otherwise only invents timezone bugs.
+
+The first version of this section was a **fixed daily commute**, and it was wrong: you don't
+take that train most days, so it trained you to ignore the section. Departures now appear
+only when an event actually calls for them — one starting today or tomorrow, somewhere other
+than home.
+
+**Dates come from their own model call**, not from the intent router. The router reliably
+recognises *that* something is an event and just as reliably drops the dates: its prompt
+covers fifteen intents and ~25 parameters, and the extra fields fall off the end. "Reply
+Leadvise event from the 24th to the 27th" came back with a title and **no dates at all**, and
+tightening the wording made it worse — the one case that had worked stopped working too. A
+short single-purpose prompt gets every case right, and only runs when an event is actually
+being created:
+
+| You say (today is Sun 16 Aug) | Extracted |
+|---|---|
+| "…Reply Leadvise event from the 24th to the 27th" in Düsseldorf | 24 Aug → 27 Aug @Düsseldorf |
+| "dentist on Tuesday" | 18 Aug |
+| "I'm at my girlfriend's this weekend" | 22 Aug → 23 Aug |
+| "conference in Berlin next Monday and Tuesday" | 24 Aug → 25 Aug @Berlin |
 
 Two things the briefing exposed that were quietly wrong elsewhere:
 

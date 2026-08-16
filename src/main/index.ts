@@ -1,23 +1,42 @@
-import { app, BrowserWindow, clipboard, ipcMain, session, shell } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, session, shell } from 'electron'
 import { electronApp, optimizer } from '@electron-toolkit/utils'
 import dotenv from 'dotenv'
 import { createTray } from './tray'
 import { createOverlayWindow, showOverlay, hideOverlay, presentOverlay } from './window'
 import { startReminderScheduler, stopReminderScheduler } from './reminder-scheduler'
+import { applyStoredSecrets, secretStatuses, setSecret } from './secrets'
+import { aiChoiceLockedByEnv, applyAiChoice, getAiChoice, setAiChoice } from './ai-choice'
+import { listModels } from '../services/providers'
 import { registerHotkey, unregisterHotkey } from './hotkey'
+import { enableSystemAudioCapture } from './system-audio'
 import { handleUtterance } from '../services'
 import { resetConversation, recordTurn } from '../services/conversation'
 import { askAboutScreen } from '../services/vision'
+import { looksLikePaperwork, readDocument } from '../services/paperwork'
 import { captureDisplayImage, encodeCapture, type ScreenCapture } from './screen'
 import { pickRegion, type RegionChoice } from './region-picker'
 import { captureSelection, pasteIntoWindow, type CapturedSelection } from './selection'
 import { runTextAction } from '../services/text-actions'
 import type { TextActionKind } from '../shared/types'
 import { transcribeAudio } from '../services/whisper'
+import { subtitleFor, type Subtitle } from '../services/subtitles'
+import { formatTranscript, summarizeMeeting, transcribePiece } from '../services/meeting'
+import type { MeetingLine, MeetingSummary } from '../shared/types'
+import { writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { synthesizeSpeech } from '../services/tts'
 import { withDeadline } from '../services/http'
 import { IPC } from '../shared/ipc-channels'
-import type { NimbusConfig, NimbusResponse, SynthesizedSpeech } from '../shared/types'
+import type {
+  AiChoice,
+  AiProvider,
+  NimbusConfig,
+  NimbusResponse,
+  ProviderModel,
+  SecretName,
+  SecretStatus,
+  SynthesizedSpeech
+} from '../shared/types'
 import config from '../../config.json'
 
 dotenv.config()
@@ -58,6 +77,36 @@ function registerIpcHandlers(): void {
     if (pendingCapture) {
       const capture = pendingCapture
       pendingCapture = null
+
+      // A letter or form gets the structured reading rather than prose: what
+      // it wants, by when, how much. Same explicit capture, different answer.
+      if (looksLikePaperwork(utterance)) {
+        try {
+          const data = await withDeadline(
+            readDocument(utterance, capture),
+            TURN_DEADLINE_MS,
+            'Reading the document'
+          )
+          const spoken = [
+            data.summary,
+            data.actionRequired && `You need to: ${data.actionRequired}.`,
+            data.deadlineLabel && `Deadline: ${data.deadlineLabel}.`
+          ]
+            .filter(Boolean)
+            .join(' ')
+          recordTurn('user', utterance)
+          recordTurn('model', spoken)
+          return {
+            speech: spoken,
+            card: { type: 'paperwork', data: { ...data, thumbnail: capture.thumbnail } }
+          }
+        } catch (err) {
+          console.error('[paperwork] falling back to a plain reading:', err)
+          // Structured extraction failed — a prose answer is still useful, so
+          // fall through rather than losing the capture entirely.
+        }
+      }
+
       try {
         const speech = await withDeadline(
           askAboutScreen(utterance, capture, stream),
@@ -138,6 +187,25 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.GET_CONFIG, (): NimbusConfig => config)
 
+  ipcMain.handle(IPC.GET_SECRETS, (): SecretStatus[] => secretStatuses())
+
+  ipcMain.handle(
+    IPC.SET_SECRET,
+    (_event, name: SecretName, value: string): { ok: boolean; error?: string } =>
+      setSecret(name, value)
+  )
+
+  ipcMain.handle(IPC.LIST_MODELS, async (_event, provider: AiProvider): Promise<ProviderModel[]> => {
+    return listModels(provider)
+  })
+
+  ipcMain.handle(IPC.GET_AI_CHOICE, (): AiChoice & { lockedByEnv: boolean } => ({
+    ...getAiChoice(),
+    lockedByEnv: aiChoiceLockedByEnv()
+  }))
+
+  ipcMain.handle(IPC.SET_AI_CHOICE, (_event, choice: AiChoice): void => setAiChoice(choice))
+
   ipcMain.handle(
     IPC.RUN_TEXT_ACTION,
     async (
@@ -172,6 +240,87 @@ function registerIpcHandlers(): void {
     }
   )
 
+  ipcMain.handle(
+    IPC.SUBTITLE_FOR,
+    async (
+      _event,
+      audio: ArrayBuffer,
+      mimeType: string,
+      offsetMs: number,
+      previous: string,
+      sourceHint: string
+    ): Promise<Subtitle | null> => {
+      // A failed piece must not stop the stream: subtitles arrive every few
+      // seconds, and one dropped line is far better than the mode dying
+      // because a single upload timed out.
+      try {
+        return await subtitleFor({
+          audio: Buffer.from(audio),
+          mimeType,
+          offsetMs,
+          previous,
+          sourceHint
+        })
+      } catch (error) {
+        console.warn('[subtitles] piece failed:', error)
+        return null
+      }
+    }
+  )
+
+  ipcMain.handle(
+    IPC.MEETING_PIECE,
+    async (
+      _event,
+      audio: ArrayBuffer,
+      mimeType: string,
+      previous: string
+    ): Promise<string | null> => {
+      // As with subtitles, one failed upload must not end the recording —
+      // losing a sentence of a meeting is recoverable, losing the meeting is
+      // not.
+      try {
+        return await transcribePiece(Buffer.from(audio), mimeType, previous)
+      } catch (error) {
+        console.warn('[meeting] piece failed:', error)
+        return null
+      }
+    }
+  )
+
+  ipcMain.handle(
+    IPC.SAVE_MEETING,
+    async (
+      _event,
+      lines: MeetingLine[],
+      startedAt: number
+    ): Promise<{ ok: boolean; path?: string; error?: string }> => {
+      const when = new Date(startedAt)
+      const stamp = `${when.getFullYear()}-${String(when.getMonth() + 1).padStart(2, '0')}-${String(when.getDate()).padStart(2, '0')}`
+
+      const result = await dialog.showSaveDialog({
+        title: 'Save meeting transcript',
+        defaultPath: join(app.getPath('documents'), `meeting-${stamp}.txt`),
+        filters: [{ name: 'Text', extensions: ['txt'] }]
+      })
+      if (result.canceled || !result.filePath) return { ok: false }
+
+      try {
+        await writeFile(result.filePath, formatTranscript(lines, startedAt), 'utf8')
+        return { ok: true, path: result.filePath }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Could not write the file.'
+        return { ok: false, error: message }
+      }
+    }
+  )
+
+  ipcMain.handle(
+    IPC.SUMMARIZE_MEETING,
+    async (_event, lines: MeetingLine[], startedAt: number): Promise<MeetingSummary> =>
+      summarizeMeeting(lines, startedAt)
+  )
+
   ipcMain.handle(IPC.SYNTHESIZE_SPEECH, async (_event, text: string): Promise<SynthesizedSpeech> => {
     const { audio, mimeType } = await synthesizeSpeech(text)
     // Copy into a fresh, exactly-sized ArrayBuffer — Buffer.buffer can be a
@@ -192,6 +341,14 @@ app.whenReady().then(() => {
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
     callback(permission === 'media')
   })
+
+  // Meeting capture and live subtitles both need to hear what the machine is
+  // playing, not just the microphone.
+  enableSystemAudioCapture()
+
+  // Before anything can read a key: .env first, then whatever settings hold.
+  applyStoredSecrets()
+  applyAiChoice()
 
   overlayWindow = createOverlayWindow()
   registerIpcHandlers()

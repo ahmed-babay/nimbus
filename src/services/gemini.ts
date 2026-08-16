@@ -1,5 +1,5 @@
 import { SchemaType, type GenerationConfig } from '@google/generative-ai'
-import { buildModel, withModelFallback } from './gemini-client'
+import { complete, streamComplete } from './llm'
 import type { IntentClassification, NimbusIntent } from '../shared/types'
 import { getHistoryAsContents, getHistorySummary } from './conversation'
 import { currentTimeContext } from './now'
@@ -10,6 +10,20 @@ import { factsContext } from './memory'
 // If recognition quality is ever a problem, a free-tier Whisper API call
 // could replace SpeechRecognition here without touching the rest of the
 // pipeline — swap the transcript source, keep everything downstream as-is.
+
+/**
+ * Providers without constrained decoding sometimes wrap JSON in a code fence
+ * despite being told not to. Gemini never does, but the same parse path now
+ * serves all three.
+ */
+function stripFences(text: string): string {
+  const trimmed = text.trim()
+  if (!trimmed.startsWith('```')) return trimmed
+  return trimmed
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/, '')
+    .trim()
+}
 
 const VALID_INTENTS: NimbusIntent[] = [
   'weather',
@@ -24,6 +38,7 @@ const VALID_INTENTS: NimbusIntent[] = [
   'remember',
   'recall',
   'alarm',
+  'event',
   'briefing',
   'chat'
 ]
@@ -112,6 +127,26 @@ the relevant parameter for it, leaving the others empty:
      train to Wiesbaden". Give the destination.)
   -> params.cancel (set when they want a reminder dropped — the phrase
      identifying it, or empty text to cancel all of them)
+- "event": telling Nimbus about something happening on a particular day or
+  range of days, or asking what is coming up — "I'm in Düsseldorf for the Reply
+  Leadvise event from the 24th to the 27th", "I'm at my girlfriend's this
+  weekend", "dentist on Tuesday", "what have I got coming up", "cancel the
+  Düsseldorf trip".
+  -> params.eventTitle (what it is, short: "Reply Leadvise event". Omit when
+     they're only asking what's coming up.)
+  -> params.eventStart — REQUIRED whenever params.eventTitle is set. The first
+     day as YYYY-MM-DD. Work it out from the current date given below:
+     "the 24th" -> the 24th of this month, or next month if that has passed;
+     "Tuesday" -> the next Tuesday; "this weekend" -> the coming Saturday.
+     Never a date in the past. If they genuinely gave no day at all, use today.
+  -> params.eventEnd (last day as YYYY-MM-DD, for a range like "from the 24th
+     to the 27th"; omit for a single day)
+  -> params.eventPlace (the town or city it happens in, whenever they name one —
+     "Düsseldorf". Omit only for something local with no place mentioned.)
+  -> params.cancel (set when dropping one: a phrase identifying it)
+  The difference from "alarm": an alarm fires once at a minute, an event
+  occupies whole days and is worth mentioning on each of them. The difference
+  from "remember": a fact stays true indefinitely, an event finishes.
 - "briefing": asking for the overall picture of their day rather than one
   fact — "what does my day look like", "brief me", "catch me up", "what's
   happening today", "good morning" said as a request rather than a greeting.
@@ -172,6 +207,10 @@ const CLASSIFY_SCHEMA: GenerationConfig = {
           task: { type: SchemaType.STRING },
           leaveFor: { type: SchemaType.STRING },
           cancel: { type: SchemaType.STRING },
+          eventTitle: { type: SchemaType.STRING },
+          eventStart: { type: SchemaType.STRING },
+          eventEnd: { type: SchemaType.STRING },
+          eventPlace: { type: SchemaType.STRING },
           mode: {
             type: SchemaType.STRING,
             enum: ['driving', 'cycling', 'walking', 'transit'],
@@ -199,12 +238,15 @@ export async function classifyIntent(utterance: string): Promise<IntentClassific
     .filter((part) => part !== '')
     .join('\n')
 
-  const result = await withModelFallback((name) =>
-    buildModel(name, systemInstruction, CLASSIFY_SCHEMA).generateContent(utterance)
-  )
+  const text = await complete({
+    system: systemInstruction,
+    messages: [{ role: 'user', text: utterance }],
+    jsonSchema: CLASSIFY_SCHEMA.responseSchema as unknown as Record<string, unknown>,
+    temperature: 0
+  })
 
   try {
-    const parsed = JSON.parse(result.response.text())
+    const parsed = JSON.parse(stripFences(text))
     const intent: NimbusIntent = VALID_INTENTS.includes(parsed.intent) ? parsed.intent : 'chat'
     const rawParams: Record<string, string> =
       parsed.params && typeof parsed.params === 'object' ? parsed.params : {}
@@ -218,23 +260,72 @@ export async function classifyIntent(utterance: string): Promise<IntentClassific
   }
 }
 
+const EVENT_SCHEMA: GenerationConfig = {
+  temperature: 0,
+  responseMimeType: 'application/json',
+  responseSchema: {
+    type: SchemaType.OBJECT,
+    properties: {
+      title: { type: SchemaType.STRING },
+      startDate: { type: SchemaType.STRING },
+      endDate: { type: SchemaType.STRING },
+      location: { type: SchemaType.STRING }
+    },
+    required: ['title', 'startDate']
+  }
+}
+
+const EVENT_PROMPT = `Extract the details of something happening on a day or range of days.
+
+- title: what it is, short and without dates — "Reply Leadvise event", "dentist".
+- startDate: the first day, YYYY-MM-DD. Resolve relative wording against the
+  current date below: "the 24th" is the 24th of this month, or next month if
+  that day has already passed; "Tuesday" is the next Tuesday; "this weekend" is
+  the coming Saturday. Never return a date in the past. If no day is stated at
+  all, use today.
+- endDate: the last day, YYYY-MM-DD, only when they gave a range ("from the
+  24th to the 27th"). Leave empty for a single day.
+- location: the town or city, when one is named. Leave empty otherwise.`
+
+/**
+ * Event details, extracted on their own rather than as part of routing.
+ *
+ * The intent router reliably recognises *that* an utterance is an event, and
+ * just as reliably drops the dates: its prompt covers fifteen intents and some
+ * twenty-five parameters, and the extra fields fall off the end. "Reply
+ * Leadvise event from the 24th to the 27th" came back with a title and no
+ * dates at all, and tightening the wording made it worse, not better. A short
+ * single-purpose prompt gets it right, and only runs when an event is actually
+ * being created.
+ */
+export async function extractEvent(utterance: string): Promise<{
+  title: string
+  startDate: string
+  endDate?: string
+  location?: string
+}> {
+  const systemInstruction = `${EVENT_PROMPT}\n\n${currentTimeContext()}\n\n${placeContext()}`
+  const text = await complete({
+    system: systemInstruction,
+    messages: [{ role: 'user', text: utterance }],
+    jsonSchema: EVENT_SCHEMA.responseSchema as unknown as Record<string, unknown>,
+    temperature: 0
+  })
+
+  const parsed = JSON.parse(stripFences(text))
+  const clean = (value: unknown): string | undefined =>
+    typeof value === 'string' && value.trim() ? value.trim() : undefined
+
+  return {
+    title: clean(parsed.title) ?? '',
+    startDate: clean(parsed.startDate) ?? '',
+    endDate: clean(parsed.endDate),
+    location: clean(parsed.location)
+  }
+}
+
 /** Called with each token chunk as the model generates it. */
 export type StreamHandler = (chunk: string) => void
-
-/** Drains a streaming response, forwarding chunks and returning the full text. */
-async function collectStream(
-  stream: AsyncGenerator<{ text: () => string }>,
-  onChunk?: StreamHandler
-): Promise<string> {
-  let full = ''
-  for await (const part of stream) {
-    const chunk = part.text()
-    if (!chunk) continue
-    full += chunk
-    onChunk?.(chunk)
-  }
-  return full.trim()
-}
 
 export async function chat(utterance: string, onChunk?: StreamHandler): Promise<string> {
   const systemInstruction =
@@ -248,21 +339,16 @@ export async function chat(utterance: string, onChunk?: StreamHandler): Promise<
 
   // Full prior turns (not just a summary) so the model can genuinely follow
   // the thread rather than answering each utterance in isolation.
-  const request = {
-    contents: [...getHistoryAsContents(), { role: 'user', parts: [{ text: utterance }] }]
-  }
+  const messages = [
+    ...getHistoryAsContents().map((entry) => ({
+      role: entry.role,
+      text: entry.parts.map((part) => part.text).join('')
+    })),
+    { role: 'user' as const, text: utterance }
+  ]
 
-  if (!onChunk) {
-    const result = await withModelFallback((name) =>
-      buildModel(name, systemInstruction).generateContent(request)
-    )
-    return result.response.text().trim()
-  }
-
-  const { stream } = await withModelFallback((name) =>
-    buildModel(name, systemInstruction).generateContentStream(request)
-  )
-  return collectStream(stream, onChunk)
+  if (!onChunk) return complete({ system: systemInstruction, messages })
+  return streamComplete({ system: systemInstruction, messages }, onChunk)
 }
 
 export async function formatResponse(
@@ -290,17 +376,9 @@ export async function formatResponse(
     .filter(Boolean)
     .join('\n')
 
-  if (!onChunk) {
-    const result = await withModelFallback((name) =>
-      buildModel(name, systemInstruction).generateContent(prompt)
-    )
-    return result.response.text().trim()
-  }
-
+  const messages = [{ role: 'user' as const, text: prompt }]
+  if (!onChunk) return complete({ system: systemInstruction, messages })
   // Streaming can't retry mid-flight without replaying tokens the UI already
-  // showed, so the fallback applies to opening the stream only.
-  const { stream } = await withModelFallback((name) =>
-    buildModel(name, systemInstruction).generateContentStream(prompt)
-  )
-  return collectStream(stream, onChunk)
+  // showed, so any fallback applies to opening the stream only.
+  return streamComplete({ system: systemInstruction, messages }, onChunk)
 }

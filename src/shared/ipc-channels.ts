@@ -31,8 +31,25 @@ export const IPC = {
   SET_MOUSE_IGNORE: 'nimbus:set-mouse-ignore',
   /** renderer -> main: put an answer on the clipboard */
   COPY_TEXT: 'nimbus:copy-text',
+  /** renderer -> main (invoke): which API keys are set, and from where. Never returns key values. */
+  GET_SECRETS: 'nimbus:get-secrets',
+  /** renderer -> main (invoke): store or clear one API key */
+  SET_SECRET: 'nimbus:set-secret',
+  /** renderer -> main (invoke): list the models a provider's key can use */
+  LIST_MODELS: 'nimbus:list-models',
+  /** renderer -> main (invoke): read/write the chosen provider and model */
+  GET_AI_CHOICE: 'nimbus:get-ai-choice',
+  SET_AI_CHOICE: 'nimbus:set-ai-choice',
   /** main -> renderer: a reminder came due; payload is the Reminder to show and speak */
   REMINDER_DUE: 'nimbus:reminder-due',
+  /** renderer -> main (invoke): one captured piece of video audio, returns a Subtitle or null */
+  SUBTITLE_FOR: 'nimbus:subtitle-for',
+  /** renderer -> main (invoke): one captured piece of a meeting, returns the text or null */
+  MEETING_PIECE: 'nimbus:meeting-piece',
+  /** renderer -> main (invoke): write the transcript to a file the user chooses */
+  SAVE_MEETING: 'nimbus:save-meeting',
+  /** renderer -> main (invoke): summarise the captured meeting */
+  SUMMARIZE_MEETING: 'nimbus:summarize-meeting',
   /** main -> region picker: the frozen screenshot to drag a selection over */
   REGION_IMAGE: 'nimbus:region-image',
   /** region picker -> main: chosen region (0..1), or null to cancel */
