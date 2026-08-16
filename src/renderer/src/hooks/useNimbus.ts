@@ -734,6 +734,15 @@ export function useNimbus(): NimbusOverlayState {
     return window.nimbus.onReminderDue((reminder) => {
       clearFadeTimer()
       setIsOpen(true)
+      // Both refs are written directly, not left to the effects that mirror
+      // them. Those run after the render commits, but `speak` is called
+      // synchronously below and bails on `!isOpenRef.current` — so a reminder
+      // arriving while the overlay was closed was silently dropped, which is
+      // precisely when a reminder matters most. `hasContentRef` decides the
+      // fade length for the same reason: stale, it gave an alert you weren't
+      // looking at the 8-second timeout instead of the 45-second one.
+      isOpenRef.current = true
+      hasContentRef.current = true
       setMode('assistant')
       setError(null)
       setTranscript(null)
