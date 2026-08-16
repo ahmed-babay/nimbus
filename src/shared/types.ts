@@ -8,6 +8,8 @@ export type NimbusIntent =
   | 'music'
   | 'transit'
   | 'directions'
+  | 'remember'
+  | 'recall'
   | 'chat'
 
 export interface IntentClassification {
@@ -170,6 +172,29 @@ export interface TransitCardData {
   journeys: TransitJourney[]
 }
 
+/** Something the user asked Nimbus to remember about them. */
+export interface MemoryFact {
+  id: string
+  text: string
+  at: string
+}
+
+/** An archived answer, searchable long after the conversation ended. */
+export interface RememberedAnswer {
+  id: string
+  at: string
+  question: string
+  answer: string
+  intent: string
+}
+
+export interface MemoryCardData {
+  /** What was searched for, or empty when simply listing recent answers. */
+  query: string
+  answers: RememberedAnswer[]
+  facts: MemoryFact[]
+}
+
 export type TravelMode = 'driving' | 'cycling' | 'walking' | 'transit'
 
 export interface RouteOption {
@@ -246,6 +271,7 @@ export type ResponseCardData =
   | { type: 'screen'; data: ScreenCardData }
   | { type: 'selection'; data: SelectionCardData }
   | { type: 'directions'; data: DirectionsCardData }
+  | { type: 'memory'; data: MemoryCardData }
   | { type: 'explainer'; data: ExplainerCardData }
   | { type: 'text' }
 
