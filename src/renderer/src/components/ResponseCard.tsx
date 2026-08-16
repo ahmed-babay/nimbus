@@ -59,11 +59,7 @@ export function ResponseCard({ response, speechProgressRef, radio, onReplace }: 
         text={displayText}
         progressRef={speechProgressRef}
         spokenRatio={wasShortened ? response.speech.length / displayText.length : 1}
-        className={
-          wasShortened
-            ? 'max-h-52 overflow-y-auto whitespace-pre-wrap text-[13px] leading-relaxed text-nimbus-text'
-            : 'whitespace-pre-wrap text-[13px] leading-relaxed text-nimbus-text'
-        }
+        className="whitespace-pre-wrap text-[13px] leading-relaxed text-nimbus-text"
       />
 
       <CardBody card={response.card} radio={radio} onReplace={onReplace} />
@@ -262,7 +258,7 @@ function SelectionBody({
       <div className="text-[10px] uppercase tracking-[0.14em] text-nimbus-accent">
         {data.actionLabel}
       </div>
-      <p className="mt-1.5 max-h-40 overflow-y-auto whitespace-pre-wrap text-[12.5px] leading-relaxed text-nimbus-text">
+      <p className="mt-1.5 whitespace-pre-wrap text-[12.5px] leading-relaxed text-nimbus-text">
         {data.result}
       </p>
 
