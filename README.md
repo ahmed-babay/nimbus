@@ -376,6 +376,66 @@ The rule this leaves: **explicit capture is fine, ambient capture of content is 
 word is the interesting edge — ambient *listening* but not ambient *disclosure*, since Vosk
 runs offline and nothing leaves the machine until the wake word fires.
 
+## Listening along: meetings and subtitles
+
+Two modes where Nimbus listens for a long time and says nothing at all. Both are started
+explicitly — `/` then **Record a meeting** or **Live subtitles** — and both stay within the
+rule above: you turn them on, you can see they are running, and you turn them off.
+
+Both need to hear what the *computer* is playing, not just the microphone, which Electron
+allows through a display-media handler (`src/main/system-audio.ts`). A screen source has to
+be named because an audio-only stream isn't offered, so the renderer stops the video track
+the moment it arrives — no frame is ever decoded or stored.
+
+### Recording a meeting
+
+Nimbus captures your microphone and the system's output as **two separate streams**, and
+that is the whole trick behind the dialogue transcript. Real diarisation — working out who
+is who from a single mixed track — isn't available on the free tier, but a call already
+arrives as two physically distinct signals: your mic is you, everything else is them.
+
+The limitation to know about: everyone on the far end is one speaker called "Them".
+Splitting three colleagues out of one mixed stream isn't possible here, and guessing would
+produce a transcript that is confidently wrong about who said what.
+
+The transcript builds on screen while it records, so you can see it working rather than
+finding out at the end that it wasn't. Nothing is written to disk unless you press **Save to
+a file** and choose where. **Summarise** returns what was decided, what someone now has to
+do, and what was left open — all four fields are required of the model, because with only
+the summary required it returned an empty actions list for a transcript that plainly
+contained three, and buried one in the prose instead.
+
+### Live subtitles
+
+For a film or video in a language you don't read, with no subtitle track. It listens to the
+system audio, transcribes it, translates it, and puts plain white-on-dark lines at the
+bottom of the screen. Nothing is spoken, the microphone is never opened, and no chime plays
+— a sound effect every few seconds during a film would be unbearable.
+
+**This is delayed subtitling, not simultaneous interpretation.** A phrase has to finish
+before it can be transcribed, so a line lands roughly one phrase behind the audio plus about
+half a second. Measured end to end on German broadcast speech: 280-500ms to transcribe,
+45-900ms to translate.
+
+Three things were found by measurement here, and each one is load-bearing:
+
+- **Whisper's translate endpoint doesn't translate.** Groq's `/audio/translations` returned
+  German audio as German text — with an English prompt, and at temperature 0 — and
+  `whisper-large-v3-turbo` rejects that endpoint outright with a 400. Translation is
+  therefore a separate hop through `src/services/translate.ts`, which is also *faster* than
+  the model would be and costs no model quota at all.
+- **Every piece needs its own recorder.** A single MediaRecorder started with a timeslice
+  puts the container header only in the first blob; every later piece is an undecodable
+  fragment.
+- **Cut at pauses, not on a stopwatch.** A fixed interval splits sentences mid-phrase and
+  the translations come out as fragments. Recording strictly back to back also *loses* the
+  audio between one recorder stopping and the next starting — four consecutive words
+  vanished at one boundary in testing — so the next recorder now starts before the previous
+  one stops.
+
+Rate limits are not a problem in practice: Groq allows 7200 audio-seconds per hour, and an
+hour of film costs about 4500 with the overlap.
+
 ## Ask about your screen
 
 Press **Ctrl+Shift+S** (configurable) and the screen freezes so you can **drag a box around
