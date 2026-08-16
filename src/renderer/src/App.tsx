@@ -38,6 +38,8 @@ export default function App() {
     onTypingStart,
     micEnabled,
     toggleMic,
+    ttsEnabled,
+    toggleTts,
     dismiss
   } = useNimbus()
   // Paced reveal: the model streams in a few big chunks, which otherwise
@@ -113,6 +115,8 @@ export default function App() {
                   onClose={dismiss}
                   micEnabled={micEnabled}
                   onToggleMic={toggleMic}
+                  ttsEnabled={ttsEnabled}
+                  onToggleTts={toggleTts}
                 />
 
                 {/* No items-start here: it would let the scrolling child size
@@ -242,12 +246,16 @@ function Header({
   state,
   onClose,
   micEnabled,
-  onToggleMic
+  onToggleMic,
+  ttsEnabled,
+  onToggleTts
 }: {
   state: NimbusState
   onClose: () => void
   micEnabled: boolean
   onToggleMic: () => void
+  ttsEnabled: boolean
+  onToggleTts: () => void
 }) {
   return (
     <div className="flex items-center justify-between">
@@ -278,6 +286,22 @@ function Header({
           }`}
         >
           {micEnabled ? 'Mic on' : 'Mic off'}
+        </button>
+        <button
+          onClick={onToggleTts}
+          aria-label={ttsEnabled ? 'Mute spoken answers' : 'Unmute spoken answers'}
+          title={
+            ttsEnabled
+              ? 'Answers are spoken — click to mute'
+              : 'Answers are silent — click to unmute'
+          }
+          className={`arcade-type rounded border px-1.5 py-0.5 text-[9px] transition-colors ${
+            ttsEnabled
+              ? 'border-nimbus-yellow/50 text-nimbus-yellow hover:bg-nimbus-yellow/15'
+              : 'border-nimbus-border text-nimbus-text-dim hover:bg-white/[0.06]'
+          }`}
+        >
+          {ttsEnabled ? 'Sound on' : 'Sound off'}
         </button>
         <button
           onClick={onClose}
