@@ -11,6 +11,7 @@ export type NimbusIntent =
   | 'remember'
   | 'recall'
   | 'alarm'
+  | 'event'
   | 'briefing'
   | 'chat'
 
@@ -174,9 +175,29 @@ export interface TransitCardData {
   journeys: TransitJourney[]
 }
 
+/** Something happening on a given day (or range), as told to Nimbus. */
+export interface CalendarEvent {
+  id: string
+  title: string
+  /** YYYY-MM-DD. Day granularity: "the 24th" has no meaningful time of day. */
+  startDate: string
+  /** Last day, for multi-day events. Absent means a single day. */
+  endDate?: string
+  location?: string
+  createdAt: string
+}
+
+export interface EventCardData {
+  created: CalendarEvent | null
+  upcoming: CalendarEvent[]
+}
+
 export interface BriefingCardData {
   weather: WeatherCardData | null
-  /** Next departures on the usual route, when one is configured. */
+  /** Days you told Nimbus about: today first, then what is coming up. */
+  today: CalendarEvent[]
+  upcoming: CalendarEvent[]
+  /** Departures to an event that starts today or tomorrow somewhere else. */
   commute: TransitCardData | null
   news: NewsCardData | null
   /** Reminders due within the next few hours. */
@@ -312,6 +333,7 @@ export type ResponseCardData =
   | { type: 'memory'; data: MemoryCardData }
   | { type: 'reminder'; data: ReminderCardData }
   | { type: 'briefing'; data: BriefingCardData }
+  | { type: 'event'; data: EventCardData }
   | { type: 'explainer'; data: ExplainerCardData }
   | { type: 'text' }
 
@@ -369,8 +391,6 @@ export interface NimbusConfig {
     selectRegion: boolean
   }
   briefing: {
-    /** Where the next departures come from, e.g. "Frankfurt". Omit to skip. */
-    commuteTo: string
     /** City for the weather line; defaults to the first part of location.region. */
     weatherCity: string
     /** Headline topic, or empty for the top stories. */
