@@ -17,6 +17,7 @@ const VALID_INTENTS: NimbusIntent[] = [
   'github',
   'search',
   'music',
+  'transit',
   'chat'
 ]
 
@@ -38,6 +39,15 @@ the relevant parameter for it, leaving the others empty:
      Set to "track" when they want a *specific* song, artist, or video —
      "play Bohemian Rhapsody", "play the new Adele single", "play a video about
      sourdough". If unsure, use "track".
+- "transit": asking about trains, S-Bahn, trams, buses or public transport
+  connections — "when is the next train to Frankfurt", "how do I get to
+  Wiesbaden", "are there trains in the next hour", "S-Bahn to the airport".
+  -> params.to (destination place or station — required)
+  -> params.from (starting station; omit if the user didn't say one)
+  -> params.when (ISO 8601 datetime if they named a time like "at 6pm" or
+     "tomorrow morning"; omit for now/next departures)
+  Use this rather than "search" for anything about catching a service: a web
+  search returns timetable *pages*, this returns actual departures.
 - "search": anything needing current, real-world, or factual information you
   cannot answer reliably from memory — recent events, who currently holds a
   role, prices or facts that change, specific people/companies/products, "look
@@ -78,7 +88,10 @@ const CLASSIFY_SCHEMA: GenerationConfig = {
           query: { type: SchemaType.STRING },
           entity: { type: SchemaType.STRING },
           playback: { type: SchemaType.STRING, enum: ['station', 'track'], format: 'enum' },
-          language: { type: SchemaType.STRING }
+          language: { type: SchemaType.STRING },
+          from: { type: SchemaType.STRING },
+          to: { type: SchemaType.STRING },
+          when: { type: SchemaType.STRING }
         }
       }
     },

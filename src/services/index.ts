@@ -7,6 +7,7 @@ import { getTrendingRepos } from './github'
 import { webSearch } from './search'
 import { lookupEntity } from './wikipedia'
 import { findMusic } from './music'
+import { findJourneys } from './transit'
 import { findStation } from './radio'
 import { recordTurn } from './conversation'
 import type { NimbusResponse } from '../shared/types'
@@ -146,6 +147,17 @@ async function resolveUtterance(
           speech: `Playing ${data.title} by ${data.channel}.`,
           card: { type: 'music', data }
         }
+      }
+
+      case 'transit': {
+        if (!config.integrations.transit) {
+          throw new Error('Transit lookups are disabled in config.json.')
+        }
+        const destination = params.to
+        if (!destination) throw new Error("I didn't catch where you're heading.")
+        const data = await findJourneys(params.from, destination, params.when)
+        const speech = await formatResponse('transit', utterance, data, onChunk)
+        return { speech, card: { type: 'transit', data } }
       }
 
       case 'search': {
