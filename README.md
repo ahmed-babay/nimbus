@@ -454,6 +454,34 @@ If you'd rather have *specific tracks* playing in-app too, that needs a catalogu
 licenses direct streaming — [Jamendo](https://developer.jamendo.com/) (free key, Creative
 Commons) is the usual choice, and would slot in beside `radio.ts`.
 
+## Reminders, and knowing when to leave
+
+"Remind me in 20 minutes to call the landlord" is table stakes. The one worth having is
+**"tell me when I need to leave to catch the last train to Frankfurt"** — Nimbus works the
+moment out from the live timetable rather than a clock time you had to know in advance.
+Ordinary AI assistants can't do this; it needs a departure board and a door-to-door plan.
+
+The walk is free to account for. Because the journey planner is handed *coordinates* rather
+than a station name, MOTIS plans door-to-door and puts a walking leg on the front — so the
+itinerary's own start time is already the moment you must be out of the door, and the first
+transit leg's departure is when the train actually goes. The difference between them is the
+walk, with no second routing request. Three minutes of slack are subtracted on top. A real
+run: the F at 15:31 to Frankfurt Hbf, one minute to the stop, alarm set for 15:27.
+
+Firing is a 30-second **poll**, not a `setTimeout` per reminder, in
+`src/main/reminder-scheduler.ts`. Timers don't survive a restart, drift while the machine is
+asleep, and silently cap out around 24.8 days; a sorted list checked twice a minute behaves
+correctly when the laptop has been shut since the reminder was set, and anything that came
+due while the app was closed fires on startup. Due reminders are marked fired in the same
+step that claims them, so one can't fire twice.
+
+When a reminder fires, Nimbus shows itself and speaks — but **does not open the microphone**.
+`showOverlay` always sends WAKE, which starts recording; that's right when you summoned it
+and wrong when Nimbus is the one initiating, since a hot mic in an empty room is exactly how
+ambient noise became hallucinated questions earlier in this project. `presentOverlay` exists
+for that case. A desktop notification goes out as well, in case you're full-screen in
+another app.
+
 ## What Nimbus remembers between sessions
 
 Until this existed, closing the app meant every answer it had ever given was gone and it
