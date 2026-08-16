@@ -24,6 +24,12 @@ const LOCAL_MODELS: Record<
     size: '290 MB',
     why: 'Hears you without an API key. Works with any answer provider.',
     ready: 'GPU, offline'
+  },
+  tts: {
+    name: 'Kokoro 82M',
+    size: '330 MB',
+    why: 'Speaks without a network call, at a steadier pace than Edge.',
+    ready: 'GPU, offline'
   }
 }
 
@@ -335,10 +341,11 @@ export function KeySettings() {
         Speech
       </div>
       <p className="mt-1 text-[10px] text-nimbus-text-dim">
-        Installed, this replaces the Groq key for hearing you — and keeps your voice on this
-        machine.
+        Installed, these replace the Groq key and the Edge voice — and keep what you say, and
+        what Nimbus says back, on this machine.
       </p>
       <LocalModelRow kind="stt" onMessage={setMessage} />
+      <LocalModelRow kind="tts" onMessage={setMessage} />
 
       <div className="mt-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-nimbus-accent">
         API keys

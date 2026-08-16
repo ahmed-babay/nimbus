@@ -507,7 +507,7 @@ export interface MeetingSummary {
  * separately: local speech recognition is worth having even when answers still
  * come from Gemini, and it is a tenth of the size.
  */
-export type LocalModelKind = 'llm' | 'stt'
+export type LocalModelKind = 'llm' | 'stt' | 'tts'
 
 export interface LocalModelStatus {
   kind: LocalModelKind

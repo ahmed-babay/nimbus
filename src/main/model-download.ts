@@ -5,6 +5,7 @@ import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { localModelPath } from '../services/local-llm'
 import { localSttInstalled, prepareLocalStt, sttCacheDir } from '../services/local-stt'
+import { localTtsInstalled, prepareLocalTts, ttsCacheDir } from '../services/local-tts'
 import type { LocalModelKind, LocalModelProgress, LocalModelStatus } from '../shared/types'
 
 /**
@@ -29,18 +30,30 @@ const MIN_MODEL_BYTES = 400_000_000
 export type DownloadProgress = LocalModelProgress
 
 let inFlight: Promise<void> | null = null
-let sttInFlight: Promise<void> | null = null
+
+/**
+ * The two speech models are both folders of ONNX files managed by
+ * transformers.js rather than single files, and both download by being loaded,
+ * so they share one code path.
+ */
+const ONNX_MODELS = {
+  stt: { installed: localSttInstalled, dir: sttCacheDir, prepare: prepareLocalStt },
+  tts: { installed: localTtsInstalled, dir: ttsCacheDir, prepare: prepareLocalTts }
+} as const
+
+const onnxInFlight: Partial<Record<'stt' | 'tts', Promise<void>>> = {}
 
 export async function localModelStatus(kind: LocalModelKind = 'llm'): Promise<LocalModelStatus> {
-  if (kind === 'stt') {
-    // The speech model is a folder of ONNX files managed by transformers.js,
-    // not a single file, so "installed" is a question for it rather than stat.
+  if (kind === 'stt' || kind === 'tts') {
+    const model = ONNX_MODELS[kind]
     return {
       kind,
-      installed: await localSttInstalled(),
-      path: sttCacheDir(),
+      installed: await model.installed(),
+      path: model.dir(),
+      // Reported as 0 rather than walked: the size is spread over a folder,
+      // and the number is decoration next to whether it works.
       sizeBytes: 0,
-      downloading: sttInFlight !== null
+      downloading: onnxInFlight[kind] !== undefined
     }
   }
 
@@ -60,37 +73,40 @@ export async function localModelStatus(kind: LocalModelKind = 'llm'): Promise<Lo
 }
 
 /**
- * Fetches the speech model. transformers.js downloads on first load, so this
- * is just a load with the progress reported — and it leaves the model warm,
- * which means the first thing said afterwards isn't the request that waits.
+ * Fetches a speech model. transformers.js downloads on first load, so this is
+ * just a load with the progress reported — and it leaves the model warm, which
+ * means the first thing said afterwards isn't the request that waits.
  */
-export async function downloadLocalStt(
+export async function downloadOnnxModel(
+  kind: 'stt' | 'tts',
   onProgress: (progress: DownloadProgress) => void
 ): Promise<void> {
-  if (sttInFlight) return sttInFlight
+  const running = onnxInFlight[kind]
+  if (running) return running
 
-  sttInFlight = (async () => {
+  const started = (async () => {
     try {
-      await prepareLocalStt((progress) =>
+      await ONNX_MODELS[kind].prepare((progress) =>
         onProgress({
-          kind: 'stt',
+          kind,
           receivedBytes: progress.receivedBytes,
           totalBytes: progress.totalBytes,
           done: progress.done
         })
       )
-      onProgress({ kind: 'stt', receivedBytes: 0, totalBytes: 0, done: true })
+      onProgress({ kind, receivedBytes: 0, totalBytes: 0, done: true })
     } catch (error) {
       const message = error instanceof Error ? error.message : 'The download failed.'
-      onProgress({ kind: 'stt', receivedBytes: 0, totalBytes: 0, done: true, error: message })
+      onProgress({ kind, receivedBytes: 0, totalBytes: 0, done: true, error: message })
       throw error
     }
   })()
 
+  onnxInFlight[kind] = started
   try {
-    await sttInFlight
+    await started
   } finally {
-    sttInFlight = null
+    delete onnxInFlight[kind]
   }
 }
 

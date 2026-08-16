@@ -18,6 +18,7 @@
     "@huggingface/transformers": "^4.2.0",
     "dotenv": "^17.4.2",
     "framer-motion": "^13.1.0",
+    "kokoro-js": "^1.2.1",
     "msedge-tts": "^2.0.7",
     "node-llama-cpp": "^3.20.0",
     "react": "^19.2.8",
@@ -33,5 +34,8 @@
     "tailwindcss": "^4.3.3",
     "typescript": "^5.9.3",
     "vite": "^7.3.6"
+  },
+  "overrides": {
+    "@huggingface/transformers": "$@huggingface/transformers"
   }
 }

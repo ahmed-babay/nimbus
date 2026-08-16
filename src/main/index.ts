@@ -21,7 +21,7 @@ import type { TextActionKind } from '../shared/types'
 import { transcribeAudio } from '../services/whisper'
 import { subtitleFor, type Subtitle } from '../services/subtitles'
 import { targetLanguage } from '../services/translate'
-import { downloadLocalModel, downloadLocalStt, localModelStatus } from './model-download'
+import { downloadLocalModel, downloadOnnxModel, localModelStatus } from './model-download'
 import type { LocalModelKind, LocalModelStatus } from '../shared/types'
 import { formatTranscript, summarizeMeeting, transcribePiece } from '../services/meeting'
 import type { MeetingLine, MeetingSummary } from '../shared/types'
@@ -258,7 +258,10 @@ function registerIpcHandlers(): void {
     IPC.DOWNLOAD_LOCAL_MODEL,
     async (event, kind: LocalModelKind = 'llm'): Promise<{ ok: boolean; error?: string }> => {
       try {
-        const fetchModel = kind === 'stt' ? downloadLocalStt : downloadLocalModel
+        const fetchModel =
+          kind === 'llm'
+            ? downloadLocalModel
+            : (report: Parameters<typeof downloadLocalModel>[0]) => downloadOnnxModel(kind, report)
         await fetchModel((progress) => {
           if (!event.sender.isDestroyed()) {
             event.sender.send(IPC.LOCAL_MODEL_PROGRESS, progress)
