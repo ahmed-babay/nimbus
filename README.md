@@ -454,6 +454,31 @@ If you'd rather have *specific tracks* playing in-app too, that needs a catalogu
 licenses direct streaming — [Jamendo](https://developer.jamendo.com/) (free key, Creative
 Commons) is the usual choice, and would slot in beside `radio.ts`.
 
+## The daily briefing
+
+"What does my day look like" / "brief me" / "catch me up" — weather, the next departures on
+your usual route, reminders due in the next 18 hours, and today's headlines, in one answer.
+
+No new capability: it's five services that already existed, asked at once. All three network
+sections run in parallel (a briefing that took the sum of their latencies would be slower
+than asking the questions separately) and each is settled independently, so a section that
+fails is simply absent rather than taking the briefing down with it. A real run assembles in
+about 2.4 seconds.
+
+Configure it under `briefing` in `config.json`: `commuteTo` for the departures, `weatherCity`,
+and `newsTopic` (empty is fine — see below).
+
+Two things the briefing exposed that were quietly wrong elsewhere:
+
+- **Generic headlines are worthless.** Asked for "top news headlines today", the news
+  provider returns aggregator filler — *"School Assembly News Headlines"*, *"MONDAY NEWS IN
+  A RUSH"*. Asked for a **country** it returns real reporting from DW, Reuters and Forbes.
+  So `newsTopic` defaults to the country in `location.region`, which is also the news a
+  briefing should carry: the one where you live.
+- **OpenWeatherMap calls this location "Regierungsbezirk Darmstadt"** — the administrative
+  district rather than the city. Its coordinates are right, so the briefing shows the
+  configured city name instead; adding a country code to the query does not help.
+
 ## Reminders, and knowing when to leave
 
 "Remind me in 20 minutes to call the landlord" is table stakes. The one worth having is
