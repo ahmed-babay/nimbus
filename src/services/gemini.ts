@@ -64,7 +64,17 @@ the relevant parameter for it, leaving the others empty:
 
 Prefer "search" over "chat" whenever the answer depends on facts about the real
 world that may have changed. It is much better to search unnecessarily than to
-confidently state something out of date.`
+confidently state something out of date.
+
+Separately, for ANY intent, set params.topic when a picture or diagram would
+genuinely help the user understand the answer — a physical object, place,
+organism, structure, or a process that is normally taught with a diagram.
+Write it as the bare encyclopedia-article title, not as the user's phrasing:
+"how does a jet engine work" -> "jet engine", "tell me about the Roman
+aqueducts" -> "Roman aqueduct", "what's the Krebs cycle" -> "citric acid cycle".
+Leave params.topic EMPTY for opinions, small talk, greetings, math, code,
+personal questions, prices, schedules, and anything where a picture would be
+decoration rather than explanation.`
 
 // Structured output: Gemini is constrained to emit exactly this shape, so
 // there's no free-text JSON to regex out and no risk of it wrapping the
@@ -91,7 +101,8 @@ const CLASSIFY_SCHEMA: GenerationConfig = {
           language: { type: SchemaType.STRING },
           from: { type: SchemaType.STRING },
           to: { type: SchemaType.STRING },
-          when: { type: SchemaType.STRING }
+          when: { type: SchemaType.STRING },
+          topic: { type: SchemaType.STRING }
         }
       }
     },
