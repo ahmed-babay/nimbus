@@ -189,6 +189,43 @@ The point is the round trip. A German rent-increase notice, with `native` set to
 You understand it in your language; the reply goes back in theirs, correctly formal, without
 you writing a word of it.
 
+## Settings: API keys without a .env file
+
+Open settings from the tray and every key can be pasted in directly, so Nimbus is usable by
+someone who will never create a `.env`. Two rules shape it:
+
+- **`.env` always wins.** A key in the environment is what a developer expects to be
+  running, so stored keys only fill gaps and environment-supplied ones are shown as locked.
+  Opening this panel on an already-configured machine cannot silently shadow a working key.
+- **Stored keys are encrypted at rest** with Electron's `safeStorage`, which on Windows is
+  DPAPI tied to your user account. Plain JSON would have been *worse* than the `.env` it
+  replaces: `.env` is at least gitignored and obviously secret-shaped, while a settings file
+  gets copied around. A store copied to another machine simply fails to decrypt, which is
+  the intended outcome.
+
+Saving a key applies it immediately rather than at the next launch — being told to restart
+after typing a key is a poor first run. The panel never displays a stored key, only a masked
+fragment (`AIz••••x9Qk`) so you can tell which one is in there.
+
+Keys are pushed into `process.env` once at startup, so every service goes on reading
+`process.env.X` exactly as before and none of them needs to know settings exist.
+
+### Choosing the answer model
+
+The panel lists the models **your key can actually use**, fetched from the provider rather
+than hardcoded — a hardcoded list is wrong within weeks, and wrong in a way you can't fix.
+Embedding, TTS and image-generation models are filtered out since they can't answer a
+prompt. Verified live: 34 usable Gemini models.
+
+All three provider endpoints are implemented and reachable — a deliberately invalid key
+returns "That key was rejected" from OpenAI and Anthropic alike, confirming the auth shapes.
+
+**Current limit, stated plainly:** only Gemini's *answer path* is wired. OpenAI and Anthropic
+keys are stored and their models list correctly, but the code that actually asks a question
+still speaks Gemini's API. Those two are therefore shown disabled and marked "soon" rather
+than letting you select a provider that nothing would act on. The adapter is the next piece
+of work; `WIRED_PROVIDERS` in `KeySettings.tsx` is the one line to change when it lands.
+
 ## Finding out what it can do
 
 Features here are reached by *saying* them, not by pressing something. That's what keeps the
