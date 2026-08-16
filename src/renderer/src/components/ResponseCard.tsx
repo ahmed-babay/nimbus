@@ -7,7 +7,9 @@ import { SpokenText } from './SpokenText'
 import type {
   CryptoCardData,
   EntityCardData,
+  ExplainerCardData,
   GithubCardData,
+  Illustration,
   MusicCardData,
   NewsCardData,
   NimbusResponse,
@@ -118,6 +120,8 @@ function CardBody({
       return <RadioBody data={card.data} radio={radio} />
     case 'transit':
       return <TransitBody data={card.data} />
+    case 'explainer':
+      return <ExplainerBody data={card.data} />
     case 'screen':
       return <ScreenBody data={card.data} />
     case 'selection':
@@ -635,20 +639,92 @@ function hostOf(url: string): string {
   }
 }
 
-function SearchBody({ data }: { data: SearchCardData }) {
+/**
+ * Pictures that illustrate an explanation. The lead image is shown large
+ * because it's the one that does the explaining; the rest are supporting
+ * thumbnails. Diagrams sit whole on a light plate — a labelled cutaway is
+ * useless cropped, and Wikipedia's line art is dark ink on transparency,
+ * invisible against this theme without one.
+ */
+function Illustrations({ items }: { items: Illustration[] }) {
+  const [lead, ...rest] = items
+  if (!lead) return null
+
   return (
-    <ul className={`${panel} space-y-2`}>
-      {data.results.slice(0, 3).map((result) => (
-        <ListRow
-          key={result.url}
-          primary={result.title}
-          secondary={hostOf(result.url)}
-          url={result.url}
+    <div className="mb-3">
+      <motion.button
+        {...mediaIn}
+        onClick={() => openLink(lead.url)}
+        title={lead.caption}
+        className="group block w-full overflow-hidden rounded-lg shadow-lg ring-1 ring-white/15 transition-shadow hover:ring-nimbus-accent/50"
+      >
+        <img
+          src={lead.image}
+          alt={lead.caption}
+          className={`h-40 w-full ${
+            lead.diagram ? 'bg-white/95 object-contain p-1.5' : 'object-cover'
+          }`}
         />
-      ))}
-      {data.results.length === 0 && (
-        <li className="text-[11px] text-nimbus-text-dim">No results found.</li>
+        <div className="truncate bg-black/40 px-2 py-1 text-left text-[10px] text-nimbus-text-dim group-hover:text-nimbus-accent-bright">
+          {lead.caption}
+        </div>
+      </motion.button>
+
+      {rest.length > 0 && (
+        <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+          {rest.slice(0, 2).map((item) => (
+            <motion.button
+              {...mediaIn}
+              key={item.url}
+              onClick={() => openLink(item.url)}
+              title={item.caption}
+              className="group overflow-hidden rounded-lg ring-1 ring-white/10 transition-shadow hover:ring-nimbus-accent/50"
+            >
+              <img
+                src={item.image}
+                alt={item.caption}
+                className={`h-16 w-full ${
+                  item.diagram ? 'bg-white/95 object-contain p-1' : 'object-cover'
+                }`}
+              />
+              <div className="truncate bg-black/40 px-1.5 py-0.5 text-left text-[9px] text-nimbus-text-dim group-hover:text-nimbus-accent-bright">
+                {item.caption}
+              </div>
+            </motion.button>
+          ))}
+        </div>
       )}
-    </ul>
+    </div>
+  )
+}
+
+function ExplainerBody({ data }: { data: ExplainerCardData }) {
+  return (
+    <div className={panel}>
+      <Illustrations items={data.illustrations} />
+      <div className="text-[10px] uppercase tracking-wide text-nimbus-text-dim">{data.topic}</div>
+    </div>
+  )
+}
+
+function SearchBody({ data }: { data: SearchCardData }) {
+  const illustrations = data.illustrations ?? []
+  return (
+    <div className={panel}>
+      {illustrations.length > 0 && <Illustrations items={illustrations} />}
+      <ul className="space-y-2">
+        {data.results.slice(0, 3).map((result) => (
+          <ListRow
+            key={result.url}
+            primary={result.title}
+            secondary={hostOf(result.url)}
+            url={result.url}
+          />
+        ))}
+        {data.results.length === 0 && (
+          <li className="text-[11px] text-nimbus-text-dim">No results found.</li>
+        )}
+      </ul>
+    </div>
   )
 }

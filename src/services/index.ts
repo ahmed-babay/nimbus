@@ -6,6 +6,7 @@ import { getNews } from './news'
 import { getTrendingRepos } from './github'
 import { webSearch } from './search'
 import { research } from './research'
+import { tryIllustrate } from './illustrate'
 import { lookupEntity } from './wikipedia'
 import { findMusic } from './music'
 import { findJourneys } from './transit'
@@ -166,6 +167,10 @@ async function resolveUtterance(
           throw new Error('Web search is disabled in config.json.')
         }
         const query = params.query || utterance
+        // Runs alongside the search and synthesis, so pictures cost no extra
+        // wall-clock time. Skipped for entity answers, which already carry
+        // their own Wikipedia photo.
+        const pictures = params.entity ? Promise.resolve([]) : tryIllustrate(params.topic)
 
         // Wikipedia is the right tool only when the question is *about* a
         // named thing ("who is Marie Curie") — it gives a description and a
@@ -223,7 +228,10 @@ async function resolveUtterance(
             : undefined
           try {
             const { speech, card } = await research(utterance, query, track)
-            return { speech, card: { type: 'search', data: card } }
+            return {
+              speech,
+              card: { type: 'search', data: { ...card, illustrations: await pictures } }
+            }
           } catch (err) {
             if (streamed) throw err
             console.warn('[nimbus] deep search failed, falling back:', err)
@@ -246,12 +254,23 @@ async function resolveUtterance(
           if (!data.answer) throw err
           speech = data.answer
         }
-        return { speech, card: { type: 'search', data } }
+        return {
+          speech,
+          card: { type: 'search', data: { ...data, illustrations: await pictures } }
+        }
       }
 
       default: {
+        // Started before the answer so the pictures are fetched while the
+        // model is still writing, rather than after it finishes.
+        const pictures = tryIllustrate(params.topic)
         const speech = await chat(utterance, onChunk)
-        return { speech, card: { type: 'text' } }
+        const illustrations = await pictures
+        if (illustrations.length === 0) return { speech, card: { type: 'text' } }
+        return {
+          speech,
+          card: { type: 'explainer', data: { topic: params.topic as string, illustrations } }
+        }
       }
     }
   } catch (err) {
