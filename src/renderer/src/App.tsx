@@ -67,7 +67,9 @@ export default function App() {
             // stays click-through so the overlay never blocks the screen.
             onMouseEnter={() => window.nimbus.setMouseIgnore(false)}
             onMouseLeave={() => window.nimbus.setMouseIgnore(true)}
-            className="relative w-[492px] overflow-hidden rounded-[20px] border border-nimbus-border bg-nimbus-bg backdrop-blur-2xl"
+            // Capped to the window so a long answer scrolls instead of being
+            // clipped off the bottom with no way to reach it.
+            className="relative flex max-h-[calc(100vh-1rem)] w-[492px] flex-col overflow-hidden rounded-[20px] border border-nimbus-border bg-nimbus-bg backdrop-blur-2xl"
             style={{
               boxShadow:
                 '0 18px 50px -12px rgba(0,0,0,0.85), 0 0 0 2px rgba(255,62,165,0.35), 0 0 26px -4px rgba(255,62,165,0.45), 0 0 46px -10px rgba(34,232,255,0.3)'
@@ -104,7 +106,8 @@ export default function App() {
             {mode === 'settings' ? (
               <SettingsPanel config={config} onClose={dismiss} />
             ) : (
-              <div className="px-4 py-3.5">
+              // Header and input stay put; only the answer between them moves.
+              <div className="flex min-h-0 flex-1 flex-col px-4 py-3.5">
                 <Header
                   state={state}
                   onClose={dismiss}
@@ -112,10 +115,13 @@ export default function App() {
                   onToggleMic={toggleMic}
                 />
 
-                <div className="mt-2.5 flex items-start gap-3.5">
+                {/* No items-start here: it would let the scrolling child size
+                    to its content, so it grew past the card and got clipped
+                    instead of scrolling. The orb pins itself with self-start. */}
+                <div className="mt-2.5 flex min-h-0 flex-1 gap-3.5">
                   <Orb state={state} levelRef={levelRef} />
 
-                  <div className="min-w-0 flex-1 pt-0.5">
+                  <div className="nimbus-scroll min-h-0 min-w-0 flex-1 overflow-y-auto pr-1 pt-0.5">
                     {/* An existing answer stays on screen while listening for a
                         follow-up, so there's time to actually read it. */}
                     {/* Response takes priority over a later error, so a mic

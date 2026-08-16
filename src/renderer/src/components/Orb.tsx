@@ -98,7 +98,7 @@ export function Orb({ state, levelRef }: OrbProps) {
   }, [state, levelRef])
 
   return (
-    <div className="relative flex h-16 w-16 shrink-0 items-center justify-center">
+    <div className="relative flex h-16 w-16 shrink-0 self-start items-center justify-center">
       {/* Neon bloom behind the core */}
       <div
         ref={glowRef}
