@@ -3,6 +3,7 @@ import { buildModel, withModelFallback } from './gemini-client'
 import type { IntentClassification, NimbusIntent } from '../shared/types'
 import { getHistoryAsContents, getHistorySummary } from './conversation'
 import { currentTimeContext } from './now'
+import { placeContext, replyLanguageContext } from './region'
 
 // NOTE: Web Speech API (renderer) handles STT/TTS for free with no API key.
 // If recognition quality is ever a problem, a free-tier Whisper API call
@@ -40,9 +41,9 @@ the relevant parameter for it, leaving the others empty:
      Set to "track" when they want a *specific* song, artist, or video —
      "play Bohemian Rhapsody", "play the new Adele single", "play a video about
      sourdough". If unsure, use "track".
-- "transit": asking about trains, S-Bahn, trams, buses or public transport
-  connections — "when is the next train to Frankfurt", "how do I get to
-  Wiesbaden", "are there trains in the next hour", "S-Bahn to the airport".
+- "transit": asking when a service leaves — "when is the next train to
+  Frankfurt", "are there trains in the next hour", "what time is the last
+  S-Bahn". This is about departure times specifically.
   -> params.to (destination place or station — required)
   -> params.from (starting station; omit if the user didn't say one)
   -> params.when (ISO 8601 datetime if they named a time like "at 6pm" or
@@ -61,10 +62,10 @@ the relevant parameter for it, leaving the others empty:
        "walking"  — on foot, walking, "is it walkable", "can I walk there"
        "transit"  — by train, by bus, by tram, by S-Bahn, public transport
      Omit ONLY when they gave no hint of how they'd travel.
-  The difference from "transit": that one is about catching a specific service
-  ("when is the next train"), this one is about distance, travel time and the
-  route. If they ask both — "how long to Frankfurt by train" — use "directions",
-  since its answer includes the departures too.
+  The difference from "transit": that one answers "when does it leave", this
+  one answers "how far, how long, which way". Anything phrased as "how do I get
+  to X" is "directions". When in doubt prefer "directions" — its answer already
+  includes the departures, so nothing is lost.
 - "search": anything needing current, real-world, or factual information you
   cannot answer reliably from memory — recent events, who currently holds a
   role, prices or facts that change, specific people/companies/products, "look
@@ -142,13 +143,15 @@ export async function classifyIntent(utterance: string): Promise<IntentClassific
   // Recent turns are prepended so follow-ups resolve: "what about tomorrow?"
   // or "how about Berlin?" only make sense against what was just discussed.
   const context = getHistorySummary()
-  const systemInstruction = context
-    ? `${CLASSIFY_SYSTEM_PROMPT}
-
-${currentTimeContext()}\n\nRecent conversation (for resolving pronouns and follow-ups):\n${context}`
-    : `${CLASSIFY_SYSTEM_PROMPT}
-
-${currentTimeContext()}`
+  const systemInstruction = [
+    CLASSIFY_SYSTEM_PROMPT,
+    '',
+    currentTimeContext(),
+    placeContext(),
+    context ? `\nRecent conversation (for resolving pronouns and follow-ups):\n${context}` : ''
+  ]
+    .filter((part) => part !== '')
+    .join('\n')
 
   const result = await withModelFallback((name) =>
     buildModel(name, systemInstruction, CLASSIFY_SCHEMA).generateContent(utterance)
@@ -224,6 +227,7 @@ export async function formatResponse(
     'You turn structured data into a short, natural spoken sentence (1-3 sentences max) ' +
     'for a voice assistant named Nimbus. Do not use markdown, bullet points, or emoji ' +
     'since this will be spoken aloud by text-to-speech.\n\n' +
+    `${replyLanguageContext()}\n\n` +
     currentTimeContext()
 
   const context = getHistorySummary(4)
