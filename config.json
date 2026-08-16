@@ -25,6 +25,11 @@
   "screenshot": {
     "selectRegion": true
   },
+  "search": {
+    "deep": true,
+    "plan": true,
+    "maxQueries": 3
+  },
   "transit": {
     "defaultOrigin": "Darmstadt Hbf"
   },
