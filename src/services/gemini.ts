@@ -18,6 +18,7 @@ const VALID_INTENTS: NimbusIntent[] = [
   'search',
   'music',
   'transit',
+  'directions',
   'chat'
 ]
 
@@ -48,6 +49,22 @@ the relevant parameter for it, leaving the others empty:
      "tomorrow morning"; omit for now/next departures)
   Use this rather than "search" for anything about catching a service: a web
   search returns timetable *pages*, this returns actual departures.
+- "directions": asking how far away somewhere is, how long it takes to get
+  there, or how to get there — "how far is the airport", "how long to Cologne
+  by car", "how do I get to the Mathildenhöhe from here", "is it walkable".
+  -> params.to (the destination — required)
+  -> params.from (starting point; omit for "from here" or when unstated)
+  -> params.mode: how they want to travel, whenever they indicate it at all.
+     Translate their words into exactly one of these four values:
+       "driving"  — by car, driving, drive there, "how long is the drive"
+       "cycling"  — by bike, cycling, on a bicycle
+       "walking"  — on foot, walking, "is it walkable", "can I walk there"
+       "transit"  — by train, by bus, by tram, by S-Bahn, public transport
+     Omit ONLY when they gave no hint of how they'd travel.
+  The difference from "transit": that one is about catching a specific service
+  ("when is the next train"), this one is about distance, travel time and the
+  route. If they ask both — "how long to Frankfurt by train" — use "directions",
+  since its answer includes the departures too.
 - "search": anything needing current, real-world, or factual information you
   cannot answer reliably from memory — recent events, who currently holds a
   role, prices or facts that change, specific people/companies/products, "look
@@ -80,6 +97,12 @@ decoration rather than explanation.`
 // there's no free-text JSON to regex out and no risk of it wrapping the
 // answer in prose or markdown fences.
 const CLASSIFY_SCHEMA: GenerationConfig = {
+  // Routing is a classification, not a creative task. At the default
+  // temperature the same utterance drifted between runs — "how long to
+  // Cologne by car" filled the travel mode on one call and left it empty on
+  // the next — which is exactly the kind of flakiness that's impossible to
+  // debug from the outside.
+  temperature: 0,
   responseMimeType: 'application/json',
   responseSchema: {
     type: SchemaType.OBJECT,
@@ -102,7 +125,12 @@ const CLASSIFY_SCHEMA: GenerationConfig = {
           from: { type: SchemaType.STRING },
           to: { type: SchemaType.STRING },
           when: { type: SchemaType.STRING },
-          topic: { type: SchemaType.STRING }
+          topic: { type: SchemaType.STRING },
+          mode: {
+            type: SchemaType.STRING,
+            enum: ['driving', 'cycling', 'walking', 'transit'],
+            format: 'enum'
+          }
         }
       }
     },
