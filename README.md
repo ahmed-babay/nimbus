@@ -247,6 +247,8 @@ Answers render as visuals where the data supports it, not just spoken text:
 | "who won the final" | Ranked results with source domains |
 | "play Bohemian Rhapsody" | Video thumbnail + duration, opens in your browser |
 | "next train to Frankfurt" | **Departure board** — times, line badges, platform, changes |
+| "how far is Cologne" | **Map with the route drawn**, and a tab per travel mode |
+| "how does a jet engine work" | **Diagrams and photos** alongside the explanation |
 
 Two implementation notes worth knowing:
 
@@ -262,6 +264,30 @@ Two implementation notes worth knowing:
   (a press photo went from ~427KB of base64 to ~43KB — it's displayed in an 80px strip).
   Images are time-limited and always optional: a failed image never fails the answer.
 
+### Pictures for explanations
+
+When an answer would be clearer with a picture, one comes with it — a labelled cutaway for
+"how does a jet engine work", the cycle diagram for "what's the Krebs cycle". These come
+from **Wikipedia** (`src/services/illustrate.ts`): free, no key, and unlike an image search
+it returns the *explanatory* picture rather than a stock photo.
+
+The whole trick is asking it the right thing. Wikipedia search is only as good as its
+query, and the raw utterance is a bad one — "tell me about the Roman aqueducts" matched
+*Chinatown (1974 film)*. So the intent classifier extracts a bare article title alongside
+the intent (`params.topic`), which costs no extra model call: "why is the sky blue" becomes
+**Rayleigh scattering**, "what's the Krebs cycle" becomes **citric acid cycle**. It's left
+empty for jokes, arithmetic, prices and schedules, so pictures appear when they explain
+something and not otherwise.
+
+Two details:
+
+- The fetch runs **in parallel with the answer**, so illustrations cost no extra
+  wall-clock time, and a failure never blocks a reply.
+- Wikipedia's diagrams are rendered SVGs — dark line art on a **transparent** background.
+  The image pipeline flattens everything to JPEG by default, which paints transparency
+  black and would have turned every diagram into a black rectangle on this theme. Those
+  keep their alpha instead and the card puts them on a light plate; photos still get JPEG.
+
 ### News: GNews is optional
 
 News runs on the Tavily key you already need for search (`topic: "news"`), so there's no
@@ -274,6 +300,45 @@ Entity cards come from Wikipedia (free, no key), so "who is X" works even before
 key is set. The classifier only routes to Wikipedia when the question is *about* a named
 thing — "who is the CEO of Nvidia" is a relational question and goes to web search, since
 Wikipedia would return the tangential company page.
+
+## Maps and directions
+
+"How far is the Mathildenhöhe from here", "how long to Cologne by car", "is the botanical
+garden walkable" — `src/services/maps.ts` answers with a drawn map and **every travel mode
+costed at once**, so the card's Drive / Bike / Walk / Transit tabs switch instantly without
+another request. Say how you want to travel and that tab opens first; otherwise pick one.
+
+"From here" means `location.home` in `config.json`. Set it to a street address if you want
+the walking times to be honest — the fallback is IP geolocation, which is city-level at
+best and put a Darmstadt machine in Frankfurt during testing.
+
+Everything here is keyless:
+
+| Piece | Service | Why |
+|---|---|---|
+| Place → coordinates | **Nominatim** | Biased to a ~55 km box around home, so "the botanical garden" means the local one. |
+| Car / bike / walk | **Valhalla** (FOSSGIS) | Real per-mode costing. |
+| Public transport | **Transitous** | The same departure lookup the transit card uses, so "by train" gives actual services. |
+| The map itself | **OpenStreetMap tiles** | ~4-9 tiles per lookup, fetched once. |
+
+Three things learned the hard way, all verified rather than assumed:
+
+- **The OSRM demo server is car-only.** Its URL takes a `/foot/` profile and cheerfully
+  answers with car speeds — it put 4.1 km on foot at nine minutes. Valhalla costs the same
+  trip as 12 min driving, 13 cycling, 40 walking. That's why routing goes to Valhalla.
+- **Never hand a second geocoder the raw words.** Nominatim resolved "Cologne" to Köln
+  while Transitous, geocoding the same string itself, matched a same-named village — the
+  card offered an eleven-hour, four-change bus chain for what is a 101-minute ICE trip.
+  `findJourneys` now takes coordinates, and the fix also repaired short trips, where the
+  stop-name lookup had been silently returning no journeys at all.
+- **Valhalla encodes its route geometry at polyline precision 6**, not the usual 5. A
+  stock decoder reads those coordinates ten times too large and lands you in the ocean.
+
+The map is a still, not a pannable widget: tiles are downloaded and the route projected to
+pixels in the main process, so the card just places images and draws an SVG line over them.
+That keeps it inside OpenStreetMap's tile policy for light use, and means the route can be
+drawn in the theme's own colours. The tiles are inverted in CSS so a light basemap sits in
+a dark overlay; the route line is outside that filter and keeps its real colour.
 
 ## Trains, trams and buses
 
@@ -378,7 +443,13 @@ nicely for JSON — Gemini is constrained at the API level to emit one of the si
 a params object, so there's no free text to regex out and no risk of it wrapping the answer
 in markdown or prose. The system prompt above the schema is what tells it, in plain English,
 what each intent means and which field to fill in (city / symbol / coin / query / language /
-from / to / when).
+from / to / when / mode / topic).
+
+The router runs at **temperature 0**. At the default it drifted between identical runs —
+"how long to Cologne by car" filled in the travel mode on one call and left it blank on the
+next — which is unfixable-looking flakiness from the outside. Travel mode additionally has
+a plain keyword fallback in `src/services/maps.ts`, since even at temperature 0 the model
+fills that field for only about one wording in ten.
 
 ## Web search vs. per-topic APIs
 
@@ -440,7 +511,7 @@ Claude Desktop or another agent, that's the point where MCP would start paying f
 
 ## Toggling integrations
 
-Edit `config.json` — set any of `integrations.weather/stocks/crypto/news/github/transit` to `false`
+Edit `config.json` — set any of `integrations.weather/stocks/crypto/news/github/transit/maps` to `false`
 to disable it (Nimbus will explain it's turned off if you ask anyway), change
 `hotkey.accelerator` (Electron [accelerator syntax](https://www.electronjs.org/docs/latest/api/accelerator))
 if Ctrl+Shift+Space conflicts with something else, or adjust `overlay.autoFadeMs`. Restart
