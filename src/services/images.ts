@@ -25,7 +25,10 @@ const ALLOWED_TYPES = new Set([
  * missing, too large, not actually an image, or simply slow. Images are
  * decoration here — a failure must never take the whole answer down with it.
  */
-export async function fetchImageAsDataUri(url: string | null | undefined): Promise<string | null> {
+export async function fetchImageAsDataUri(
+  url: string | null | undefined,
+  options: { keepTransparency?: boolean } = {}
+): Promise<string | null> {
   if (!url || !/^https?:\/\//i.test(url)) return null
 
   try {
@@ -54,8 +57,19 @@ export async function fetchImageAsDataUri(url: string | null | undefined): Promi
     const { width } = image.getSize()
     const sized = width > MAX_WIDTH ? image.resize({ width: MAX_WIDTH, quality: 'good' }) : image
 
+    // Diagrams and line art arrive as PNGs with a transparent background.
+    // Flattening those to JPEG paints the transparency black, which on a dark
+    // card turns black-on-transparent line art into a black rectangle — so
+    // those keep their alpha and the card supplies the backdrop.
+    const transparent = options.keepTransparency && contentType === 'image/png'
+    if (transparent) {
+      const png = sized.toPNG()
+      if (png.length === 0) return null
+      return `data:image/png;base64,${png.toString('base64')}`
+    }
+
     // JPEG re-encode: these are photographic thumbnails, where JPEG is far
-    // smaller than PNG. (Transparency isn't preserved, which is fine here.)
+    // smaller than PNG.
     const encoded = sized.toJPEG(JPEG_QUALITY)
     if (encoded.length === 0) return null
 
@@ -67,7 +81,8 @@ export async function fetchImageAsDataUri(url: string | null | undefined): Promi
 
 /** Fetches several images at once; failures come back as null, never throw. */
 export async function fetchImagesAsDataUris(
-  urls: Array<string | null | undefined>
+  urls: Array<string | null | undefined>,
+  options: { keepTransparency?: boolean } = {}
 ): Promise<Array<string | null>> {
-  return Promise.all(urls.map((url) => fetchImageAsDataUri(url)))
+  return Promise.all(urls.map((url) => fetchImageAsDataUri(url, options)))
 }

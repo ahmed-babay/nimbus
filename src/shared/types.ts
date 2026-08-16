@@ -95,10 +95,30 @@ export interface SearchResult {
   snippet: string
 }
 
+/** A picture that helps explain the answer, with its source article. */
+export interface Illustration {
+  /** base64 data URI — the overlay's CSP blocks remote image URLs. */
+  image: string
+  caption: string
+  url: string
+  /**
+   * Line art or a schematic rather than a photo. These must be shown whole on
+   * a light backdrop; cropping a labelled diagram loses the labels.
+   */
+  diagram: boolean
+}
+
 export interface SearchCardData {
   query: string
   answer: string | null
   results: SearchResult[]
+  illustrations?: Illustration[]
+}
+
+/** A spoken explanation that had no data card of its own, but earned pictures. */
+export interface ExplainerCardData {
+  topic: string
+  illustrations: Illustration[]
 }
 
 export interface MusicCardData {
@@ -187,6 +207,7 @@ export type ResponseCardData =
   | { type: 'transit'; data: TransitCardData }
   | { type: 'screen'; data: ScreenCardData }
   | { type: 'selection'; data: SelectionCardData }
+  | { type: 'explainer'; data: ExplainerCardData }
   | { type: 'text' }
 
 export interface SynthesizedSpeech {
