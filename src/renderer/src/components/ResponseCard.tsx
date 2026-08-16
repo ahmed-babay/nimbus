@@ -5,6 +5,7 @@ import { ImageCarousel } from './ImageCarousel'
 import { Sparkline } from './Sparkline'
 import { SpokenText } from './SpokenText'
 import type {
+  BriefingCardData,
   CryptoCardData,
   DirectionsCardData,
   EntityCardData,
@@ -131,6 +132,8 @@ function CardBody({
       return <MemoryBody data={card.data} />
     case 'reminder':
       return <ReminderBody data={card.data} />
+    case 'briefing':
+      return <BriefingBody data={card.data} />
     case 'explainer':
       return <ExplainerBody data={card.data} />
     case 'screen':
@@ -889,6 +892,109 @@ function Illustrations({ items }: { items: Illustration[] }) {
             </motion.button>
           ))}
         </div>
+      )}
+    </div>
+  )
+}
+
+/** Small titled band, so the briefing's sections read as one card not four. */
+function BriefingSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="border-t border-white/[0.07] pt-2 first:border-0 first:pt-0">
+      <div className="text-[9.5px] uppercase tracking-wider text-nimbus-accent/80">{title}</div>
+      <div className="mt-1">{children}</div>
+    </div>
+  )
+}
+
+function BriefingBody({ data }: { data: BriefingCardData }) {
+  return (
+    <div className={`${panel} space-y-2`}>
+      {data.weather && (
+        <BriefingSection title="Weather">
+          <div className="flex items-baseline gap-2">
+            <span className="text-lg font-semibold tabular-nums text-nimbus-text">
+              {data.weather.temp}°
+            </span>
+            <span className="text-[11px] capitalize text-nimbus-text-dim">
+              {data.weather.condition} · {data.weather.city}
+            </span>
+            <span className="ml-auto text-[10px] text-nimbus-text-dim">
+              feels {data.weather.feelsLike}°
+            </span>
+          </div>
+        </BriefingSection>
+      )}
+
+      {data.commute && (
+        <BriefingSection title={`Next to ${data.commute.to.split(',')[0]}`}>
+          <ul className="space-y-1">
+            {data.commute.journeys.slice(0, 3).map((journey, index) => (
+              <li
+                key={`${journey.departsAt}-${index}`}
+                className="flex items-baseline gap-2 text-[11px]"
+              >
+                <span className="shrink-0 font-mono tabular-nums text-nimbus-yellow">
+                  {journey.departs}
+                </span>
+                <span
+                  className={`shrink-0 rounded px-1 py-px font-mono text-[9.5px] leading-none ring-1 ${lineTone(journey.legs[0]?.line ?? '')}`}
+                >
+                  {journey.legs[0]?.line || 'Walk'}
+                </span>
+                <span className="ml-auto shrink-0 text-[10px] text-nimbus-text-dim">
+                  {journey.durationMinutes} min
+                  {journey.changes > 0 && ` · ${journey.changes}×`}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </BriefingSection>
+      )}
+
+      {data.reminders.length > 0 && (
+        <BriefingSection title="Coming up">
+          <ul className="space-y-1">
+            {data.reminders.slice(0, 4).map((reminder) => (
+              <li key={reminder.id} className="flex items-baseline gap-2 text-[11px]">
+                <span className="shrink-0 tabular-nums text-nimbus-text-dim">
+                  {new Date(reminder.at).toLocaleTimeString([], {
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  })}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-nimbus-text">{reminder.text}</span>
+              </li>
+            ))}
+          </ul>
+        </BriefingSection>
+      )}
+
+      {data.news && (
+        <BriefingSection title="Headlines">
+          <ul className="space-y-1.5">
+            {data.news.articles.map((article) => (
+              <li key={article.url}>
+                <button
+                  onClick={() => openLink(article.url)}
+                  title={article.url}
+                  className="group flex w-full items-start gap-2 text-left"
+                >
+                  {article.image && (
+                    <img
+                      src={article.image}
+                      alt=""
+                      className="h-8 w-12 shrink-0 rounded object-cover ring-1 ring-white/10"
+                    />
+                  )}
+                  <span className="line-clamp-2 min-w-0 flex-1 text-[11px] leading-snug text-nimbus-text group-hover:text-nimbus-accent-bright">
+                    {article.title}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </BriefingSection>
       )}
     </div>
   )
