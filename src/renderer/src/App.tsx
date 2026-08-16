@@ -6,7 +6,9 @@ import { ResponseCard } from './components/ResponseCard'
 import { SelectionActions } from './components/SelectionActions'
 import { TextInput } from './components/TextInput'
 import { KeySettings } from './components/KeySettings'
+import { SubtitleBar } from './components/SubtitleBar'
 import { useNimbus } from './hooks/useNimbus'
+import { useSubtitles } from './hooks/useSubtitles'
 import { useTypewriter } from './hooks/useTypewriter'
 import type { NimbusConfig, NimbusState } from '@shared/types'
 
@@ -42,21 +44,41 @@ export default function App() {
     ttsEnabled,
     toggleTts,
     openSettings,
+    setHoldOpen,
     dismiss
   } = useNimbus()
   // Paced reveal: the model streams in a few big chunks, which otherwise
   // lands as the whole answer at once.
   const typedText = useTypewriter(streamingText)
+  const subtitles = useSubtitles()
   // Driven by one explicit flag rather than inferred from state and content.
-  const isVisible = isOpen || mode === 'settings'
+  // The card steps aside while subtitles run: they belong over the video, and
+  // a panel on top of the picture is exactly what nobody wants there.
+  const isVisible = (isOpen || mode === 'settings') && !subtitles.active
+
+  // Without this the overlay would fade out mid-film and take the subtitles
+  // with it.
+  useEffect(() => {
+    setHoldOpen(subtitles.active)
+  }, [subtitles.active, setHoldOpen])
+
+  const stopSubtitles = (): void => {
+    subtitles.stop()
+    setHoldOpen(false)
+    dismiss()
+  }
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent): void {
-      if (event.key === 'Escape') dismiss()
+      if (event.key !== 'Escape') return
+      // Escape means "end what's running", which during a film is the
+      // subtitles rather than the overlay behind them.
+      if (subtitles.active) stopSubtitles()
+      else dismiss()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [dismiss])
+  })
 
   return (
     <div className="flex h-screen w-screen items-start justify-center pt-2">
@@ -221,7 +243,9 @@ export default function App() {
                 {/* Always available — talking isn't possible everywhere. */}
                 <TextInput
                   onSubmit={submitText}
-                  onAction={() => openSettings()}
+                  onAction={(action) =>
+                    action === 'subtitles' ? void subtitles.start() : openSettings()
+                  }
                   focusKey={isVisible}
                   onTypingStart={onTypingStart}
                 />
@@ -243,6 +267,15 @@ export default function App() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {subtitles.active && (
+        <SubtitleBar
+          lines={subtitles.visible}
+          detected={subtitles.detected}
+          error={subtitles.error}
+          onStop={stopSubtitles}
+        />
+      )}
     </div>
   )
 }

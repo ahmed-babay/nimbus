@@ -52,6 +52,8 @@ export interface NimbusOverlayState {
   toggleTts: () => void
   /** Shows the settings panel — reachable without hunting for the tray icon. */
   openSettings: () => void
+  /** Keeps the overlay from fading while a long-running mode owns it. */
+  setHoldOpen: (hold: boolean) => void
   dismiss: () => void
 }
 
@@ -98,6 +100,7 @@ export function useNimbus(): NimbusOverlayState {
    *  the audio element's 'playing' event, which is too late for the decision
    *  about whether to reopen the mic. */
   const radioActiveRef = useRef(false)
+  const holdOpenRef = useRef(false)
   /** True while the station is paused purely so the mic can hear the user —
    *  resumed if they say nothing, dropped if they ask something new. */
   const pausedForListeningRef = useRef(false)
@@ -201,7 +204,21 @@ export function useNimbus(): NimbusOverlayState {
     setMode('settings')
   }, [clearFadeTimer])
 
+  /**
+   * Set while a long-running mode owns the overlay — subtitles today. The
+   * overlay closing itself under a film would take the subtitles with it, the
+   * same reason radio suppresses the fade.
+   */
+  const setHoldOpen = useCallback(
+    (hold: boolean) => {
+      holdOpenRef.current = hold
+      if (hold) clearFadeTimer()
+    },
+    [clearFadeTimer]
+  )
+
   const dismiss = useCallback(() => {
+    holdOpenRef.current = false
     clearFadeTimer()
     setIsOpen(false)
     window.speechSynthesis?.cancel()
@@ -228,7 +245,7 @@ export function useNimbus(): NimbusOverlayState {
     clearFadeTimer()
     // Never close while a station is playing — closing tears down the audio
     // element and the music would just stop. "stop" or Esc ends it.
-    if (radioActiveRef.current) return
+    if (radioActiveRef.current || holdOpenRef.current) return
     // Give the user real reading time whenever there's an answer on screen.
     const autoFadeMs = hasContentRef.current
       ? READING_AUTO_FADE_MS
@@ -843,6 +860,7 @@ export function useNimbus(): NimbusOverlayState {
     ttsEnabled,
     toggleTts,
     openSettings,
+    setHoldOpen,
     dismiss
   }
 }

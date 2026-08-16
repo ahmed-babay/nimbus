@@ -27,7 +27,7 @@ export interface Capability {
   requires?: string
   /** Opens a panel instead of typing the example — for things that are not
    *  questions, like the settings screen. */
-  action?: 'settings'
+  action?: 'settings' | 'subtitles'
 }
 
 export const CAPABILITIES: Capability[] = [
@@ -37,6 +37,13 @@ export const CAPABILITIES: Capability[] = [
     example: 'open settings',
     keywords: 'api key model provider gemini openai anthropic config setup token',
     action: 'settings'
+  },
+  {
+    group: 'Listen along',
+    title: 'Live subtitles for a video',
+    example: 'subtitles',
+    keywords: 'translate subtitle movie film video youtube dub foreign language german caption',
+    action: 'subtitles'
   },
   // Everyday lookups
   {
