@@ -9,6 +9,7 @@ import type {
   Reminder,
   SecretName,
   SecretStatus,
+  Subtitle,
   SynthesizedSpeech,
   TextActionKind
 } from '../shared/types'
@@ -64,6 +65,14 @@ const api = {
     ipcRenderer.invoke(IPC.TRANSCRIPT, utterance),
   transcribeAudio: (audio: ArrayBuffer, mimeType: string): Promise<string> =>
     ipcRenderer.invoke(IPC.TRANSCRIBE_AUDIO, audio, mimeType),
+  subtitleFor: (
+    audio: ArrayBuffer,
+    mimeType: string,
+    offsetMs: number,
+    previous: string,
+    sourceHint: string
+  ): Promise<Subtitle | null> =>
+    ipcRenderer.invoke(IPC.SUBTITLE_FOR, audio, mimeType, offsetMs, previous, sourceHint),
   synthesizeSpeech: (text: string): Promise<SynthesizedSpeech> =>
     ipcRenderer.invoke(IPC.SYNTHESIZE_SPEECH, text),
   hide: (): void => {

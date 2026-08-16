@@ -19,6 +19,7 @@ import { captureSelection, pasteIntoWindow, type CapturedSelection } from './sel
 import { runTextAction } from '../services/text-actions'
 import type { TextActionKind } from '../shared/types'
 import { transcribeAudio } from '../services/whisper'
+import { subtitleFor, type Subtitle } from '../services/subtitles'
 import { synthesizeSpeech } from '../services/tts'
 import { withDeadline } from '../services/http'
 import { IPC } from '../shared/ipc-channels'
@@ -232,6 +233,34 @@ function registerIpcHandlers(): void {
     IPC.TRANSCRIBE_AUDIO,
     async (_event, audio: ArrayBuffer, mimeType: string): Promise<string> => {
       return transcribeAudio(Buffer.from(audio), mimeType)
+    }
+  )
+
+  ipcMain.handle(
+    IPC.SUBTITLE_FOR,
+    async (
+      _event,
+      audio: ArrayBuffer,
+      mimeType: string,
+      offsetMs: number,
+      previous: string,
+      sourceHint: string
+    ): Promise<Subtitle | null> => {
+      // A failed piece must not stop the stream: subtitles arrive every few
+      // seconds, and one dropped line is far better than the mode dying
+      // because a single upload timed out.
+      try {
+        return await subtitleFor({
+          audio: Buffer.from(audio),
+          mimeType,
+          offsetMs,
+          previous,
+          sourceHint
+        })
+      } catch (error) {
+        console.warn('[subtitles] piece failed:', error)
+        return null
+      }
     }
   )
 

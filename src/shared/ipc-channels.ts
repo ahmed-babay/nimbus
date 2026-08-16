@@ -42,6 +42,8 @@ export const IPC = {
   SET_AI_CHOICE: 'nimbus:set-ai-choice',
   /** main -> renderer: a reminder came due; payload is the Reminder to show and speak */
   REMINDER_DUE: 'nimbus:reminder-due',
+  /** renderer -> main (invoke): one captured piece of video audio, returns a Subtitle or null */
+  SUBTITLE_FOR: 'nimbus:subtitle-for',
   /** main -> region picker: the frozen screenshot to drag a selection over */
   REGION_IMAGE: 'nimbus:region-image',
   /** region picker -> main: chosen region (0..1), or null to cancel */

@@ -32,7 +32,21 @@ function extensionFor(mimeType: string): string {
   }
 }
 
-export async function transcribeAudio(audio: Buffer, mimeType: string): Promise<string> {
+export interface TranscribeOptions {
+  /**
+   * Replaces the region hint with continuation context — the tail of what was
+   * said just before. Whisper treats its prompt as preceding text, so this
+   * keeps a piece that was cut mid-sentence from being transcribed as if it
+   * began there.
+   */
+  contextPrompt?: string
+}
+
+export async function transcribeAudio(
+  audio: Buffer,
+  mimeType: string,
+  options: TranscribeOptions = {}
+): Promise<string> {
   const apiKey = process.env.GROQ_API_KEY
   if (!apiKey) {
     throw new Error('GROQ_API_KEY is not set. Add it to your .env file.')
@@ -55,7 +69,7 @@ export async function transcribeAudio(audio: Buffer, mimeType: string): Promise<
   // measurably improves local place names — "Lusenplatz" became "Luisenplatz"
   // and "Mephilden hole" became "Mathildenhole" on the same audio. It doesn't
   // fix everything, so the intent router corrects what's left.
-  const hint = transcriptionHint()
+  const hint = options.contextPrompt?.trim() || transcriptionHint()
   if (hint) form.append('prompt', hint)
 
   const res = await httpFetch(TRANSCRIPTION_URL, {

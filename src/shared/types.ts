@@ -472,3 +472,15 @@ export interface NimbusConfig {
     native: string
   }
 }
+
+/** One line of a live translation, produced from a few seconds of audio. */
+export interface Subtitle {
+  /** What was actually said, in the source language. */
+  original: string
+  /** The same line in the user's language. */
+  translated: string
+  /** ISO code of the detected source language, when known. */
+  detected: string
+  /** Position within the session, so lines can't render out of order. */
+  offsetMs: number
+}
