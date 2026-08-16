@@ -56,8 +56,8 @@ function isNoise(text: string): boolean {
 const CONTEXT_CHARS = 220
 
 export interface SubtitleRequest {
-  audio: Buffer
-  mimeType: string
+  /** 16kHz mono samples, decoded in the renderer. */
+  pcm: Float32Array
   offsetMs: number
   /** Tail of the previous line, for continuity across a forced cut. */
   previous?: string
@@ -71,8 +71,12 @@ export interface SubtitleRequest {
  * someone their own language back as a "translation" is just clutter.
  */
 export async function subtitleFor(request: SubtitleRequest): Promise<Subtitle | null> {
-  const spoken = await transcribeAudio(request.audio, request.mimeType, {
-    contextPrompt: request.previous?.slice(-CONTEXT_CHARS)
+  const spoken = await transcribeAudio(request.pcm, {
+    contextPrompt: request.previous?.slice(-CONTEXT_CHARS),
+    // Whatever was detected earlier in this session. A film doesn't change
+    // language, and pieces are short enough that guessing per-piece is
+    // unreliable — the first line carries the cost, the rest are told.
+    language: request.sourceHint
   })
 
   if (!spoken || isNoise(spoken)) return null

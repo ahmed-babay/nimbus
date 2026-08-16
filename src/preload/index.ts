@@ -7,6 +7,7 @@ import type {
   NimbusResponse,
   ProviderModel,
   Reminder,
+  LocalModelKind,
   LocalModelProgress,
   LocalModelStatus,
   MeetingLine,
@@ -67,27 +68,27 @@ const api = {
   },
   sendTranscript: (utterance: string): Promise<NimbusResponse> =>
     ipcRenderer.invoke(IPC.TRANSCRIPT, utterance),
-  transcribeAudio: (audio: ArrayBuffer, mimeType: string): Promise<string> =>
-    ipcRenderer.invoke(IPC.TRANSCRIBE_AUDIO, audio, mimeType),
+  /** Takes 16kHz mono float samples; the renderer decodes, main transcribes. */
+  transcribeAudio: (pcm: ArrayBuffer): Promise<string> =>
+    ipcRenderer.invoke(IPC.TRANSCRIBE_AUDIO, pcm),
   subtitleFor: (
-    audio: ArrayBuffer,
-    mimeType: string,
+    pcm: ArrayBuffer,
     offsetMs: number,
     previous: string,
     sourceHint: string
   ): Promise<Subtitle | null> =>
-    ipcRenderer.invoke(IPC.SUBTITLE_FOR, audio, mimeType, offsetMs, previous, sourceHint),
-  getLocalModelStatus: (): Promise<LocalModelStatus> =>
-    ipcRenderer.invoke(IPC.LOCAL_MODEL_STATUS),
-  downloadLocalModel: (): Promise<{ ok: boolean; error?: string }> =>
-    ipcRenderer.invoke(IPC.DOWNLOAD_LOCAL_MODEL),
+    ipcRenderer.invoke(IPC.SUBTITLE_FOR, pcm, offsetMs, previous, sourceHint),
+  getLocalModelStatus: (kind: LocalModelKind = 'llm'): Promise<LocalModelStatus> =>
+    ipcRenderer.invoke(IPC.LOCAL_MODEL_STATUS, kind),
+  downloadLocalModel: (kind: LocalModelKind = 'llm'): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke(IPC.DOWNLOAD_LOCAL_MODEL, kind),
   onLocalModelProgress: (callback: (progress: LocalModelProgress) => void): (() => void) => {
     const listener = (_event: unknown, progress: LocalModelProgress): void => callback(progress)
     ipcRenderer.on(IPC.LOCAL_MODEL_PROGRESS, listener)
     return () => ipcRenderer.removeListener(IPC.LOCAL_MODEL_PROGRESS, listener)
   },
-  meetingPiece: (audio: ArrayBuffer, mimeType: string, previous: string): Promise<string | null> =>
-    ipcRenderer.invoke(IPC.MEETING_PIECE, audio, mimeType, previous),
+  meetingPiece: (pcm: ArrayBuffer, previous: string): Promise<string | null> =>
+    ipcRenderer.invoke(IPC.MEETING_PIECE, pcm, previous),
   saveMeeting: (
     lines: MeetingLine[],
     startedAt: number

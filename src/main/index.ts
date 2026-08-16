@@ -20,8 +20,9 @@ import { runTextAction } from '../services/text-actions'
 import type { TextActionKind } from '../shared/types'
 import { transcribeAudio } from '../services/whisper'
 import { subtitleFor, type Subtitle } from '../services/subtitles'
-import { downloadLocalModel, localModelStatus } from './model-download'
-import type { LocalModelStatus } from '../shared/types'
+import { targetLanguage } from '../services/translate'
+import { downloadLocalModel, downloadLocalStt, localModelStatus } from './model-download'
+import type { LocalModelKind, LocalModelStatus } from '../shared/types'
 import { formatTranscript, summarizeMeeting, transcribePiece } from '../services/meeting'
 import type { MeetingLine, MeetingSummary } from '../shared/types'
 import { writeFile } from 'node:fs/promises'
@@ -237,18 +238,28 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(
     IPC.TRANSCRIBE_AUDIO,
-    async (_event, audio: ArrayBuffer, mimeType: string): Promise<string> => {
-      return transcribeAudio(Buffer.from(audio), mimeType)
+    async (_event, pcm: ArrayBuffer): Promise<string> => {
+      // Already 16kHz mono float samples — the renderer decoded them, because
+      // only Chromium has the WebM/Opus codec.
+      //
+      // Told which language to expect rather than left to guess: an utterance
+      // is a couple of seconds, which is too little for reliable detection,
+      // and the language the user thinks in is the one they ask questions in.
+      return transcribeAudio(new Float32Array(pcm), { language: targetLanguage() })
     }
   )
 
-  ipcMain.handle(IPC.LOCAL_MODEL_STATUS, (): Promise<LocalModelStatus> => localModelStatus())
+  ipcMain.handle(
+    IPC.LOCAL_MODEL_STATUS,
+    (_event, kind: LocalModelKind = 'llm'): Promise<LocalModelStatus> => localModelStatus(kind)
+  )
 
   ipcMain.handle(
     IPC.DOWNLOAD_LOCAL_MODEL,
-    async (event): Promise<{ ok: boolean; error?: string }> => {
+    async (event, kind: LocalModelKind = 'llm'): Promise<{ ok: boolean; error?: string }> => {
       try {
-        await downloadLocalModel((progress) => {
+        const fetchModel = kind === 'stt' ? downloadLocalStt : downloadLocalModel
+        await fetchModel((progress) => {
           if (!event.sender.isDestroyed()) {
             event.sender.send(IPC.LOCAL_MODEL_PROGRESS, progress)
           }
@@ -264,8 +275,7 @@ function registerIpcHandlers(): void {
     IPC.SUBTITLE_FOR,
     async (
       _event,
-      audio: ArrayBuffer,
-      mimeType: string,
+      pcm: ArrayBuffer,
       offsetMs: number,
       previous: string,
       sourceHint: string
@@ -275,8 +285,7 @@ function registerIpcHandlers(): void {
       // because a single upload timed out.
       try {
         return await subtitleFor({
-          audio: Buffer.from(audio),
-          mimeType,
+          pcm: new Float32Array(pcm),
           offsetMs,
           previous,
           sourceHint
@@ -292,15 +301,14 @@ function registerIpcHandlers(): void {
     IPC.MEETING_PIECE,
     async (
       _event,
-      audio: ArrayBuffer,
-      mimeType: string,
+      pcm: ArrayBuffer,
       previous: string
     ): Promise<string | null> => {
-      // As with subtitles, one failed upload must not end the recording —
+      // As with subtitles, one failed piece must not end the recording —
       // losing a sentence of a meeting is recoverable, losing the meeting is
       // not.
       try {
-        return await transcribePiece(Buffer.from(audio), mimeType, previous)
+        return await transcribePiece(new Float32Array(pcm), previous)
       } catch (error) {
         console.warn('[meeting] piece failed:', error)
         return null

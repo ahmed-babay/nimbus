@@ -1,6 +1,7 @@
 import { useCallback, useRef } from 'react'
 import { playListenEndChime, playListenStartChime } from '../lib/chime'
 import { isLikelyNoise } from '../lib/noise-transcripts'
+import { toPcm } from '../lib/pcm'
 
 // Electron's Chromium doesn't ship the proprietary Google API key that the
 // Web Speech API's SpeechRecognition needs, so it always fails with a
@@ -235,9 +236,8 @@ export function useVoiceInput({
             return
           }
 
-          blob
-            .arrayBuffer()
-            .then((buffer) => window.nimbus.transcribeAudio(buffer, blob.type))
+          toPcm(blob)
+            .then((pcm) => window.nimbus.transcribeAudio(pcm.buffer as ArrayBuffer))
             .then((transcript) => {
               if (!transcript) {
                 console.log('[voice] transcription returned empty text')

@@ -4,6 +4,8 @@ import { dirname } from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { localModelPath } from '../services/local-llm'
+import { localSttInstalled, prepareLocalStt, sttCacheDir } from '../services/local-stt'
+import type { LocalModelKind, LocalModelProgress, LocalModelStatus } from '../shared/types'
 
 /**
  * Fetches the local model on first use.
@@ -24,32 +26,71 @@ const MODEL_URL =
 /** Sanity floor — a model file much smaller than this is a truncated download. */
 const MIN_MODEL_BYTES = 400_000_000
 
-export interface DownloadProgress {
-  receivedBytes: number
-  totalBytes: number
-  done: boolean
-  error?: string
-}
+export type DownloadProgress = LocalModelProgress
 
 let inFlight: Promise<void> | null = null
+let sttInFlight: Promise<void> | null = null
 
-export async function localModelStatus(): Promise<{
-  installed: boolean
-  path: string
-  sizeBytes: number
-  downloading: boolean
-}> {
+export async function localModelStatus(kind: LocalModelKind = 'llm'): Promise<LocalModelStatus> {
+  if (kind === 'stt') {
+    // The speech model is a folder of ONNX files managed by transformers.js,
+    // not a single file, so "installed" is a question for it rather than stat.
+    return {
+      kind,
+      installed: await localSttInstalled(),
+      path: sttCacheDir(),
+      sizeBytes: 0,
+      downloading: sttInFlight !== null
+    }
+  }
+
   const path = localModelPath()
   try {
     const info = await stat(path)
     return {
+      kind,
       installed: info.size >= MIN_MODEL_BYTES,
       path,
       sizeBytes: info.size,
       downloading: inFlight !== null
     }
   } catch {
-    return { installed: false, path, sizeBytes: 0, downloading: inFlight !== null }
+    return { kind, installed: false, path, sizeBytes: 0, downloading: inFlight !== null }
+  }
+}
+
+/**
+ * Fetches the speech model. transformers.js downloads on first load, so this
+ * is just a load with the progress reported — and it leaves the model warm,
+ * which means the first thing said afterwards isn't the request that waits.
+ */
+export async function downloadLocalStt(
+  onProgress: (progress: DownloadProgress) => void
+): Promise<void> {
+  if (sttInFlight) return sttInFlight
+
+  sttInFlight = (async () => {
+    try {
+      await prepareLocalStt((progress) =>
+        onProgress({
+          kind: 'stt',
+          receivedBytes: progress.receivedBytes,
+          totalBytes: progress.totalBytes,
+          done: progress.done
+        })
+      )
+      onProgress({ kind: 'stt', receivedBytes: 0, totalBytes: 0, done: true })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'The download failed.'
+      onProgress({ kind: 'stt', receivedBytes: 0, totalBytes: 0, done: true, error: message })
+      throw error
+    }
+  })()
+
+  try {
+    await sttInFlight
+  } finally {
+    sttInFlight = null
   }
 }
 
@@ -83,18 +124,18 @@ export async function downloadLocalModel(
         const now = Date.now()
         if (now - lastReport > 250) {
           lastReport = now
-          onProgress({ receivedBytes, totalBytes, done: false })
+          onProgress({ kind: 'llm', receivedBytes, totalBytes, done: false })
         }
       })
 
       await pipeline(body, createWriteStream(temp))
       await rename(temp, target)
-      onProgress({ receivedBytes, totalBytes, done: true })
+      onProgress({ kind: 'llm', receivedBytes, totalBytes, done: true })
       console.log(`[model] downloaded ${MODEL_URL} -> ${target}`)
     } catch (error) {
       await rm(temp, { force: true }).catch(() => {})
       const message = error instanceof Error ? error.message : 'The download failed.'
-      onProgress({ receivedBytes: 0, totalBytes: 0, done: true, error: message })
+      onProgress({ kind: 'llm', receivedBytes: 0, totalBytes: 0, done: true, error: message })
       throw error
     }
   })()

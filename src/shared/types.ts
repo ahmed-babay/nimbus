@@ -502,7 +502,15 @@ export interface MeetingSummary {
 }
 
 /** Whether the on-device model is present, and how big it is. */
+/**
+ * Which on-device model. They download separately because they are useful
+ * separately: local speech recognition is worth having even when answers still
+ * come from Gemini, and it is a tenth of the size.
+ */
+export type LocalModelKind = 'llm' | 'stt'
+
 export interface LocalModelStatus {
+  kind: LocalModelKind
   installed: boolean
   path: string
   sizeBytes: number
@@ -510,6 +518,7 @@ export interface LocalModelStatus {
 }
 
 export interface LocalModelProgress {
+  kind: LocalModelKind
   receivedBytes: number
   totalBytes: number
   done: boolean

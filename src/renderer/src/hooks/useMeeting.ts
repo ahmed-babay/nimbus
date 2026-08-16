@@ -55,7 +55,7 @@ export function useMeeting(): MeetingControls {
 
     setPending((count) => count + 1)
     void window.nimbus
-      .meetingPiece(piece.audio, piece.mimeType, previous)
+      .meetingPiece(piece.pcm.buffer as ArrayBuffer, previous)
       .then((text) => {
         if (!text) return
         previousRef.current[speaker] = text

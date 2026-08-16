@@ -39,11 +39,10 @@ export function speakerFor(source: 'system' | 'microphone'): MeetingLine['speake
  * mostly one side listening, so most pieces from any given stream are empty.
  */
 export async function transcribePiece(
-  audio: Buffer,
-  mimeType: string,
+  pcm: Float32Array,
   previous: string
 ): Promise<string | null> {
-  const text = await transcribeAudio(audio, mimeType, { contextPrompt: previous.slice(-220) })
+  const text = await transcribeAudio(pcm, { contextPrompt: previous.slice(-220) })
   const bare = text.replace(/[.,!?…\-[\]()*]/g, '').trim()
   if (!bare) return null
   return text.trim()
