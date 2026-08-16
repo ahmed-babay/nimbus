@@ -5,6 +5,7 @@ import { Waveform } from './components/Waveform'
 import { ResponseCard } from './components/ResponseCard'
 import { SelectionActions } from './components/SelectionActions'
 import { TextInput } from './components/TextInput'
+import { KeySettings } from './components/KeySettings'
 import { useNimbus } from './hooks/useNimbus'
 import { useTypewriter } from './hooks/useTypewriter'
 import type { NimbusConfig, NimbusState } from '@shared/types'
@@ -363,9 +364,10 @@ function SettingsPanel({ config, onClose }: { config: NimbusConfig | null; onClo
               </div>
             ))}
           </dl>
-          <p className="mt-3 border-t border-white/[0.06] pt-2 text-[10px] text-nimbus-text-dim">
+          <p className="mt-2 text-[10px] text-nimbus-text-dim">
             Edit config.json and restart Nimbus to change these.
           </p>
+          <KeySettings />
         </>
       )}
     </div>
