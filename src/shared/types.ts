@@ -1,3 +1,35 @@
+export type AiProvider = 'gemini' | 'openai' | 'anthropic'
+
+export type SecretName =
+  | 'GEMINI_API_KEY'
+  | 'OPENAI_API_KEY'
+  | 'ANTHROPIC_API_KEY'
+  | 'GROQ_API_KEY'
+  | 'TAVILY_API_KEY'
+  | 'OPENWEATHER_API_KEY'
+  | 'GNEWS_API_KEY'
+  | 'GITHUB_TOKEN'
+
+export interface SecretStatus {
+  name: SecretName
+  set: boolean
+  /** Where the value came from. "env" cannot be overridden from settings. */
+  source: 'env' | 'settings' | 'none'
+  /** Masked fragment, so you can tell which key is stored. Never the key. */
+  hint: string | null
+}
+
+export interface AiChoice {
+  provider: AiProvider
+  /** Empty means "use the built-in default for this provider". */
+  model: string
+}
+
+export interface ProviderModel {
+  id: string
+  label: string
+}
+
 export type NimbusIntent =
   | 'weather'
   | 'stocks'
