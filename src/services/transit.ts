@@ -23,7 +23,19 @@ interface MotisLeg {
   from?: { name?: string; track?: string }
   to?: { name?: string; track?: string }
   realTime?: boolean
+  /**
+   * The timetabled time, as opposed to `startTime` which is the live one.
+   * The gap between them is the delay, which is what watchers.ts follows.
+   */
+  scheduledStartTime?: string
+  scheduledEndTime?: string
+  /** Stable identity for one train, so a watch can follow it across polls. */
+  tripId?: string
+  cancelled?: boolean
 }
+
+/** A single scheduled service, exposed for watchers rather than for display. */
+export type PlannedLeg = MotisLeg
 
 interface MotisItinerary {
   startTime?: string
@@ -114,6 +126,57 @@ function clockTime(iso: string | undefined, timeZone: string): string {
  * service was returning 503 with an empty body across every attempt while
  * this was building.
  */
+/**
+ * Resolves a station name to the id the planner needs.
+ *
+ * Split out of `findJourneys` for watchers, which resolve once at creation and
+ * then reuse the id on every poll — re-geocoding "Frankfurt" every thirty
+ * seconds would be both wasteful and a way to drift onto a different stop.
+ */
+export async function resolveStopId(
+  query: string | undefined
+): Promise<{ id: string; name: string } | null> {
+  const target = query || config.transit?.defaultOrigin
+  if (!target) return null
+  const stop = await resolveStop(target)
+  if (!stop?.id) return null
+  return { id: stop.id, name: stop.name ?? target }
+}
+
+/**
+ * The transit legs of the best itineraries, unformatted.
+ *
+ * `findJourneys` shapes these into something a card can render, which throws
+ * away exactly the fields a watcher needs — the scheduled time and the trip
+ * id. This returns them intact.
+ */
+export async function planLegs(
+  fromId: string,
+  toId: string,
+  departAfter?: string
+): Promise<PlannedLeg[]> {
+  const requested = departAfter ? new Date(departAfter) : new Date()
+  const time = Number.isNaN(requested.getTime()) ? new Date() : requested
+
+  const url =
+    `${BASE_URL}/plan?fromPlace=${encodeURIComponent(fromId)}` +
+    `&toPlace=${encodeURIComponent(toId)}` +
+    `&time=${encodeURIComponent(time.toISOString())}` +
+    // Wider than the display query: a watcher searches from before its train's
+    // scheduled time, so the one it wants may be several departures down.
+    '&numItineraries=8'
+
+  const res = await httpFetch(url, { headers: HEADERS, label: 'Transitous', timeoutMs: 15000 })
+  if (!res.ok) throw new Error(`Transit lookup failed (${res.status}).`)
+
+  const json = (await res.json()) as { itineraries?: MotisItinerary[] }
+  // Flattened across itineraries: the same train appears in several, and a
+  // watcher only cares whether its trip id is in there anywhere.
+  return (json.itineraries ?? [])
+    .flatMap((it) => it.legs ?? [])
+    .filter((leg) => leg.mode !== 'WALK' && leg.tripId)
+}
+
 export async function findJourneys(
   from: PlaceRef | undefined,
   to: PlaceRef,

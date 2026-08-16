@@ -27,6 +27,7 @@ import {
 } from './memory'
 import { lookupEntity } from './wikipedia'
 import { findMusic } from './music'
+import { watchJourney, wantsWatching } from './watchers'
 import { findJourneys } from './transit'
 import { getDirections, modeFromUtterance } from './maps'
 import { findStation } from './radio'
@@ -216,6 +217,17 @@ async function runIntent(
         }
         const destination = params.to
         if (!destination) throw new Error("I didn't catch where you're heading.")
+
+        // "…and keep me posted" turns a lookup into a standing watch. Handled
+        // here rather than as a separate intent because the classifier already
+        // extracts the from/to/when correctly — the only extra bit is whether
+        // the answer should also be followed.
+        if (wantsWatching(utterance)) {
+          const { watch, speech } = await watchJourney(params.from, destination, params.when)
+          const data = await findJourneys(params.from, destination, watch.scheduledDeparture)
+          return { speech, card: { type: 'transit', data } }
+        }
+
         const data = await findJourneys(params.from, destination, params.when)
         const speech = await formatResponse('transit', utterance, data, onChunk)
         return { speech, card: { type: 'transit', data } }

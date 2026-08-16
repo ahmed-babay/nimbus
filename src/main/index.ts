@@ -4,6 +4,7 @@ import dotenv from 'dotenv'
 import { createTray } from './tray'
 import { createOverlayWindow, showOverlay, hideOverlay, presentOverlay } from './window'
 import { startReminderScheduler, stopReminderScheduler } from './reminder-scheduler'
+import { startWatchScheduler, stopWatchScheduler } from './watch-scheduler'
 import { applyStoredSecrets, secretStatuses, setSecret } from './secrets'
 import { aiChoiceLockedByEnv, applyAiChoice, getAiChoice, setAiChoice } from './ai-choice'
 import { listModels } from '../services/providers'
@@ -419,6 +420,21 @@ app.whenReady().then(() => {
     }
   })
 
+  startWatchScheduler({
+    onUpdate: (update) => {
+      if (!overlayWindow) return
+      // Delivered down the reminder channel deliberately: a delay is the same
+      // kind of event — Nimbus interrupting with something time-critical the
+      // user asked to be told — and it already presents and speaks correctly.
+      presentOverlay(overlayWindow, IPC.REMINDER_DUE, {
+        id: update.watch.id,
+        at: new Date().toISOString(),
+        text: update.speech,
+        fired: true
+      })
+    }
+  })
+
   createTray({
     onShow: () => {
       if (overlayWindow) showOverlay(overlayWindow)
@@ -511,5 +527,6 @@ app.on('window-all-closed', () => {
 
 app.on('will-quit', () => {
   stopReminderScheduler()
+  stopWatchScheduler()
   unregisterHotkey()
 })
