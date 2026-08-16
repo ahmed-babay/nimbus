@@ -189,6 +189,39 @@ The point is the round trip. A German rent-increase notice, with `native` set to
 You understand it in your language; the reply goes back in theirs, correctly formal, without
 you writing a word of it.
 
+## Finding out what it can do
+
+Features here are reached by *saying* them, not by pressing something. That's what keeps the
+app at **three global hotkeys** no matter how much it learns to do — a hotkey is only
+justified when the action needs the state of the app you're currently in (the screenshot and
+the text selection qualify; nothing else does). Everything added since then — briefings,
+reminders, events, memory, directions — added zero shortcuts.
+
+The cost of that is discoverability: an invisible feature is worse than an awkwardly bound
+one. So there is exactly one thing to learn. **Type `/`** and every capability is listed,
+filterable, grouped:
+
+```
+/ trans
+  Getting around
+    Next departures        “when is the next train to Frankfurt”
+    Tell me when to leave  “tell me when I need to leave for Frankfurt”
+  On your screen
+    Ask about the screen   “what does this letter say”   Ctrl+Shift+S first
+```
+
+The detail that makes it more than a menu: picking an entry **types its example into the
+input** instead of running a hidden command. You see a phrasing that works, can edit it
+before sending, and learn it — so the palette is a training wheel that removes itself. Next
+time you just say it.
+
+Arrow keys move, Enter or Tab picks, Esc closes the palette *only* — it stops propagation so
+the global Escape handler doesn't close the whole overlay, which is a startling answer to
+backing out of a menu. Only a leading slash opens it, so "what's 8/3" types normally.
+
+The list lives in `src/shared/capabilities.ts`. Anything not in it is, in practice, a feature
+nobody will find — so it's the file to update when adding one.
+
 ## Typing instead of talking
 
 The overlay has a text field, focused the moment it opens — press the hotkey and start
