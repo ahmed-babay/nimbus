@@ -7,8 +7,10 @@ import { SelectionActions } from './components/SelectionActions'
 import { TextInput } from './components/TextInput'
 import { KeySettings } from './components/KeySettings'
 import { SubtitleBar } from './components/SubtitleBar'
+import { MeetingPanel } from './components/MeetingPanel'
 import { useNimbus } from './hooks/useNimbus'
 import { useSubtitles } from './hooks/useSubtitles'
+import { useMeeting } from './hooks/useMeeting'
 import { useTypewriter } from './hooks/useTypewriter'
 import type { NimbusConfig, NimbusState } from '@shared/types'
 
@@ -51,6 +53,7 @@ export default function App() {
   // lands as the whole answer at once.
   const typedText = useTypewriter(streamingText)
   const subtitles = useSubtitles()
+  const meeting = useMeeting()
   // Driven by one explicit flag rather than inferred from state and content.
   // The card steps aside while subtitles run: they belong over the video, and
   // a panel on top of the picture is exactly what nobody wants there.
@@ -58,9 +61,10 @@ export default function App() {
 
   // Without this the overlay would fade out mid-film and take the subtitles
   // with it.
+  const meetingOpen = meeting.phase !== 'idle'
   useEffect(() => {
-    setHoldOpen(subtitles.active)
-  }, [subtitles.active, setHoldOpen])
+    setHoldOpen(subtitles.active || meetingOpen)
+  }, [subtitles.active, meetingOpen, setHoldOpen])
 
   const stopSubtitles = (): void => {
     subtitles.stop()
@@ -74,6 +78,10 @@ export default function App() {
       // Escape means "end what's running", which during a film is the
       // subtitles rather than the overlay behind them.
       if (subtitles.active) stopSubtitles()
+      // Escape during a recording stops it rather than throwing the
+      // transcript away -- twenty minutes of a meeting is not something a
+      // stray keypress should be able to destroy.
+      else if (meeting.phase === 'recording') meeting.stop()
       else dismiss()
     }
     window.addEventListener('keydown', onKeyDown)
@@ -240,11 +248,17 @@ export default function App() {
                   </div>
                 )}
 
+                {meetingOpen && <MeetingPanel meeting={meeting} />}
+
                 {/* Always available — talking isn't possible everywhere. */}
                 <TextInput
                   onSubmit={submitText}
                   onAction={(action) =>
-                    action === 'subtitles' ? void subtitles.start() : openSettings()
+                    action === 'subtitles'
+                      ? void subtitles.start()
+                      : action === 'meeting'
+                        ? void meeting.start()
+                        : openSettings()
                   }
                   focusKey={isVisible}
                   onTypingStart={onTypingStart}

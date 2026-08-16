@@ -27,7 +27,7 @@ export interface Capability {
   requires?: string
   /** Opens a panel instead of typing the example — for things that are not
    *  questions, like the settings screen. */
-  action?: 'settings' | 'subtitles'
+  action?: 'settings' | 'subtitles' | 'meeting'
 }
 
 export const CAPABILITIES: Capability[] = [
@@ -37,6 +37,13 @@ export const CAPABILITIES: Capability[] = [
     example: 'open settings',
     keywords: 'api key model provider gemini openai anthropic config setup token',
     action: 'settings'
+  },
+  {
+    group: 'Listen along',
+    title: 'Record a meeting',
+    example: 'record meeting',
+    keywords: 'meeting call transcript minutes notes record capture dialogue summary teams zoom',
+    action: 'meeting'
   },
   {
     group: 'Listen along',

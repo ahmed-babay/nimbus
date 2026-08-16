@@ -88,9 +88,11 @@ Write in ${native}, whatever language the meeting was held in.
   Lead with the outcome, not the agenda.
 - decisions: things that were actually settled. Not topics discussed — conclusions reached.
   Empty if nothing was genuinely decided.
-- actions: what someone now has to do. Start each with who is responsible, using "You" for
-  the person whose microphone this was and the name used in the meeting for anyone else, or
-  "Them" if no name was given. Include a deadline when one was said.
+- actions: what someone now has to do. Anything a person committed to is an action, including
+  the ones said in passing — "I'll chase Martin today" and "I'll send that round on Thursday"
+  both belong here. Start each with who is responsible: "You" for the person whose microphone
+  this was, the name used in the meeting for anyone else, or "Them" if no name was given.
+  Include a deadline when one was said.
 - openQuestions: things raised and deliberately left unresolved, or that need an answer
   before anything can move.
 
@@ -107,7 +109,11 @@ const SUMMARY_SCHEMA = {
     actions: { type: 'ARRAY', items: { type: 'STRING' } },
     openQuestions: { type: 'ARRAY', items: { type: 'STRING' } }
   },
-  required: ['summary']
+  // All four are required so the model has to consider each one. With only
+  // `summary` required it silently omitted the actions list on a transcript
+  // that plainly contained three of them, and mentioned one in the prose
+  // instead. An empty array is a fine answer; a missing one hides work.
+  required: ['summary', 'decisions', 'actions', 'openQuestions']
 }
 
 export async function summarizeMeeting(
