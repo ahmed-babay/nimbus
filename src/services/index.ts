@@ -10,9 +10,10 @@ import { tryIllustrate } from './illustrate'
 import { lookupEntity } from './wikipedia'
 import { findMusic } from './music'
 import { findJourneys } from './transit'
+import { getDirections, modeFromUtterance } from './maps'
 import { findStation } from './radio'
 import { recordTurn } from './conversation'
-import type { NimbusResponse } from '../shared/types'
+import type { NimbusResponse, TravelMode } from '../shared/types'
 import config from '../../config.json'
 
 /**
@@ -160,6 +161,28 @@ async function resolveUtterance(
         const data = await findJourneys(params.from, destination, params.when)
         const speech = await formatResponse('transit', utterance, data, onChunk)
         return { speech, card: { type: 'transit', data } }
+      }
+
+      case 'directions': {
+        if (!config.integrations.maps) {
+          throw new Error('Maps and directions are disabled in config.json.')
+        }
+        const destination = params.to
+        if (!destination) throw new Error("I didn't catch where you want to go.")
+        const data = await getDirections(
+          params.from,
+          destination,
+          (params.mode as TravelMode) || modeFromUtterance(utterance)
+        )
+        // The map answers "where"; the spoken line answers "how far and how
+        // long", so it only needs the costed options, not the geometry.
+        const speech = await formatResponse(
+          'directions',
+          utterance,
+          { from: data.from, to: data.to, options: data.options },
+          onChunk
+        )
+        return { speech, card: { type: 'directions', data } }
       }
 
       case 'search': {
