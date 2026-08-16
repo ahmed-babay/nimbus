@@ -24,6 +24,7 @@ const VALID_INTENTS: NimbusIntent[] = [
   'remember',
   'recall',
   'alarm',
+  'event',
   'briefing',
   'chat'
 ]
@@ -112,6 +113,26 @@ the relevant parameter for it, leaving the others empty:
      train to Wiesbaden". Give the destination.)
   -> params.cancel (set when they want a reminder dropped — the phrase
      identifying it, or empty text to cancel all of them)
+- "event": telling Nimbus about something happening on a particular day or
+  range of days, or asking what is coming up — "I'm in Düsseldorf for the Reply
+  Leadvise event from the 24th to the 27th", "I'm at my girlfriend's this
+  weekend", "dentist on Tuesday", "what have I got coming up", "cancel the
+  Düsseldorf trip".
+  -> params.eventTitle (what it is, short: "Reply Leadvise event". Omit when
+     they're only asking what's coming up.)
+  -> params.eventStart — REQUIRED whenever params.eventTitle is set. The first
+     day as YYYY-MM-DD. Work it out from the current date given below:
+     "the 24th" -> the 24th of this month, or next month if that has passed;
+     "Tuesday" -> the next Tuesday; "this weekend" -> the coming Saturday.
+     Never a date in the past. If they genuinely gave no day at all, use today.
+  -> params.eventEnd (last day as YYYY-MM-DD, for a range like "from the 24th
+     to the 27th"; omit for a single day)
+  -> params.eventPlace (the town or city it happens in, whenever they name one —
+     "Düsseldorf". Omit only for something local with no place mentioned.)
+  -> params.cancel (set when dropping one: a phrase identifying it)
+  The difference from "alarm": an alarm fires once at a minute, an event
+  occupies whole days and is worth mentioning on each of them. The difference
+  from "remember": a fact stays true indefinitely, an event finishes.
 - "briefing": asking for the overall picture of their day rather than one
   fact — "what does my day look like", "brief me", "catch me up", "what's
   happening today", "good morning" said as a request rather than a greeting.
@@ -172,6 +193,10 @@ const CLASSIFY_SCHEMA: GenerationConfig = {
           task: { type: SchemaType.STRING },
           leaveFor: { type: SchemaType.STRING },
           cancel: { type: SchemaType.STRING },
+          eventTitle: { type: SchemaType.STRING },
+          eventStart: { type: SchemaType.STRING },
+          eventEnd: { type: SchemaType.STRING },
+          eventPlace: { type: SchemaType.STRING },
           mode: {
             type: SchemaType.STRING,
             enum: ['driving', 'cycling', 'walking', 'transit'],
@@ -215,6 +240,67 @@ export async function classifyIntent(utterance: string): Promise<IntentClassific
     return { intent, params }
   } catch {
     return { intent: 'chat', params: {} }
+  }
+}
+
+const EVENT_SCHEMA: GenerationConfig = {
+  temperature: 0,
+  responseMimeType: 'application/json',
+  responseSchema: {
+    type: SchemaType.OBJECT,
+    properties: {
+      title: { type: SchemaType.STRING },
+      startDate: { type: SchemaType.STRING },
+      endDate: { type: SchemaType.STRING },
+      location: { type: SchemaType.STRING }
+    },
+    required: ['title', 'startDate']
+  }
+}
+
+const EVENT_PROMPT = `Extract the details of something happening on a day or range of days.
+
+- title: what it is, short and without dates — "Reply Leadvise event", "dentist".
+- startDate: the first day, YYYY-MM-DD. Resolve relative wording against the
+  current date below: "the 24th" is the 24th of this month, or next month if
+  that day has already passed; "Tuesday" is the next Tuesday; "this weekend" is
+  the coming Saturday. Never return a date in the past. If no day is stated at
+  all, use today.
+- endDate: the last day, YYYY-MM-DD, only when they gave a range ("from the
+  24th to the 27th"). Leave empty for a single day.
+- location: the town or city, when one is named. Leave empty otherwise.`
+
+/**
+ * Event details, extracted on their own rather than as part of routing.
+ *
+ * The intent router reliably recognises *that* an utterance is an event, and
+ * just as reliably drops the dates: its prompt covers fifteen intents and some
+ * twenty-five parameters, and the extra fields fall off the end. "Reply
+ * Leadvise event from the 24th to the 27th" came back with a title and no
+ * dates at all, and tightening the wording made it worse, not better. A short
+ * single-purpose prompt gets it right, and only runs when an event is actually
+ * being created.
+ */
+export async function extractEvent(utterance: string): Promise<{
+  title: string
+  startDate: string
+  endDate?: string
+  location?: string
+}> {
+  const systemInstruction = `${EVENT_PROMPT}\n\n${currentTimeContext()}\n\n${placeContext()}`
+  const result = await withModelFallback((name) =>
+    buildModel(name, systemInstruction, EVENT_SCHEMA).generateContent(utterance)
+  )
+
+  const parsed = JSON.parse(result.response.text())
+  const clean = (value: unknown): string | undefined =>
+    typeof value === 'string' && value.trim() ? value.trim() : undefined
+
+  return {
+    title: clean(parsed.title) ?? '',
+    startDate: clean(parsed.startDate) ?? '',
+    endDate: clean(parsed.endDate),
+    location: clean(parsed.location)
   }
 }
 
