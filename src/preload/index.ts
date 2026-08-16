@@ -1,9 +1,14 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/ipc-channels'
 import type {
+  AiChoice,
+  AiProvider,
   NimbusConfig,
   NimbusResponse,
+  ProviderModel,
   Reminder,
+  SecretName,
+  SecretStatus,
   SynthesizedSpeech,
   TextActionKind
 } from '../shared/types'
@@ -30,6 +35,14 @@ const api = {
     ipcRenderer.on(IPC.SELECTION_CAPTURED, listener)
     return () => ipcRenderer.removeListener(IPC.SELECTION_CAPTURED, listener)
   },
+  getSecrets: (): Promise<SecretStatus[]> => ipcRenderer.invoke(IPC.GET_SECRETS),
+  setSecret: (name: SecretName, value: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke(IPC.SET_SECRET, name, value),
+  listModels: (provider: AiProvider): Promise<ProviderModel[]> =>
+    ipcRenderer.invoke(IPC.LIST_MODELS, provider),
+  getAiChoice: (): Promise<AiChoice & { lockedByEnv: boolean }> =>
+    ipcRenderer.invoke(IPC.GET_AI_CHOICE),
+  setAiChoice: (choice: AiChoice): Promise<void> => ipcRenderer.invoke(IPC.SET_AI_CHOICE, choice),
   onReminderDue: (callback: (reminder: Reminder) => void): (() => void) => {
     const listener = (_event: unknown, reminder: Reminder): void => callback(reminder)
     ipcRenderer.on(IPC.REMINDER_DUE, listener)

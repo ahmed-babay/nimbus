@@ -4,6 +4,9 @@ import dotenv from 'dotenv'
 import { createTray } from './tray'
 import { createOverlayWindow, showOverlay, hideOverlay, presentOverlay } from './window'
 import { startReminderScheduler, stopReminderScheduler } from './reminder-scheduler'
+import { applyStoredSecrets, secretStatuses, setSecret } from './secrets'
+import { aiChoiceLockedByEnv, applyAiChoice, getAiChoice, setAiChoice } from './ai-choice'
+import { listModels } from '../services/providers'
 import { registerHotkey, unregisterHotkey } from './hotkey'
 import { handleUtterance } from '../services'
 import { resetConversation, recordTurn } from '../services/conversation'
@@ -17,7 +20,16 @@ import { transcribeAudio } from '../services/whisper'
 import { synthesizeSpeech } from '../services/tts'
 import { withDeadline } from '../services/http'
 import { IPC } from '../shared/ipc-channels'
-import type { NimbusConfig, NimbusResponse, SynthesizedSpeech } from '../shared/types'
+import type {
+  AiChoice,
+  AiProvider,
+  NimbusConfig,
+  NimbusResponse,
+  ProviderModel,
+  SecretName,
+  SecretStatus,
+  SynthesizedSpeech
+} from '../shared/types'
 import config from '../../config.json'
 
 dotenv.config()
@@ -138,6 +150,25 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.GET_CONFIG, (): NimbusConfig => config)
 
+  ipcMain.handle(IPC.GET_SECRETS, (): SecretStatus[] => secretStatuses())
+
+  ipcMain.handle(
+    IPC.SET_SECRET,
+    (_event, name: SecretName, value: string): { ok: boolean; error?: string } =>
+      setSecret(name, value)
+  )
+
+  ipcMain.handle(IPC.LIST_MODELS, async (_event, provider: AiProvider): Promise<ProviderModel[]> => {
+    return listModels(provider)
+  })
+
+  ipcMain.handle(IPC.GET_AI_CHOICE, (): AiChoice & { lockedByEnv: boolean } => ({
+    ...getAiChoice(),
+    lockedByEnv: aiChoiceLockedByEnv()
+  }))
+
+  ipcMain.handle(IPC.SET_AI_CHOICE, (_event, choice: AiChoice): void => setAiChoice(choice))
+
   ipcMain.handle(
     IPC.RUN_TEXT_ACTION,
     async (
@@ -192,6 +223,10 @@ app.whenReady().then(() => {
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
     callback(permission === 'media')
   })
+
+  // Before anything can read a key: .env first, then whatever settings hold.
+  applyStoredSecrets()
+  applyAiChoice()
 
   overlayWindow = createOverlayWindow()
   registerIpcHandlers()
