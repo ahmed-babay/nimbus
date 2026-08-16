@@ -122,3 +122,28 @@ body {
 .nimbus-flicker {
   animation: nimbus-flicker 6s linear infinite;
 }
+
+/* Thin neon scrollbar for the answer area — the default one looks wrong on a
+   dark translucent panel and is wider than the layout can spare. */
+.nimbus-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-nimbus-accent) transparent;
+  overscroll-behavior: contain;
+}
+
+.nimbus-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.nimbus-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.nimbus-scroll::-webkit-scrollbar-thumb {
+  background: var(--color-nimbus-accent-deep);
+  border-radius: 3px;
+}
+
+.nimbus-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--color-nimbus-accent);
+}
