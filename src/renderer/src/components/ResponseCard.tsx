@@ -6,6 +6,7 @@ import { Sparkline } from './Sparkline'
 import { SpokenText } from './SpokenText'
 import type {
   CryptoCardData,
+  DirectionsCardData,
   EntityCardData,
   ExplainerCardData,
   GithubCardData,
@@ -14,12 +15,14 @@ import type {
   NewsCardData,
   NimbusResponse,
   RadioCardData,
+  RenderedMap,
   ResponseCardData,
   ScreenCardData,
   SearchCardData,
   SelectionCardData,
   StockCardData,
   TransitCardData,
+  TravelMode,
   WeatherCardData
 } from '@shared/types'
 
@@ -120,6 +123,8 @@ function CardBody({
       return <RadioBody data={card.data} radio={radio} />
     case 'transit':
       return <TransitBody data={card.data} />
+    case 'directions':
+      return <DirectionsBody data={card.data} />
     case 'explainer':
       return <ExplainerBody data={card.data} />
     case 'screen':
@@ -561,9 +566,10 @@ function countdown(iso: string): string {
   return `in ${Math.floor(minutes / 60)} h ${minutes % 60}`
 }
 
-function TransitBody({ data }: { data: TransitCardData }) {
+/** `bare` drops the panel chrome when this is nested inside another card. */
+function TransitBody({ data, bare = false }: { data: TransitCardData; bare?: boolean }) {
   return (
-    <div className={panel}>
+    <div className={bare ? '' : panel}>
       <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-nimbus-text-dim">
         <span className="truncate">{data.from}</span>
         <span className="shrink-0 text-nimbus-accent">→</span>
@@ -637,6 +643,193 @@ function hostOf(url: string): string {
   } catch {
     return 'source'
   }
+}
+
+const MODE_LABEL: Record<TravelMode, string> = {
+  driving: 'Drive',
+  cycling: 'Bike',
+  walking: 'Walk',
+  transit: 'Transit'
+}
+
+/** Simple glyphs rather than an icon dependency — these are 14px tall. */
+function ModeIcon({ mode }: { mode: TravelMode }) {
+  const common = {
+    width: 14,
+    height: 14,
+    viewBox: '0 0 24 24',
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 2,
+    strokeLinecap: 'round' as const,
+    strokeLinejoin: 'round' as const
+  }
+  switch (mode) {
+    case 'driving':
+      return (
+        <svg {...common}>
+          <path d="M5 17h14M4 17v-4l2-5h12l2 5v4" />
+          <circle cx="7.5" cy="17.5" r="1.5" />
+          <circle cx="16.5" cy="17.5" r="1.5" />
+        </svg>
+      )
+    case 'cycling':
+      return (
+        <svg {...common}>
+          <circle cx="6" cy="17" r="3.5" />
+          <circle cx="18" cy="17" r="3.5" />
+          <path d="M6 17l4-8h5l3 8M9 9h4" />
+        </svg>
+      )
+    case 'walking':
+      return (
+        <svg {...common}>
+          <circle cx="13" cy="4" r="1.6" />
+          <path d="M11 21l2-6-3-3 1-5 3 3 2 1M10 12l-2 4" />
+        </svg>
+      )
+    default:
+      return (
+        <svg {...common}>
+          <rect x="6" y="3" width="12" height="13" rx="2.5" />
+          <path d="M6 10h12M9 20l-2 2M15 20l2 2" />
+          <circle cx="9" cy="13" r="0.8" fill="currentColor" />
+          <circle cx="15" cy="13" r="0.8" fill="currentColor" />
+        </svg>
+      )
+  }
+}
+
+function duration(minutes: number | null): string {
+  if (minutes === null) return '—'
+  if (minutes < 60) return `${minutes} min`
+  return `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, '0')}`
+}
+
+/**
+ * The map is a still: tiles were downloaded and projected in the main process,
+ * so this only places them and draws the line. OpenStreetMap's tiles are a
+ * light theme, so they're inverted to sit in a dark overlay — the route is
+ * drawn over the top, outside the filter, and keeps its real colour.
+ */
+function RouteMap({ map, mode }: { map: RenderedMap; mode: TravelMode }) {
+  const points = map.routes[mode]
+  const path = points?.map(([x, y]) => `${x},${y}`).join(' ')
+
+  return (
+    <div
+      className="relative overflow-hidden rounded-lg ring-1 ring-white/10"
+      style={{ width: map.width, height: map.height }}
+    >
+      <div
+        className="absolute inset-0"
+        style={{ filter: 'invert(1) hue-rotate(180deg) brightness(0.88) contrast(1.05) saturate(0.65)' }}
+      >
+        {map.tiles.map((tile) => (
+          <img
+            key={`${tile.x}-${tile.y}`}
+            src={tile.image}
+            alt=""
+            draggable={false}
+            className="absolute max-w-none"
+            style={{ left: tile.x, top: tile.y, width: 256, height: 256 }}
+          />
+        ))}
+      </div>
+
+      <svg
+        className="absolute inset-0"
+        width={map.width}
+        height={map.height}
+        aria-label={`Route by ${MODE_LABEL[mode]}`}
+      >
+        {path && (
+          <>
+            {/* Dark casing under the line, so it reads over any terrain. */}
+            <polyline
+              points={path}
+              fill="none"
+              stroke="rgba(0,0,0,0.55)"
+              strokeWidth={6}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            <motion.polyline
+              key={mode}
+              points={path}
+              fill="none"
+              stroke="var(--color-nimbus-accent)"
+              strokeWidth={3}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              initial={{ pathLength: 0, opacity: 0.4 }}
+              animate={{ pathLength: 1, opacity: 1 }}
+              transition={{ duration: 0.6, ease: 'easeOut' }}
+            />
+          </>
+        )}
+        {/* Public transport has no road geometry — the endpoints still do. */}
+        <circle cx={map.start[0]} cy={map.start[1]} r={5} fill="var(--color-nimbus-cyan)" stroke="rgba(0,0,0,0.6)" strokeWidth={2} />
+        <circle cx={map.end[0]} cy={map.end[1]} r={5} fill="var(--color-nimbus-yellow)" stroke="rgba(0,0,0,0.6)" strokeWidth={2} />
+      </svg>
+    </div>
+  )
+}
+
+function DirectionsBody({ data }: { data: DirectionsCardData }) {
+  const [mode, setMode] = useState<TravelMode>(data.selected)
+  const active = data.options.find((option) => option.mode === mode)
+
+  return (
+    <div className={panel}>
+      <RouteMap map={data.map} mode={mode} />
+
+      {/* Every mode was costed up front, so switching is instant. */}
+      <div className="mt-2 flex gap-1">
+        {data.options.map((option) => {
+          const selected = option.mode === mode
+          return (
+            <button
+              key={option.mode}
+              onClick={() => setMode(option.mode)}
+              className={`flex flex-1 flex-col items-center gap-1 rounded-lg border px-1 py-1.5 transition-colors ${
+                selected
+                  ? 'border-nimbus-accent/60 bg-nimbus-accent/15 text-nimbus-text'
+                  : 'border-white/[0.07] text-nimbus-text-dim hover:bg-white/[0.05]'
+              }`}
+            >
+              <span className={selected ? 'text-nimbus-accent-bright' : ''}>
+                <ModeIcon mode={option.mode} />
+              </span>
+              <span className="text-[11px] font-medium tabular-nums leading-none">
+                {duration(option.durationMinutes)}
+              </span>
+              <span className="text-[9px] uppercase tracking-wide leading-none opacity-70">
+                {MODE_LABEL[option.mode]}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+
+      <div className="mt-2 flex items-center gap-1.5 text-[10px] text-nimbus-text-dim">
+        <span className="truncate">{data.from}</span>
+        <span className="shrink-0 text-nimbus-accent">→</span>
+        <span className="truncate">{data.to}</span>
+        {active?.distanceKm != null && (
+          <span className="ml-auto shrink-0 tabular-nums">{active.distanceKm} km</span>
+        )}
+      </div>
+
+      {/* Picking public transport should answer "which service", not just
+          "how long" — so the real departures come with it. */}
+      {mode === 'transit' && data.transit && (
+        <div className="mt-2 border-t border-white/[0.07] pt-2">
+          <TransitBody data={data.transit} bare />
+        </div>
+      )}
+    </div>
+  )
 }
 
 /**
