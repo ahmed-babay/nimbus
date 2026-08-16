@@ -220,11 +220,29 @@ prompt. Verified live: 34 usable Gemini models.
 All three provider endpoints are implemented and reachable — a deliberately invalid key
 returns "That key was rejected" from OpenAI and Anthropic alike, confirming the auth shapes.
 
-**Current limit, stated plainly:** only Gemini's *answer path* is wired. OpenAI and Anthropic
-keys are stored and their models list correctly, but the code that actually asks a question
-still speaks Gemini's API. Those two are therefore shown disabled and marked "soon" rather
-than letting you select a provider that nothing would act on. The adapter is the next piece
-of work; `WIRED_PROVIDERS` in `KeySettings.tsx` is the one line to change when it lands.
+### Switching provider
+
+Every model call — intent routing, chat, research synthesis, screen reading — goes through
+`src/services/llm.ts`, so the provider is a setting rather than a rewrite. The prompts were
+already provider-independent; only the transport differs.
+
+Structured output is the one place the three genuinely diverge. Gemini *constrains
+generation* to a schema, which is stronger than anything the others expose, so it keeps
+doing that. OpenAI is asked for JSON mode and Anthropic is asked in the prompt, with the
+shape described either way — a weaker guarantee, which is why the JSON parse strips code
+fences and every caller already degrades to a plain answer rather than failing.
+
+Gemini keeps its two-model race (see `gemini-client.ts`): free-tier congestion shows up as a
+request that takes 20-30 seconds rather than one that fails, so the fallback model is raced
+alongside after 6 seconds. That tuning is specific to its free tier and doesn't apply to the
+paid providers.
+
+**What's verified, precisely:** Gemini is exercised end to end through the adapter —
+classification 4/4, event extraction, streaming and non-streaming, all matching the
+behaviour before the refactor. OpenAI and Anthropic are built to their documented APIs and
+confirmed as far as authentication (a deliberately invalid key returns the right error from
+both), but have **not** been run against a live paid key. A failure surfaces as a spoken
+error, not a wrong answer.
 
 ## Finding out what it can do
 
