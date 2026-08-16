@@ -306,6 +306,15 @@ export interface NimbusConfig {
     /** Where 'from here' means. A street address is far more precise than
      *  the city-level guess an IP lookup gives. */
     home: string
+    /** Your area, e.g. "Darmstadt, Hesse, Germany". Biases place lookups and
+     *  tells the model which places you are likely to mean. */
+    region: string
+    /** The language local place names are in. Answers stay in language.native;
+     *  this only affects how place names are spelled and searched. */
+    placeLanguage: string
+    /** Places you say often. Given to the transcriber as a vocabulary hint,
+     *  which is the only form of hint it measurably acts on. */
+    frequentPlaces: string[]
   }
   transit: {
     /** Used when you say "trains to Frankfurt" without naming a start. */

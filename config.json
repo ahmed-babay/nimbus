@@ -32,7 +32,18 @@
     "maxQueries": 3
   },
   "location": {
-    "home": "Darmstadt Hbf"
+    "home": "Luisenplatz, Darmstadt",
+    "region": "Darmstadt, Hesse, Germany",
+    "placeLanguage": "German",
+    "frequentPlaces": [
+      "Luisenplatz",
+      "Herrngarten",
+      "Mathildenhöhe",
+      "Hauptbahnhof",
+      "Marktplatz",
+      "Wiesbaden",
+      "Frankfurt"
+    ]
   },
   "transit": {
     "defaultOrigin": "Darmstadt Hbf"
