@@ -16,6 +16,7 @@ import type {
   NewsCardData,
   NimbusResponse,
   RadioCardData,
+  ReminderCardData,
   RenderedMap,
   ResponseCardData,
   ScreenCardData,
@@ -128,6 +129,8 @@ function CardBody({
       return <DirectionsBody data={card.data} />
     case 'memory':
       return <MemoryBody data={card.data} />
+    case 'reminder':
+      return <ReminderBody data={card.data} />
     case 'explainer':
       return <ExplainerBody data={card.data} />
     case 'screen':
@@ -886,6 +889,73 @@ function Illustrations({ items }: { items: Illustration[] }) {
             </motion.button>
           ))}
         </div>
+      )}
+    </div>
+  )
+}
+
+function ReminderBody({ data }: { data: ReminderCardData }) {
+  const { created } = data
+  // A fired reminder arrives with only `created` set; a "what's pending"
+  // question arrives with only the list.
+  const others = data.pending.filter((item) => item.id !== created?.id)
+
+  return (
+    <div className={panel}>
+      {created && (
+        <div className="flex items-start gap-2.5">
+          <span className="mt-0.5 shrink-0 text-nimbus-yellow">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="13" r="8" />
+              <path d="M12 9v4l2.5 2M5 3L2.5 5.5M19 3l2.5 2.5" />
+            </svg>
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="text-[12.5px] leading-snug text-nimbus-text">{created.text}</div>
+            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-nimbus-text-dim">
+              <span className="tabular-nums text-nimbus-yellow">
+                {new Date(created.at).toLocaleTimeString([], {
+                  hour: '2-digit',
+                  minute: '2-digit'
+                })}
+              </span>
+              {/* Showing the working: the alarm is a departure minus the walk,
+                  so it's worth saying which train it came from. */}
+              {created.departure && (
+                <>
+                  <span className="opacity-50">·</span>
+                  <span>
+                    {created.departure.line} at {created.departure.departs} to{' '}
+                    {created.departure.to}
+                  </span>
+                  {created.departure.travelMinutes > 0 && (
+                    <>
+                      <span className="opacity-50">·</span>
+                      <span>{created.departure.travelMinutes} min to the stop</span>
+                    </>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {others.length > 0 && (
+        <ul className={created ? 'mt-2.5 space-y-1 border-t border-white/[0.07] pt-2' : 'space-y-1'}>
+          {others.slice(0, 5).map((item) => (
+            <li key={item.id} className="flex items-baseline gap-2 text-[11px]">
+              <span className="shrink-0 tabular-nums text-nimbus-text-dim">
+                {new Date(item.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </span>
+              <span className="min-w-0 flex-1 truncate text-nimbus-text">{item.text}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {!created && others.length === 0 && (
+        <div className="text-[11px] text-nimbus-text-dim">No reminders set.</div>
       )}
     </div>
   )

@@ -270,7 +270,7 @@ export function useNimbus(): NimbusOverlayState {
   // Fallback if the Edge neural voice (below) is unreachable — the local
   // Windows SAPI voice is robotic, but it's better than staying silent.
   const speakNative = useCallback(
-    (text: string) => {
+    (text: string, thenListen = true) => {
       if (!window.speechSynthesis) {
         scheduleAutoFade()
         return
@@ -280,7 +280,7 @@ export function useNimbus(): NimbusOverlayState {
       // rather than leaving it stuck mid-reveal.
       speechProgressRef.current = 1
       const utterance = new SpeechSynthesisUtterance(text)
-      utterance.onend = listenAgain
+      utterance.onend = thenListen ? listenAgain : scheduleAutoFade
       utterance.onerror = scheduleAutoFade
       window.speechSynthesis.speak(utterance)
     },
@@ -292,14 +292,18 @@ export function useNimbus(): NimbusOverlayState {
   // bare onerror, and an explicitly resumed AudioContext isn't subject to the
   // element autoplay gating that silently dropped us to the robotic fallback.
   const speak = useCallback(
-    (text: string) => {
+    // `thenListen` is false when Nimbus started the exchange rather than the
+    // user — a reminder firing must not leave a hot microphone in an empty
+    // room, which is exactly how ambient noise became hallucinated questions.
+    (text: string, thenListen = true) => {
       if (!isOpenRef.current) return
 
       // Muted: show the answer, skip the voice, and carry on to the next turn.
       if (!ttsEnabledRef.current) {
         speechProgressRef.current = 1
         startPendingRadioRef.current?.()
-        listenAgain()
+        if (thenListen) listenAgain()
+        else scheduleAutoFade()
         return
       }
 
@@ -338,7 +342,8 @@ export function useNimbus(): NimbusOverlayState {
             currentSourceRef.current = null
             speechProgressRef.current = 1
             startPendingRadioRef.current?.()
-            listenAgain()
+            if (thenListen) listenAgain()
+            else scheduleAutoFade()
           }
           currentSourceRef.current = source
 
@@ -364,10 +369,10 @@ export function useNimbus(): NimbusOverlayState {
             '[nimbus] Edge neural TTS failed, falling back to robotic system voice:',
             err instanceof Error ? err.message : err
           )
-          speakNative(text)
+          speakNative(text, thenListen)
         })
     },
-    [listenAgain, speakNative, stopPlayback]
+    [listenAgain, scheduleAutoFade, speakNative, stopPlayback]
   )
 
   /** Sends an utterance through the normal assistant pipeline. */
@@ -724,6 +729,30 @@ export function useNimbus(): NimbusOverlayState {
       }
     })
   }, [clearFadeTimer])
+
+  useEffect(() => {
+    return window.nimbus.onReminderDue((reminder) => {
+      clearFadeTimer()
+      setIsOpen(true)
+      setMode('assistant')
+      setError(null)
+      setTranscript(null)
+      setPendingSelection(null)
+      setPendingCapture(null)
+      setStreamingText('')
+      // Nimbus is the one initiating here, so it shows and speaks but does not
+      // open the microphone — see presentOverlay in src/main/window.ts.
+      setResponse({
+        speech: reminder.text,
+        card: { type: 'reminder', data: { created: reminder, pending: [] } }
+      })
+      speechProgressRef.current = 0
+      speak(reminder.text, false)
+      // Stays up longer than a normal answer: an alert you miss is worthless,
+      // and the user was not looking at the screen when it appeared.
+      scheduleAutoFadeRef.current?.()
+    })
+  }, [clearFadeTimer, speak])
 
   useEffect(() => {
     const unsubscribeWake = window.nimbus.onWake(() => {
