@@ -7,6 +7,8 @@ import type {
   NimbusResponse,
   ProviderModel,
   Reminder,
+  LocalModelProgress,
+  LocalModelStatus,
   MeetingLine,
   MeetingSummary,
   SecretName,
@@ -75,6 +77,15 @@ const api = {
     sourceHint: string
   ): Promise<Subtitle | null> =>
     ipcRenderer.invoke(IPC.SUBTITLE_FOR, audio, mimeType, offsetMs, previous, sourceHint),
+  getLocalModelStatus: (): Promise<LocalModelStatus> =>
+    ipcRenderer.invoke(IPC.LOCAL_MODEL_STATUS),
+  downloadLocalModel: (): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke(IPC.DOWNLOAD_LOCAL_MODEL),
+  onLocalModelProgress: (callback: (progress: LocalModelProgress) => void): (() => void) => {
+    const listener = (_event: unknown, progress: LocalModelProgress): void => callback(progress)
+    ipcRenderer.on(IPC.LOCAL_MODEL_PROGRESS, listener)
+    return () => ipcRenderer.removeListener(IPC.LOCAL_MODEL_PROGRESS, listener)
+  },
   meetingPiece: (audio: ArrayBuffer, mimeType: string, previous: string): Promise<string | null> =>
     ipcRenderer.invoke(IPC.MEETING_PIECE, audio, mimeType, previous),
   saveMeeting: (

@@ -96,6 +96,7 @@ export async function unloadLocalModel(): Promise<void> {
   }
   const current = loaded
   loaded = null
+  evaluatedSystem = null
   if (!current) return
   // Disposed innermost first; a context outliving its model crashes the
   // native side rather than throwing.
@@ -206,10 +207,28 @@ function enqueue<T>(work: () => Promise<T>): Promise<T> {
  * Prepares the shared session for a turn. Nimbus manages its own conversation
  * history, so the model's is cleared each time rather than allowed to grow.
  */
+let evaluatedSystem: string | null = null
+
 async function beginTurn(system: string): Promise<LlamaChatSession> {
   const { session } = await load()
-  session.resetChatHistory()
-  if (system) session.setChatHistory([{ type: 'system', text: system }])
+
+  // Deliberately not `resetChatHistory()`, which throws away the sequence's
+  // evaluated state: setting the history to the same system message lets
+  // llama.cpp keep whatever prefix still matches.
+  //
+  // Measured honestly, this did not speed anything up — a routing call stayed
+  // at roughly 3s either way, so the cost is the grammar-constrained sampling
+  // rather than the ~2,100-token prompt. It is kept because discarding state
+  // we might reuse is still the wrong default, not because it is a win.
+  if (system !== evaluatedSystem) {
+    session.setChatHistory(system ? [{ type: 'system', text: system }] : [])
+    evaluatedSystem = system
+  } else {
+    // Same prompt as last time: drop the previous turn's exchange, keep the
+    // cached system prefix.
+    session.setChatHistory([{ type: 'system', text: system }])
+  }
+
   return session
 }
 

@@ -12,7 +12,9 @@ import type { AiChoice, AiProvider } from '../shared/types'
  * developer setting `GEMINI_MODEL` expects that to be what runs.
  */
 
-const DEFAULTS: AiChoice = { provider: 'gemini', model: '' }
+// Local by default: Nimbus should work the moment it is installed, without
+// asking for a key first.
+const DEFAULTS: AiChoice = { provider: 'local', model: '' }
 
 let cache: AiChoice | null = null
 

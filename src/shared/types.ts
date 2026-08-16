@@ -1,4 +1,4 @@
-export type AiProvider = 'gemini' | 'openai' | 'anthropic'
+export type AiProvider = 'local' | 'gemini' | 'openai' | 'anthropic'
 
 export type SecretName =
   | 'GEMINI_API_KEY'
@@ -499,4 +499,19 @@ export interface MeetingSummary {
   decisions: string[]
   actions: string[]
   openQuestions: string[]
+}
+
+/** Whether the on-device model is present, and how big it is. */
+export interface LocalModelStatus {
+  installed: boolean
+  path: string
+  sizeBytes: number
+  downloading: boolean
+}
+
+export interface LocalModelProgress {
+  receivedBytes: number
+  totalBytes: number
+  done: boolean
+  error?: string
 }

@@ -1,5 +1,6 @@
 import { buildModel, withModelFallback } from './gemini-client'
 import { httpFetch } from './http'
+import { localComplete, localStreamComplete } from './local-llm'
 import type { AiProvider } from '../shared/types'
 
 /**
@@ -10,7 +11,14 @@ import type { AiProvider } from '../shared/types'
  * rewrite. The prompts themselves are provider-independent already; only the
  * transport differs.
  *
- * Structured output is the one place the three genuinely diverge. Gemini
+ * The local provider is the default: it needs no key, no network and no
+ * quota, which is the difference between an app that works when you install
+ * it and one that asks for eight API keys first. Deep research still reaches
+ * for a cloud model when one is configured — see `researchProvider` — because
+ * synthesising twenty thousand characters of sources is the one task a 0.8B
+ * model is genuinely bad at.
+ *
+ * Structured output is the one place the providers genuinely diverge. Gemini
  * constrains generation to a schema, which is stronger than anything the
  * others expose, so it keeps using that. OpenAI is asked for JSON mode and
  * Anthropic is asked in the prompt, with the shape described either way — a
@@ -36,12 +44,20 @@ export interface LlmRequest {
 
 export function activeProvider(): AiProvider {
   const configured = process.env.NIMBUS_PROVIDER
-  if (configured === 'openai' || configured === 'anthropic') return configured
-  return 'gemini'
+  if (
+    configured === 'openai' ||
+    configured === 'anthropic' ||
+    configured === 'gemini' ||
+    configured === 'local'
+  ) {
+    return configured
+  }
+  return 'local'
 }
 
 /** Default model per provider when the user hasn't picked one. */
 const DEFAULT_MODEL: Record<AiProvider, string> = {
+  local: '',
   gemini: '',
   openai: 'gpt-4o-mini',
   anthropic: 'claude-sonnet-5'
@@ -226,6 +242,8 @@ async function providerError(label: string, res: Response): Promise<string> {
 export async function complete(request: LlmRequest): Promise<string> {
   const provider = activeProvider()
 
+  if (provider === 'local') return localComplete(request)
+
   if (provider === 'gemini') {
     const config = geminiConfig(request)
     const result = await withModelFallback((name) =>
@@ -284,6 +302,8 @@ export async function streamComplete(
 ): Promise<string> {
   const provider = activeProvider()
   let full = ''
+
+  if (provider === 'local') return localStreamComplete(request, onChunk)
 
   if (provider === 'gemini') {
     const config = geminiConfig(request)

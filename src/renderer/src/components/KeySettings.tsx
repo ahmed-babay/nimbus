@@ -1,5 +1,11 @@
 import { useEffect, useState } from 'react'
-import type { AiProvider, ProviderModel, SecretName, SecretStatus } from '@shared/types'
+import type {
+  AiProvider,
+  LocalModelStatus,
+  ProviderModel,
+  SecretName,
+  SecretStatus
+} from '@shared/types'
 
 /** Shown next to each field so it's clear what a key is actually for. */
 const KEY_INFO: Record<SecretName, { label: string; why: string; where: string }> = {
@@ -46,6 +52,7 @@ const KEY_INFO: Record<SecretName, { label: string; why: string; where: string }
 }
 
 const PROVIDER_LABELS: Record<AiProvider, string> = {
+  local: 'On this device',
   gemini: 'Google Gemini',
   openai: 'OpenAI',
   anthropic: 'Anthropic'
@@ -60,7 +67,7 @@ const PROVIDER_LABELS: Record<AiProvider, string> = {
  * have not been run against a live paid key. Failures surface as a spoken
  * error rather than a wrong answer.
  */
-const WIRED_PROVIDERS: AiProvider[] = ['gemini', 'openai', 'anthropic']
+const WIRED_PROVIDERS: AiProvider[] = ['local', 'gemini', 'openai', 'anthropic']
 
 /**
  * Lets someone run Nimbus without ever creating a `.env` file.
@@ -78,6 +85,10 @@ export function KeySettings() {
   const [model, setModel] = useState('')
   const [lockedByEnv, setLockedByEnv] = useState(false)
   const [models, setModels] = useState<ProviderModel[]>([])
+  const [local, setLocal] = useState<LocalModelStatus | null>(null)
+  const [downloaded, setDownloaded] = useState(0)
+  const [downloadTotal, setDownloadTotal] = useState(0)
+  const [downloading, setDownloading] = useState(false)
   const [modelsState, setModelsState] = useState<'idle' | 'loading' | 'error'>('idle')
   const [modelsError, setModelsError] = useState('')
 
@@ -85,8 +96,27 @@ export function KeySettings() {
     void window.nimbus.getSecrets().then(setSecrets)
   }
 
+  const refreshLocal = (): void => {
+    void window.nimbus.getLocalModelStatus().then(setLocal)
+  }
+
+  useEffect(() => {
+    // Progress arrives from the main process, which owns the download, so it
+    // keeps running even if this panel is closed and reopened mid-way.
+    return window.nimbus.onLocalModelProgress((progress) => {
+      setDownloaded(progress.receivedBytes)
+      setDownloadTotal(progress.totalBytes)
+      if (progress.done) {
+        setDownloading(false)
+        refreshLocal()
+        if (progress.error) setMessage({ text: progress.error, bad: true })
+      }
+    })
+  }, [])
+
   useEffect(() => {
     refresh()
+    refreshLocal()
     void window.nimbus.getAiChoice().then((choice) => {
       setProvider(choice.provider)
       setModel(choice.model)
@@ -117,6 +147,16 @@ export function KeySettings() {
       setModelsState('error')
       setModelsError(err instanceof Error ? err.message : 'Could not list models.')
     }
+  }
+
+  const startDownload = async (): Promise<void> => {
+    setDownloading(true)
+    setMessage(null)
+    const result = await window.nimbus.downloadLocalModel()
+    setDownloading(false)
+    refreshLocal()
+    if (!result.ok && result.error) setMessage({ text: result.error, bad: true })
+    else if (result.ok) setMessage({ text: 'On-device model installed.' })
   }
 
   const chooseProvider = (which: AiProvider): void => {
@@ -160,9 +200,62 @@ export function KeySettings() {
         })}
       </div>
 
+      {/* The on-device model needs a one-off download rather than a key, so it
+          gets its own panel instead of an empty key field. */}
+      {provider === 'local' && (
+        <div className="mt-1.5 rounded-lg border border-white/[0.07] bg-white/[0.03] px-2 py-1.5">
+          {local?.installed ? (
+            <div className="flex items-center gap-1.5 text-[10.5px]">
+              <span className="text-nimbus-positive">●</span>
+              <span className="text-nimbus-text">Qwen3.5 0.8B ready</span>
+              <span className="ml-auto text-[9.5px] text-nimbus-text-dim">
+                {(local.sizeBytes / 1e9).toFixed(2)} GB · runs offline
+              </span>
+            </div>
+          ) : downloading ? (
+            <>
+              <div className="flex items-center gap-1.5 text-[10.5px] text-nimbus-text">
+                <span>Downloading model…</span>
+                <span className="ml-auto text-[9.5px] tabular-nums text-nimbus-text-dim">
+                  {(downloaded / 1e6).toFixed(0)} / {(downloadTotal / 1e6).toFixed(0)} MB
+                </span>
+              </div>
+              <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/10">
+                <div
+                  className="h-full bg-nimbus-accent transition-[width] duration-200"
+                  style={{
+                    width: downloadTotal ? `${(downloaded / downloadTotal) * 100}%` : '5%'
+                  }}
+                />
+              </div>
+            </>
+          ) : (
+            <div className="flex items-center gap-2">
+              <div className="min-w-0 flex-1">
+                <div className="text-[10.5px] text-nimbus-text">Model not installed</div>
+                <div className="text-[9.5px] text-nimbus-text-dim">
+                  One-off 532 MB download. No key, no network afterwards.
+                </div>
+              </div>
+              <button
+                onClick={() => void startDownload()}
+                className="shrink-0 rounded-lg border border-nimbus-accent/50 bg-nimbus-accent/15 px-2 py-1 text-[10px] text-nimbus-text transition-colors hover:bg-nimbus-accent/25"
+              >
+                Download
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       {lockedByEnv ? (
         <p className="mt-1.5 text-[10px] text-nimbus-text-dim">
           Pinned by your .env file (NIMBUS_PROVIDER / NIMBUS_MODEL).
+        </p>
+      ) : provider === 'local' ? (
+        <p className="mt-1.5 text-[10px] text-nimbus-text-dim">
+          Answers, routing and reminders run here. Web research still uses a cloud model when
+          one is set up.
         </p>
       ) : (
         <div className="mt-1.5 flex items-center gap-2">

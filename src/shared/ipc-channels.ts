@@ -42,6 +42,12 @@ export const IPC = {
   SET_AI_CHOICE: 'nimbus:set-ai-choice',
   /** main -> renderer: a reminder came due; payload is the Reminder to show and speak */
   REMINDER_DUE: 'nimbus:reminder-due',
+  /** renderer -> main (invoke): is the on-device model installed? */
+  LOCAL_MODEL_STATUS: 'nimbus:local-model-status',
+  /** renderer -> main (invoke): download the on-device model */
+  DOWNLOAD_LOCAL_MODEL: 'nimbus:download-local-model',
+  /** main -> renderer: download progress for the on-device model */
+  LOCAL_MODEL_PROGRESS: 'nimbus:local-model-progress',
   /** renderer -> main (invoke): one captured piece of video audio, returns a Subtitle or null */
   SUBTITLE_FOR: 'nimbus:subtitle-for',
   /** renderer -> main (invoke): one captured piece of a meeting, returns the text or null */

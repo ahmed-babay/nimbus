@@ -20,6 +20,8 @@ import { runTextAction } from '../services/text-actions'
 import type { TextActionKind } from '../shared/types'
 import { transcribeAudio } from '../services/whisper'
 import { subtitleFor, type Subtitle } from '../services/subtitles'
+import { downloadLocalModel, localModelStatus } from './model-download'
+import type { LocalModelStatus } from '../shared/types'
 import { formatTranscript, summarizeMeeting, transcribePiece } from '../services/meeting'
 import type { MeetingLine, MeetingSummary } from '../shared/types'
 import { writeFile } from 'node:fs/promises'
@@ -237,6 +239,24 @@ function registerIpcHandlers(): void {
     IPC.TRANSCRIBE_AUDIO,
     async (_event, audio: ArrayBuffer, mimeType: string): Promise<string> => {
       return transcribeAudio(Buffer.from(audio), mimeType)
+    }
+  )
+
+  ipcMain.handle(IPC.LOCAL_MODEL_STATUS, (): Promise<LocalModelStatus> => localModelStatus())
+
+  ipcMain.handle(
+    IPC.DOWNLOAD_LOCAL_MODEL,
+    async (event): Promise<{ ok: boolean; error?: string }> => {
+      try {
+        await downloadLocalModel((progress) => {
+          if (!event.sender.isDestroyed()) {
+            event.sender.send(IPC.LOCAL_MODEL_PROGRESS, progress)
+          }
+        })
+        return { ok: true }
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : 'Download failed.' }
+      }
     }
   )
 
