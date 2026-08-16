@@ -7,7 +7,7 @@ const WINDOW_WIDTH = 520
 // Tall enough for the largest response card (news hero image + three
 // headlines, or an entity photo + extract) plus the follow-up strip and drop
 // shadow. The window is transparent, so unused space stays invisible.
-const WINDOW_HEIGHT = 560
+const WINDOW_HEIGHT = 720
 
 export function createOverlayWindow(): BrowserWindow {
   const primaryDisplay = screen.getPrimaryDisplay()
