@@ -77,10 +77,10 @@ export async function planDepartureAlarm(
   // Geocoded names come back postal-style — "Frankfurt (Main) Hauptbahnhof,
   // Mannheimer Straße" — which is unbearable read aloud. The leading segment
   // is the part anyone would actually say.
-  const destination = plan.to.split(',')[0].trim()
+  const destinationName = plan.to.split(',')[0].trim()
   const text = boarding
-    ? `Time to leave for the ${line} at ${boarding.departs} to ${destination}.`
-    : `Time to leave for ${destination}.`
+    ? `Time to leave for the ${line} at ${boarding.departs} to ${destinationName}.`
+    : `Time to leave for ${destinationName}.`
 
   return {
     at: leaveAt.toISOString(),
@@ -89,7 +89,7 @@ export async function planDepartureAlarm(
       line,
       departs: boarding?.departs || journey.departs,
       from: plan.from.split(',')[0].trim(),
-      to: destination,
+      to: destinationName,
       travelMinutes
     },
     journey
