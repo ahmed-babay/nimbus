@@ -11,6 +11,7 @@ export type NimbusIntent =
   | 'remember'
   | 'recall'
   | 'alarm'
+  | 'briefing'
   | 'chat'
 
 export interface IntentClassification {
@@ -173,6 +174,15 @@ export interface TransitCardData {
   journeys: TransitJourney[]
 }
 
+export interface BriefingCardData {
+  weather: WeatherCardData | null
+  /** Next departures on the usual route, when one is configured. */
+  commute: TransitCardData | null
+  news: NewsCardData | null
+  /** Reminders due within the next few hours. */
+  reminders: Reminder[]
+}
+
 export interface Reminder {
   id: string
   /** When it fires, ISO. */
@@ -301,6 +311,7 @@ export type ResponseCardData =
   | { type: 'directions'; data: DirectionsCardData }
   | { type: 'memory'; data: MemoryCardData }
   | { type: 'reminder'; data: ReminderCardData }
+  | { type: 'briefing'; data: BriefingCardData }
   | { type: 'explainer'; data: ExplainerCardData }
   | { type: 'text' }
 
@@ -356,6 +367,14 @@ export interface NimbusConfig {
   screenshot: {
     /** Drag to pick a region instead of grabbing the whole display. */
     selectRegion: boolean
+  }
+  briefing: {
+    /** Where the next departures come from, e.g. "Frankfurt". Omit to skip. */
+    commuteTo: string
+    /** City for the weather line; defaults to the first part of location.region. */
+    weatherCity: string
+    /** Headline topic, or empty for the top stories. */
+    newsTopic: string
   }
   location: {
     /** Where 'from here' means. A street address is far more precise than
