@@ -4,6 +4,7 @@ import type {
   LocalModelKind,
   LocalModelStatus,
   ProviderModel,
+  QuotaLine,
   SecretName,
   SecretStatus
 } from '@shared/types'
@@ -127,6 +128,72 @@ function LocalModelRow({
         </div>
       )}
     </div>
+  )
+}
+
+/**
+ * What's left of the free tiers.
+ *
+ * Nimbus runs entirely on free allowances, so the failure worth warning about
+ * isn't an error — it's a monthly budget running out mid-question. Only Tavily
+ * publishes usage; the rest say plainly that they can't be measured rather
+ * than showing a bar built from a guess.
+ */
+function QuotaPanel(): React.JSX.Element {
+  const [lines, setLines] = useState<QuotaLine[] | null>(null)
+
+  useEffect(() => {
+    void window.nimbus.getQuotas().then(setLines)
+  }, [])
+
+  if (!lines) {
+    return <p className="mt-1.5 text-[10px] text-nimbus-text-dim">Checking…</p>
+  }
+
+  return (
+    <ul className="mt-1.5 space-y-1.5">
+      {lines.map((line) => {
+        const measured = line.state === 'ok' && line.limit
+        const fraction = measured ? Math.min(1, (line.used ?? 0) / (line.limit ?? 1)) : 0
+        // Colour tracks how close the budget is to gone, not how much is used,
+        // so the panel is quiet until it matters.
+        const bar =
+          fraction > 0.9
+            ? 'bg-nimbus-negative'
+            : fraction > 0.7
+              ? 'bg-nimbus-yellow'
+              : 'bg-nimbus-positive'
+
+        return (
+          <li
+            key={line.service}
+            className="rounded-lg border border-white/[0.07] bg-white/[0.03] px-2 py-1.5"
+          >
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-[10.5px] text-nimbus-text">{line.service}</span>
+              <span className="text-[9.5px] text-nimbus-text-dim">{line.purpose}</span>
+              <span className="ml-auto text-[9.5px] tabular-nums text-nimbus-text-dim">
+                {measured
+                  ? `${line.used} / ${line.limit}`
+                  : line.state === 'local'
+                    ? 'on device'
+                    : line.state === 'missing'
+                      ? 'not set up'
+                      : line.state === 'error'
+                        ? 'unavailable'
+                        : 'no limit published'}
+              </span>
+            </div>
+            {measured && (
+              <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/10">
+                <div className={`h-full ${bar}`} style={{ width: `${fraction * 100}%` }} />
+              </div>
+            )}
+            <div className="mt-0.5 text-[9.5px] text-nimbus-text-dim">{line.detail}</div>
+          </li>
+        )
+      })}
+    </ul>
   )
 }
 
@@ -346,6 +413,11 @@ export function KeySettings() {
       </p>
       <LocalModelRow kind="stt" onMessage={setMessage} />
       <LocalModelRow kind="tts" onMessage={setMessage} />
+
+      <div className="mt-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-nimbus-accent">
+        What&apos;s left this month
+      </div>
+      <QuotaPanel />
 
       <div className="mt-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-nimbus-accent">
         API keys

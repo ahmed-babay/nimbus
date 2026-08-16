@@ -23,6 +23,7 @@ import { subtitleFor, type Subtitle } from '../services/subtitles'
 import { targetLanguage } from '../services/translate'
 import { heardWakeWord, wakeWordEnabled } from '../services/wake-word'
 import { localSttInstalled } from '../services/local-stt'
+import { readQuotas } from '../services/quota'
 import { downloadLocalModel, downloadOnnxModel, localModelStatus } from './model-download'
 import type { LocalModelKind, LocalModelStatus } from '../shared/types'
 import { formatTranscript, summarizeMeeting, transcribePiece } from '../services/meeting'
@@ -38,6 +39,7 @@ import type {
   NimbusConfig,
   NimbusResponse,
   ProviderModel,
+  QuotaLine,
   SecretName,
   SecretStatus,
   SynthesizedSpeech
@@ -250,6 +252,8 @@ function registerIpcHandlers(): void {
       return transcribeAudio(new Float32Array(pcm), { language: targetLanguage() })
     }
   )
+
+  ipcMain.handle(IPC.GET_QUOTAS, (): Promise<QuotaLine[]> => readQuotas())
 
   ipcMain.handle(IPC.WAKE_WORD_READY, async (): Promise<boolean> => {
     // Both halves are required: the user's opt-in, and the on-device

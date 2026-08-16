@@ -48,6 +48,8 @@ export const IPC = {
   DOWNLOAD_LOCAL_MODEL: 'nimbus:download-local-model',
   /** main -> renderer: download progress for the on-device model */
   LOCAL_MODEL_PROGRESS: 'nimbus:local-model-progress',
+  /** renderer -> main (invoke): how much of each free tier is left */
+  GET_QUOTAS: 'nimbus:get-quotas',
   /** renderer -> main (invoke): is the wake word listener usable right now? */
   WAKE_WORD_READY: 'nimbus:wake-word-ready',
   /**

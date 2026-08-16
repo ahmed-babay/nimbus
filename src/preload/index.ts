@@ -6,6 +6,7 @@ import type {
   NimbusConfig,
   NimbusResponse,
   ProviderModel,
+  QuotaLine,
   Reminder,
   LocalModelKind,
   LocalModelProgress,
@@ -78,6 +79,7 @@ const api = {
     sourceHint: string
   ): Promise<Subtitle | null> =>
     ipcRenderer.invoke(IPC.SUBTITLE_FOR, pcm, offsetMs, previous, sourceHint),
+  getQuotas: (): Promise<QuotaLine[]> => ipcRenderer.invoke(IPC.GET_QUOTAS),
   isWakeWordReady: (): Promise<boolean> => ipcRenderer.invoke(IPC.WAKE_WORD_READY),
   /** Returns only whether it was the wake phrase — never what was said. */
   wakeHeard: (pcm: ArrayBuffer): Promise<boolean> =>

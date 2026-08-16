@@ -533,3 +533,18 @@ export interface LocalModelProgress {
   done: boolean
   error?: string
 }
+
+export type QuotaState = 'ok' | 'unmeasured' | 'local' | 'missing' | 'error'
+
+export interface QuotaLine {
+  /** What the user calls it. */
+  service: string
+  /** What it does for them, so an unused key is recognisable as unused. */
+  purpose: string
+  state: QuotaState
+  /** Present only when state is 'ok'. */
+  used?: number
+  limit?: number
+  /** Shown under the bar. */
+  detail: string
+}
