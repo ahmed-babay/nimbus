@@ -708,9 +708,9 @@ function duration(minutes: number | null): string {
 
 /**
  * The map is a still: tiles were downloaded and projected in the main process,
- * so this only places them and draws the line. OpenStreetMap's tiles are a
- * light theme, so they're inverted to sit in a dark overlay — the route is
- * drawn over the top, outside the filter, and keeps its real colour.
+ * so this only places them and draws the line. Tiles are shown in their own
+ * colours — an earlier version inverted them to match the dark overlay, which
+ * made the map unreadable.
  */
 function RouteMap({ map, mode }: { map: RenderedMap; mode: TravelMode }) {
   const points = map.routes[mode]
@@ -718,13 +718,10 @@ function RouteMap({ map, mode }: { map: RenderedMap; mode: TravelMode }) {
 
   return (
     <div
-      className="relative overflow-hidden rounded-lg ring-1 ring-white/10"
+      className="relative overflow-hidden rounded-lg ring-1 ring-black/25"
       style={{ width: map.width, height: map.height }}
     >
-      <div
-        className="absolute inset-0"
-        style={{ filter: 'invert(1) hue-rotate(180deg) brightness(0.88) contrast(1.05) saturate(0.65)' }}
-      >
+      <div className="absolute inset-0">
         {map.tiles.map((tile) => (
           <img
             key={`${tile.x}-${tile.y}`}
