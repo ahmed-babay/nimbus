@@ -2,6 +2,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai'
 import { getHistorySummary } from './conversation'
 import type { StreamHandler } from './gemini'
 import config from '../../config.json'
+import { currentTimeContext } from './now'
 
 const native = config.language?.native || 'English'
 
@@ -40,7 +41,9 @@ export async function askAboutScreen(
   const context = getHistorySummary(4)
   const model = getClient().getGenerativeModel({
     model: process.env.GEMINI_MODEL || 'gemini-flash-lite-latest',
-    systemInstruction: context ? `${SYSTEM_PROMPT}\n\nRecent conversation:\n${context}` : SYSTEM_PROMPT
+    systemInstruction:
+      `${SYSTEM_PROMPT}\n\n${currentTimeContext()}` +
+      (context ? `\n\nRecent conversation:\n${context}` : '')
   })
 
   const parts = [

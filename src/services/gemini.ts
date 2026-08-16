@@ -2,6 +2,7 @@ import { SchemaType, type GenerationConfig } from '@google/generative-ai'
 import { buildModel, withModelFallback } from './gemini-client'
 import type { IntentClassification, NimbusIntent } from '../shared/types'
 import { getHistoryAsContents, getHistorySummary } from './conversation'
+import { currentTimeContext } from './now'
 
 // NOTE: Web Speech API (renderer) handles STT/TTS for free with no API key.
 // If recognition quality is ever a problem, a free-tier Whisper API call
@@ -90,8 +91,12 @@ export async function classifyIntent(utterance: string): Promise<IntentClassific
   // or "how about Berlin?" only make sense against what was just discussed.
   const context = getHistorySummary()
   const systemInstruction = context
-    ? `${CLASSIFY_SYSTEM_PROMPT}\n\nRecent conversation (for resolving pronouns and follow-ups):\n${context}`
-    : CLASSIFY_SYSTEM_PROMPT
+    ? `${CLASSIFY_SYSTEM_PROMPT}
+
+${currentTimeContext()}\n\nRecent conversation (for resolving pronouns and follow-ups):\n${context}`
+    : `${CLASSIFY_SYSTEM_PROMPT}
+
+${currentTimeContext()}`
 
   const result = await withModelFallback((name) =>
     buildModel(name, systemInstruction, CLASSIFY_SCHEMA).generateContent(utterance)
@@ -135,7 +140,8 @@ export async function chat(utterance: string, onChunk?: StreamHandler): Promise<
     'You are Nimbus, a concise, friendly voice assistant living in a desktop overlay. ' +
     'Keep responses to 1-3 short sentences since they will be read aloud by text-to-speech. ' +
     'Do not use markdown, bullet points, or emoji. ' +
-    'You are mid-conversation — refer back to what was already said when relevant.'
+    'You are mid-conversation — refer back to what was already said when relevant.\n\n' +
+    currentTimeContext()
 
   // Full prior turns (not just a summary) so the model can genuinely follow
   // the thread rather than answering each utterance in isolation.
@@ -165,7 +171,8 @@ export async function formatResponse(
   const systemInstruction =
     'You turn structured data into a short, natural spoken sentence (1-3 sentences max) ' +
     'for a voice assistant named Nimbus. Do not use markdown, bullet points, or emoji ' +
-    'since this will be spoken aloud by text-to-speech.'
+    'since this will be spoken aloud by text-to-speech.\n\n' +
+    currentTimeContext()
 
   const context = getHistorySummary(4)
   const prompt = [
