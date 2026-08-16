@@ -9,6 +9,7 @@ import { KeySettings } from './components/KeySettings'
 import { SubtitleBar } from './components/SubtitleBar'
 import { MeetingPanel } from './components/MeetingPanel'
 import { useNimbus } from './hooks/useNimbus'
+import { useWakeWord } from './hooks/useWakeWord'
 import { useSubtitles } from './hooks/useSubtitles'
 import { useMeeting } from './hooks/useMeeting'
 import { useTypewriter } from './hooks/useTypewriter'
@@ -65,6 +66,18 @@ export default function App() {
   useEffect(() => {
     setHoldOpen(subtitles.active || meetingOpen)
   }, [subtitles.active, meetingOpen, setHoldOpen])
+
+  // Listening for its own name, when the user has turned that on. Suspended
+  // whenever Nimbus is already up or talking — otherwise it competes with the
+  // question recorder for the microphone, or hears itself say "Nimbus" and
+  // wakes in a loop.
+  useWakeWord({
+    onWake: () => {
+      // Main shows the overlay; nothing to do here but stop listening, which
+      // the suspend flag below handles on the next render.
+    },
+    suspended: isVisible || meetingOpen || subtitles.active || state === 'speaking'
+  })
 
   const stopSubtitles = (): void => {
     subtitles.stop()

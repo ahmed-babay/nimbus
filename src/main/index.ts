@@ -21,6 +21,8 @@ import type { TextActionKind } from '../shared/types'
 import { transcribeAudio } from '../services/whisper'
 import { subtitleFor, type Subtitle } from '../services/subtitles'
 import { targetLanguage } from '../services/translate'
+import { heardWakeWord, wakeWordEnabled } from '../services/wake-word'
+import { localSttInstalled } from '../services/local-stt'
 import { downloadLocalModel, downloadOnnxModel, localModelStatus } from './model-download'
 import type { LocalModelKind, LocalModelStatus } from '../shared/types'
 import { formatTranscript, summarizeMeeting, transcribePiece } from '../services/meeting'
@@ -248,6 +250,29 @@ function registerIpcHandlers(): void {
       return transcribeAudio(new Float32Array(pcm), { language: targetLanguage() })
     }
   )
+
+  ipcMain.handle(IPC.WAKE_WORD_READY, async (): Promise<boolean> => {
+    // Both halves are required: the user's opt-in, and the on-device
+    // recogniser. Without local weights this would ship a room's conversation
+    // to a cloud API, which is not a trade the setting was offering.
+    return wakeWordEnabled() && (await localSttInstalled())
+  })
+
+  ipcMain.handle(IPC.WAKE_HEARD, async (_event, pcm: ArrayBuffer): Promise<boolean> => {
+    try {
+      const heard = await heardWakeWord(new Float32Array(pcm))
+      // Opened here rather than in the renderer so that saying the name lands
+      // in exactly the same place as pressing the hotkey — showOverlay is what
+      // starts a listening turn.
+      if (heard && overlayWindow) showOverlay(overlayWindow)
+      return heard
+    } catch (error) {
+      // A failure here must stay quiet — this runs continuously, and an error
+      // dialog per burst would be unusable.
+      console.warn('[wake-word] burst failed:', error)
+      return false
+    }
+  })
 
   ipcMain.handle(
     IPC.LOCAL_MODEL_STATUS,

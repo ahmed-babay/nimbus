@@ -78,6 +78,10 @@ const api = {
     sourceHint: string
   ): Promise<Subtitle | null> =>
     ipcRenderer.invoke(IPC.SUBTITLE_FOR, pcm, offsetMs, previous, sourceHint),
+  isWakeWordReady: (): Promise<boolean> => ipcRenderer.invoke(IPC.WAKE_WORD_READY),
+  /** Returns only whether it was the wake phrase — never what was said. */
+  wakeHeard: (pcm: ArrayBuffer): Promise<boolean> =>
+    ipcRenderer.invoke(IPC.WAKE_HEARD, pcm),
   getLocalModelStatus: (kind: LocalModelKind = 'llm'): Promise<LocalModelStatus> =>
     ipcRenderer.invoke(IPC.LOCAL_MODEL_STATUS, kind),
   downloadLocalModel: (kind: LocalModelKind = 'llm'): Promise<{ ok: boolean; error?: string }> =>

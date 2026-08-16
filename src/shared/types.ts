@@ -417,6 +417,15 @@ export interface NimbusConfig {
     transit: boolean
     maps: boolean
   }
+  /**
+   * Listening for its own name. Off unless the user turns it on, because it
+   * means keeping the microphone open — see services/wake-word.ts for exactly
+   * what is and isn't done with what it hears.
+   */
+  wakeWord?: {
+    enabled: boolean
+    phrase: string
+  }
   hotkey: {
     enabled: boolean
     accelerator: string

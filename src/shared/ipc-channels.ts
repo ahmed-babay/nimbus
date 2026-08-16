@@ -48,6 +48,13 @@ export const IPC = {
   DOWNLOAD_LOCAL_MODEL: 'nimbus:download-local-model',
   /** main -> renderer: download progress for the on-device model */
   LOCAL_MODEL_PROGRESS: 'nimbus:local-model-progress',
+  /** renderer -> main (invoke): is the wake word listener usable right now? */
+  WAKE_WORD_READY: 'nimbus:wake-word-ready',
+  /**
+   * renderer -> main (invoke): a short burst of mic audio, returns only
+   * whether it was the wake phrase. Never returns what was said.
+   */
+  WAKE_HEARD: 'nimbus:wake-heard',
   /** renderer -> main (invoke): one captured piece of video audio, returns a Subtitle or null */
   SUBTITLE_FOR: 'nimbus:subtitle-for',
   /** renderer -> main (invoke): one captured piece of a meeting, returns the text or null */
