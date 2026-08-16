@@ -64,7 +64,12 @@ export function useSubtitles(): SubtitleControls {
   const handlePiece = useCallback((piece: CapturedPiece) => {
     const previous = previousRef.current
     void window.nimbus
-      .subtitleFor(piece.audio, piece.mimeType, piece.offsetMs, previous, sourceRef.current)
+      .subtitleFor(
+        piece.pcm.buffer as ArrayBuffer,
+        piece.offsetMs,
+        previous,
+        sourceRef.current
+      )
       .then((line) => {
         // A stop that lands mid-flight must not push a line onto a screen the
         // user has already cleared.

@@ -1,5 +1,6 @@
 import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts'
 import config from '../../config.json'
+import { localTtsInstalled, localTtsSupportsLanguage, speakLocally } from './local-tts'
 
 const VOICE = process.env.TTS_VOICE || 'en-GB-SoniaNeural'
 
@@ -9,13 +10,38 @@ export interface SynthesizedSpeech {
 }
 
 /**
- * Microsoft Edge's free "Read Aloud" neural TTS service — no signup or API
- * key, and dramatically more natural than the local Windows SAPI voice that
- * SpeechSynthesis falls back to in Electron. It's an unofficial endpoint
- * (like Yahoo Finance), so if it ever breaks, the caller falls back to the
- * renderer's built-in SpeechSynthesis rather than staying silent.
+ * Turns an answer into audio, on-device when it can.
+ *
+ * There are three tiers, and each exists because the one below it can fail in
+ * a way the user would notice:
+ *
+ *  1. Kokoro on this machine — no network, and a steady ~860ms.
+ *  2. Microsoft Edge's free "Read Aloud" neural service — no signup or key,
+ *     but a network call whose latency swings by a factor of eight.
+ *  3. The renderer's own SpeechSynthesis, chosen by the caller when this
+ *     throws. Robotic, but never silent.
  */
 export async function synthesizeSpeech(text: string): Promise<SynthesizedSpeech> {
+  // Only when the weights are already here: downloading 330MB mid-answer
+  // would look like a hang, so installing is something settings does.
+  if (localTtsSupportsLanguage() && (await localTtsInstalled())) {
+    try {
+      return await speakLocally(text)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.error(`[tts] on-device voice failed, falling back to Edge: ${message}`)
+    }
+  }
+
+  return synthesizeWithEdge(text)
+}
+
+/**
+ * Edge's endpoint is unofficial (like Yahoo Finance), so if it ever breaks the
+ * caller falls back to the renderer's built-in SpeechSynthesis rather than
+ * staying silent.
+ */
+async function synthesizeWithEdge(text: string): Promise<SynthesizedSpeech> {
   // Edge's default pace is slower than reading speed, which makes answers feel
   // laggy next to text that has already finished streaming. Measured on a
   // typical reply: default 6.1s, +25% 4.9s.

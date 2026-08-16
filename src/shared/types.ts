@@ -1,4 +1,4 @@
-export type AiProvider = 'gemini' | 'openai' | 'anthropic'
+export type AiProvider = 'local' | 'gemini' | 'openai' | 'anthropic'
 
 export type SecretName =
   | 'GEMINI_API_KEY'
@@ -417,6 +417,15 @@ export interface NimbusConfig {
     transit: boolean
     maps: boolean
   }
+  /**
+   * Listening for its own name. Off unless the user turns it on, because it
+   * means keeping the microphone open — see services/wake-word.ts for exactly
+   * what is and isn't done with what it hears.
+   */
+  wakeWord?: {
+    enabled: boolean
+    phrase: string
+  }
   hotkey: {
     enabled: boolean
     accelerator: string
@@ -499,4 +508,43 @@ export interface MeetingSummary {
   decisions: string[]
   actions: string[]
   openQuestions: string[]
+}
+
+/** Whether the on-device model is present, and how big it is. */
+/**
+ * Which on-device model. They download separately because they are useful
+ * separately: local speech recognition is worth having even when answers still
+ * come from Gemini, and it is a tenth of the size.
+ */
+export type LocalModelKind = 'llm' | 'stt' | 'tts'
+
+export interface LocalModelStatus {
+  kind: LocalModelKind
+  installed: boolean
+  path: string
+  sizeBytes: number
+  downloading: boolean
+}
+
+export interface LocalModelProgress {
+  kind: LocalModelKind
+  receivedBytes: number
+  totalBytes: number
+  done: boolean
+  error?: string
+}
+
+export type QuotaState = 'ok' | 'unmeasured' | 'local' | 'missing' | 'error'
+
+export interface QuotaLine {
+  /** What the user calls it. */
+  service: string
+  /** What it does for them, so an unused key is recognisable as unused. */
+  purpose: string
+  state: QuotaState
+  /** Present only when state is 'ok'. */
+  used?: number
+  limit?: number
+  /** Shown under the bar. */
+  detail: string
 }

@@ -9,6 +9,7 @@ import { KeySettings } from './components/KeySettings'
 import { SubtitleBar } from './components/SubtitleBar'
 import { MeetingPanel } from './components/MeetingPanel'
 import { useNimbus } from './hooks/useNimbus'
+import { useWakeWord } from './hooks/useWakeWord'
 import { useSubtitles } from './hooks/useSubtitles'
 import { useMeeting } from './hooks/useMeeting'
 import { useTypewriter } from './hooks/useTypewriter'
@@ -65,6 +66,18 @@ export default function App() {
   useEffect(() => {
     setHoldOpen(subtitles.active || meetingOpen)
   }, [subtitles.active, meetingOpen, setHoldOpen])
+
+  // Listening for its own name, when the user has turned that on. Suspended
+  // whenever Nimbus is already up or talking — otherwise it competes with the
+  // question recorder for the microphone, or hears itself say "Nimbus" and
+  // wakes in a loop.
+  useWakeWord({
+    onWake: () => {
+      // Main shows the overlay; nothing to do here but stop listening, which
+      // the suspend flag below handles on the next render.
+    },
+    suspended: isVisible || meetingOpen || subtitles.active || state === 'speaking'
+  })
 
   const stopSubtitles = (): void => {
     subtitles.stop()
@@ -392,7 +405,12 @@ function SettingsPanel({ config, onClose }: { config: NimbusConfig | null; onClo
     : []
 
   return (
-    <div className="px-4 py-3.5">
+    // Same shape as the assistant view: the header stays put and only the
+    // content below it scrolls. Without the min-h-0/flex-1 pair the panel sizes
+    // to its content, grows past the card's max height and gets clipped by the
+    // card's overflow-hidden — which looked exactly like "settings can't
+    // scroll", because there was nothing to scroll.
+    <div className="flex min-h-0 flex-1 flex-col px-4 py-3.5">
       <div className="flex items-center justify-between">
         <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-nimbus-accent">
           Settings
@@ -408,7 +426,7 @@ function SettingsPanel({ config, onClose }: { config: NimbusConfig | null; onClo
       {!config ? (
         <p className="mt-3 text-[11px] text-nimbus-text-dim">Loading config…</p>
       ) : (
-        <>
+        <div className="nimbus-scroll min-h-0 flex-1 overflow-y-auto pr-1">
           <dl className="mt-3 grid grid-cols-2 gap-x-5 gap-y-1.5">
             {rows.map(([label, value]) => (
               <div key={label} className="flex items-baseline justify-between gap-2">
@@ -429,7 +447,7 @@ function SettingsPanel({ config, onClose }: { config: NimbusConfig | null; onClo
             Edit config.json and restart Nimbus to change these.
           </p>
           <KeySettings />
-        </>
+        </div>
       )}
     </div>
   )

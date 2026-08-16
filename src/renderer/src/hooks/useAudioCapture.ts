@@ -1,4 +1,5 @@
 import { useCallback, useRef } from 'react'
+import { toPcm } from '../lib/pcm'
 
 /**
  * Long-running audio capture, cut into transcribable pieces.
@@ -48,8 +49,12 @@ const POLL_MS = 50
 export type CaptureSource = 'system' | 'microphone'
 
 export interface CapturedPiece {
-  audio: ArrayBuffer
-  mimeType: string
+  /**
+   * 16kHz mono samples, already decoded. Speech models want raw samples and
+   * only Chromium has the Opus codec, so the recording is unpacked here rather
+   * than shipped compressed to the main process.
+   */
+  pcm: Float32Array
   source: CaptureSource
   /** Wall-clock ms since capture began, for ordering and timestamps. */
   offsetMs: number
@@ -221,15 +226,20 @@ export function useAudioCapture({
         // Opus runs a few KB/s; anything smaller is a truncated container
         // rather than speech, and only wastes an upload.
         if (blob.size < 1024) return
-        void blob.arrayBuffer().then((audio) => {
-          onPiece({
-            audio,
-            mimeType,
-            source,
-            offsetMs,
-            durationMs: Date.now() - startedAt
+        void toPcm(blob)
+          .then((pcm) => {
+            onPiece({
+              pcm,
+              source,
+              offsetMs,
+              durationMs: Date.now() - startedAt
+            })
           })
-        })
+          .catch((error) => {
+            // A piece cut at an awkward boundary can be undecodable. Dropping
+            // one is fine; stopping the capture over it is not.
+            console.warn('[capture] could not decode a piece:', error)
+          })
       }
       recorder.start()
 

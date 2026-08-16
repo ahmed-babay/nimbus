@@ -27,6 +27,7 @@ import {
 } from './memory'
 import { lookupEntity } from './wikipedia'
 import { findMusic } from './music'
+import { watchJourney, wantsWatching } from './watchers'
 import { findJourneys } from './transit'
 import { getDirections, modeFromUtterance } from './maps'
 import { findStation } from './radio'
@@ -216,6 +217,17 @@ async function runIntent(
         }
         const destination = params.to
         if (!destination) throw new Error("I didn't catch where you're heading.")
+
+        // "…and keep me posted" turns a lookup into a standing watch. The
+        // classifier's own flag is checked first and the phrase test is the
+        // backstop: the router is better at "notify me if it's delayed" than a
+        // regex can be, but the regex catches the case where it forgets.
+        if (params.watch === 'yes' || wantsWatching(utterance)) {
+          const { watch, speech } = await watchJourney(params.from, destination, params.when)
+          const data = await findJourneys(params.from, destination, watch.scheduledDeparture)
+          return { speech, card: { type: 'transit', data } }
+        }
+
         const data = await findJourneys(params.from, destination, params.when)
         const speech = await formatResponse('transit', utterance, data, onChunk)
         return { speech, card: { type: 'transit', data } }

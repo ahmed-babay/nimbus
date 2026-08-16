@@ -1,6 +1,7 @@
 import { useCallback, useRef } from 'react'
 import { playListenEndChime, playListenStartChime } from '../lib/chime'
 import { isLikelyNoise } from '../lib/noise-transcripts'
+import { toPcm } from '../lib/pcm'
 
 // Electron's Chromium doesn't ship the proprietary Google API key that the
 // Web Speech API's SpeechRecognition needs, so it always fails with a
@@ -60,6 +61,10 @@ const VOICE_BAND_HIGH_HZ = 4000
 // window and requires it before calling something speech.
 const MODULATION_WINDOW = 16 // samples at POLL_MS ≈ 1 second
 const MODULATION_MIN = 0.18 // coefficient of variation; steady noise sits near 0
+// How long a lull in modulation is forgiven once someone is definitely
+// speaking. Long enough to carry a held vowel or a drawn-out word, short
+// enough that steady room noise stops qualifying shortly after they finish.
+const MODULATION_GRACE_MS = 1200
 const POLL_MS = 60 // detection granularity; also the jitter floor on stopping
 // Opus runs ~3KB/s, so this is well under a second of speech — big enough to
 // reject a truncated container, small enough to keep genuine short answers.
@@ -231,9 +236,8 @@ export function useVoiceInput({
             return
           }
 
-          blob
-            .arrayBuffer()
-            .then((buffer) => window.nimbus.transcribeAudio(buffer, blob.type))
+          toPcm(blob)
+            .then((pcm) => window.nimbus.transcribeAudio(pcm.buffer as ArrayBuffer))
             .then((transcript) => {
               if (!transcript) {
                 console.log('[voice] transcription returned empty text')
@@ -292,6 +296,8 @@ export function useVoiceInput({
         // noise as speech on loud ones.
         let noiseFloor = 0
         let calibrationSamples = 0
+        // Last moment the signal actually fluctuated like speech.
+        let lastModulatedAt = 0
 
         const interval = setInterval(() => {
           // A previous turn's interval used to outlive its session — the
@@ -379,7 +385,17 @@ export function useVoiceInput({
           // sustained word isn't cut off mid-vowel.
           const loudEnough = voiceLevel > threshold
           const inVoiceBand = voiceRatio > 1.1
-          const varying = modulation > MODULATION_MIN || speech.detected
+          if (modulation > MODULATION_MIN) lastModulatedAt = now
+
+          // The modulation test used to be waived permanently once speech had
+          // been detected, to avoid cutting someone off mid-vowel. That left
+          // no way back: after the first word of a turn, any steady noise
+          // above the floor satisfied every test, so the recording ran to its
+          // 20-second cap while the user sat in silence wondering why it was
+          // still listening. Waiving it for a short grace window instead keeps
+          // held vowels intact and still lets a quiet room end the turn.
+          const recentlyModulated = now - lastModulatedAt < MODULATION_GRACE_MS
+          const varying = modulation > MODULATION_MIN || (speech.detected && recentlyModulated)
           const isSpeech = loudEnough && inVoiceBand && varying
 
           metrics.peak = Math.max(metrics.peak, voiceLevel)

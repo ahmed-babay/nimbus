@@ -4,6 +4,7 @@ import dotenv from 'dotenv'
 import { createTray } from './tray'
 import { createOverlayWindow, showOverlay, hideOverlay, presentOverlay } from './window'
 import { startReminderScheduler, stopReminderScheduler } from './reminder-scheduler'
+import { startWatchScheduler, stopWatchScheduler } from './watch-scheduler'
 import { applyStoredSecrets, secretStatuses, setSecret } from './secrets'
 import { aiChoiceLockedByEnv, applyAiChoice, getAiChoice, setAiChoice } from './ai-choice'
 import { listModels } from '../services/providers'
@@ -20,6 +21,13 @@ import { runTextAction } from '../services/text-actions'
 import type { TextActionKind } from '../shared/types'
 import { transcribeAudio } from '../services/whisper'
 import { subtitleFor, type Subtitle } from '../services/subtitles'
+import { targetLanguage } from '../services/translate'
+import { heardWakeWord, wakeWordEnabled } from '../services/wake-word'
+import { localSttInstalled } from '../services/local-stt'
+import { readQuotas } from '../services/quota'
+import { cancelReminderById } from '../services/reminders'
+import { downloadLocalModel, downloadOnnxModel, localModelStatus } from './model-download'
+import type { LocalModelKind, LocalModelStatus } from '../shared/types'
 import { formatTranscript, summarizeMeeting, transcribePiece } from '../services/meeting'
 import type { MeetingLine, MeetingSummary } from '../shared/types'
 import { writeFile } from 'node:fs/promises'
@@ -33,6 +41,7 @@ import type {
   NimbusConfig,
   NimbusResponse,
   ProviderModel,
+  QuotaLine,
   SecretName,
   SecretStatus,
   SynthesizedSpeech
@@ -235,8 +244,66 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(
     IPC.TRANSCRIBE_AUDIO,
-    async (_event, audio: ArrayBuffer, mimeType: string): Promise<string> => {
-      return transcribeAudio(Buffer.from(audio), mimeType)
+    async (_event, pcm: ArrayBuffer): Promise<string> => {
+      // Already 16kHz mono float samples — the renderer decoded them, because
+      // only Chromium has the WebM/Opus codec.
+      //
+      // Told which language to expect rather than left to guess: an utterance
+      // is a couple of seconds, which is too little for reliable detection,
+      // and the language the user thinks in is the one they ask questions in.
+      return transcribeAudio(new Float32Array(pcm), { language: targetLanguage() })
+    }
+  )
+
+  ipcMain.handle(IPC.CANCEL_REMINDER, (_event, id: string): boolean => cancelReminderById(id))
+
+  ipcMain.handle(IPC.GET_QUOTAS, (): Promise<QuotaLine[]> => readQuotas())
+
+  ipcMain.handle(IPC.WAKE_WORD_READY, async (): Promise<boolean> => {
+    // Both halves are required: the user's opt-in, and the on-device
+    // recogniser. Without local weights this would ship a room's conversation
+    // to a cloud API, which is not a trade the setting was offering.
+    return wakeWordEnabled() && (await localSttInstalled())
+  })
+
+  ipcMain.handle(IPC.WAKE_HEARD, async (_event, pcm: ArrayBuffer): Promise<boolean> => {
+    try {
+      const heard = await heardWakeWord(new Float32Array(pcm))
+      // Opened here rather than in the renderer so that saying the name lands
+      // in exactly the same place as pressing the hotkey — showOverlay is what
+      // starts a listening turn.
+      if (heard && overlayWindow) showOverlay(overlayWindow)
+      return heard
+    } catch (error) {
+      // A failure here must stay quiet — this runs continuously, and an error
+      // dialog per burst would be unusable.
+      console.warn('[wake-word] burst failed:', error)
+      return false
+    }
+  })
+
+  ipcMain.handle(
+    IPC.LOCAL_MODEL_STATUS,
+    (_event, kind: LocalModelKind = 'llm'): Promise<LocalModelStatus> => localModelStatus(kind)
+  )
+
+  ipcMain.handle(
+    IPC.DOWNLOAD_LOCAL_MODEL,
+    async (event, kind: LocalModelKind = 'llm'): Promise<{ ok: boolean; error?: string }> => {
+      try {
+        const fetchModel =
+          kind === 'llm'
+            ? downloadLocalModel
+            : (report: Parameters<typeof downloadLocalModel>[0]) => downloadOnnxModel(kind, report)
+        await fetchModel((progress) => {
+          if (!event.sender.isDestroyed()) {
+            event.sender.send(IPC.LOCAL_MODEL_PROGRESS, progress)
+          }
+        })
+        return { ok: true }
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : 'Download failed.' }
+      }
     }
   )
 
@@ -244,8 +311,7 @@ function registerIpcHandlers(): void {
     IPC.SUBTITLE_FOR,
     async (
       _event,
-      audio: ArrayBuffer,
-      mimeType: string,
+      pcm: ArrayBuffer,
       offsetMs: number,
       previous: string,
       sourceHint: string
@@ -255,8 +321,7 @@ function registerIpcHandlers(): void {
       // because a single upload timed out.
       try {
         return await subtitleFor({
-          audio: Buffer.from(audio),
-          mimeType,
+          pcm: new Float32Array(pcm),
           offsetMs,
           previous,
           sourceHint
@@ -272,15 +337,14 @@ function registerIpcHandlers(): void {
     IPC.MEETING_PIECE,
     async (
       _event,
-      audio: ArrayBuffer,
-      mimeType: string,
+      pcm: ArrayBuffer,
       previous: string
     ): Promise<string | null> => {
-      // As with subtitles, one failed upload must not end the recording —
+      // As with subtitles, one failed piece must not end the recording —
       // losing a sentence of a meeting is recoverable, losing the meeting is
       // not.
       try {
-        return await transcribePiece(Buffer.from(audio), mimeType, previous)
+        return await transcribePiece(new Float32Array(pcm), previous)
       } catch (error) {
         console.warn('[meeting] piece failed:', error)
         return null
@@ -356,6 +420,21 @@ app.whenReady().then(() => {
   startReminderScheduler({
     onDue: (reminder) => {
       if (overlayWindow) presentOverlay(overlayWindow, IPC.REMINDER_DUE, reminder)
+    }
+  })
+
+  startWatchScheduler({
+    onUpdate: (update) => {
+      if (!overlayWindow) return
+      // Delivered down the reminder channel deliberately: a delay is the same
+      // kind of event — Nimbus interrupting with something time-critical the
+      // user asked to be told — and it already presents and speaks correctly.
+      presentOverlay(overlayWindow, IPC.REMINDER_DUE, {
+        id: update.watch.id,
+        at: new Date().toISOString(),
+        text: update.speech,
+        fired: true
+      })
     }
   })
 
@@ -451,5 +530,6 @@ app.on('window-all-closed', () => {
 
 app.on('will-quit', () => {
   stopReminderScheduler()
+  stopWatchScheduler()
   unregisterHotkey()
 })

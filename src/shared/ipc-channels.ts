@@ -42,6 +42,23 @@ export const IPC = {
   SET_AI_CHOICE: 'nimbus:set-ai-choice',
   /** main -> renderer: a reminder came due; payload is the Reminder to show and speak */
   REMINDER_DUE: 'nimbus:reminder-due',
+  /** renderer -> main (invoke): is the on-device model installed? */
+  LOCAL_MODEL_STATUS: 'nimbus:local-model-status',
+  /** renderer -> main (invoke): download the on-device model */
+  DOWNLOAD_LOCAL_MODEL: 'nimbus:download-local-model',
+  /** main -> renderer: download progress for the on-device model */
+  LOCAL_MODEL_PROGRESS: 'nimbus:local-model-progress',
+  /** renderer -> main (invoke): drop one reminder by id */
+  CANCEL_REMINDER: 'nimbus:cancel-reminder',
+  /** renderer -> main (invoke): how much of each free tier is left */
+  GET_QUOTAS: 'nimbus:get-quotas',
+  /** renderer -> main (invoke): is the wake word listener usable right now? */
+  WAKE_WORD_READY: 'nimbus:wake-word-ready',
+  /**
+   * renderer -> main (invoke): a short burst of mic audio, returns only
+   * whether it was the wake phrase. Never returns what was said.
+   */
+  WAKE_HEARD: 'nimbus:wake-heard',
   /** renderer -> main (invoke): one captured piece of video audio, returns a Subtitle or null */
   SUBTITLE_FOR: 'nimbus:subtitle-for',
   /** renderer -> main (invoke): one captured piece of a meeting, returns the text or null */

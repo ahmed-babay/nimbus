@@ -1,5 +1,6 @@
 import { httpFetch } from './http'
 import { transcriptionHint } from './region'
+import { localSttInstalled, transcribeLocally, SAMPLE_RATE } from './local-stt'
 
 const TRANSCRIPTION_URL = 'https://api.groq.com/openai/v1/audio/transcriptions'
 
@@ -8,29 +9,18 @@ interface GroqTranscriptionResponse {
 }
 
 /**
- * Groq's free-tier, OpenAI-compatible Whisper endpoint. Electron's Chromium
- * doesn't ship the proprietary Google API key that the Web Speech API's
- * SpeechRecognition (STT) needs to reach Google's servers, so it always
- * fails with a "network" error in Electron regardless of connectivity —
- * this replaces it. SpeechSynthesis (TTS) is unaffected since it's local.
+ * Speech to text, on-device first.
+ *
+ * Electron's Chromium doesn't ship the proprietary Google key that the Web
+ * Speech API needs, so it always fails with a "network" error regardless of
+ * connectivity — Nimbus has never been able to use it. What replaced it was a
+ * Groq Whisper call, which worked but made an API key mandatory just to be
+ * heard.
+ *
+ * Now the local model runs first and Groq is the fallback. Both paths take the
+ * same 16kHz mono samples, decoded once in the renderer, so switching between
+ * them changes nothing else in the pipeline.
  */
-/** Groq validates by file extension, so keep it consistent with the blob type. */
-function extensionFor(mimeType: string): string {
-  const base = mimeType.split(';')[0].trim()
-  switch (base) {
-    case 'audio/webm':
-      return 'webm'
-    case 'audio/ogg':
-      return 'ogg'
-    case 'audio/mp4':
-    case 'audio/mpeg':
-      return 'mp4'
-    case 'audio/wav':
-      return 'wav'
-    default:
-      return 'webm'
-  }
-}
 
 export interface TranscribeOptions {
   /**
@@ -40,29 +30,58 @@ export interface TranscribeOptions {
    * began there.
    */
   contextPrompt?: string
+  /** ISO code to decode as; omitted means the model detects it. */
+  language?: string
 }
 
-export async function transcribeAudio(
-  audio: Buffer,
-  mimeType: string,
-  options: TranscribeOptions = {}
-): Promise<string> {
+/**
+ * Wraps raw samples in a WAV header for the cloud fallback, which wants a file
+ * rather than an array. Uncompressed is fine — these are seconds of 16kHz
+ * mono, and re-encoding to Opus in the main process would cost more than the
+ * upload saves.
+ */
+function toWav(pcm: Float32Array): Buffer {
+  const header = Buffer.alloc(44)
+  const bytes = pcm.length * 2
+
+  header.write('RIFF', 0)
+  header.writeUInt32LE(36 + bytes, 4)
+  header.write('WAVE', 8)
+  header.write('fmt ', 12)
+  header.writeUInt32LE(16, 16) // PCM chunk size
+  header.writeUInt16LE(1, 20) // format: uncompressed
+  header.writeUInt16LE(1, 22) // channels
+  header.writeUInt32LE(SAMPLE_RATE, 24)
+  header.writeUInt32LE(SAMPLE_RATE * 2, 28) // byte rate
+  header.writeUInt16LE(2, 32) // block align
+  header.writeUInt16LE(16, 34) // bits per sample
+  header.write('data', 36)
+  header.writeUInt32LE(bytes, 40)
+
+  const body = Buffer.alloc(bytes)
+  for (let i = 0; i < pcm.length; i++) {
+    // Clamped before scaling: a sample slightly outside [-1,1] would otherwise
+    // wrap to the opposite extreme and click.
+    const sample = Math.max(-1, Math.min(1, pcm[i]))
+    body.writeInt16LE(Math.round(sample * 32767), i * 2)
+  }
+
+  return Buffer.concat([header, body])
+}
+
+async function transcribeWithGroq(pcm: Float32Array, options: TranscribeOptions): Promise<string> {
   const apiKey = process.env.GROQ_API_KEY
   if (!apiKey) {
-    throw new Error('GROQ_API_KEY is not set. Add it to your .env file.')
+    throw new Error(
+      'Speech recognition needs either the on-device model (download it in settings) or a Groq API key.'
+    )
   }
 
-  // Groq rejects empty/near-empty uploads; fail with a clear message rather
-  // than an opaque 400.
-  if (audio.length < 1024) {
-    throw new Error("I didn't catch that — the recording was too short.")
-  }
-
-  const extension = extensionFor(mimeType)
-  console.log(`[whisper] uploading ${audio.length} bytes as audio.${extension} (${mimeType})`)
+  const wav = toWav(pcm)
+  console.log(`[whisper] uploading ${wav.length} bytes to Groq`)
 
   const form = new FormData()
-  form.append('file', new Blob([audio], { type: mimeType }), `audio.${extension}`)
+  form.append('file', new Blob([wav], { type: 'audio/wav' }), 'audio.wav')
   form.append('model', process.env.GROQ_WHISPER_MODEL || 'whisper-large-v3-turbo')
   form.append('response_format', 'json')
   // Whisper takes an optional prompt as a vocabulary hint. Naming the region
@@ -97,4 +116,34 @@ export async function transcribeAudio(
 
   const json = (await res.json()) as GroqTranscriptionResponse
   return (json.text ?? '').trim()
+}
+
+/**
+ * Transcribes 16kHz mono samples, on-device when the weights are present.
+ *
+ * The local model is only tried when it is already installed — a first-use
+ * download in the middle of an utterance would look like a hang, so the
+ * download is something settings does deliberately.
+ */
+export async function transcribeAudio(
+  pcm: Float32Array,
+  options: TranscribeOptions = {}
+): Promise<string> {
+  // Shorter than this cannot hold a word, and both backends waste time on it.
+  if (pcm.length < SAMPLE_RATE / 5) {
+    throw new Error("I didn't catch that — the recording was too short.")
+  }
+
+  if (await localSttInstalled()) {
+    try {
+      return await transcribeLocally(pcm, { language: options.language })
+    } catch (error) {
+      // Falling through to the cloud is better than failing outright — a GPU
+      // that lost its device or a corrupted cache shouldn't make Nimbus deaf.
+      const message = error instanceof Error ? error.message : String(error)
+      console.error(`[whisper] on-device transcription failed, falling back to Groq: ${message}`)
+    }
+  }
+
+  return transcribeWithGroq(pcm, options)
 }

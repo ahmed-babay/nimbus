@@ -99,6 +99,22 @@ export function claimDueReminders(now = Date.now()): Reminder[] {
 }
 
 /** Cancels pending reminders matching a phrase. Returns what was cancelled. */
+/**
+ * Drops one reminder by id.
+ *
+ * Separate from `cancelReminders`, which matches on what the reminder *says* —
+ * fine for "cancel the one about the landlord", wrong for a delete button
+ * beside a specific row, where two similarly worded reminders would both go.
+ */
+export function cancelReminderById(id: string): boolean {
+  const store = load()
+  const before = store.reminders.length
+  store.reminders = store.reminders.filter((reminder) => reminder.id !== id)
+  if (store.reminders.length === before) return false
+  save()
+  return true
+}
+
 export function cancelReminders(phrase: string): Reminder[] {
   const needle = phrase.trim().toLowerCase()
   const store = load()

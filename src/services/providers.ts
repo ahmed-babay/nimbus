@@ -12,6 +12,12 @@ import type { AiProvider, ProviderModel } from '../shared/types'
  */
 
 export const PROVIDERS: Record<AiProvider, { label: string; keyName: string; docs: string }> = {
+  local: {
+    label: 'On this device',
+    // No key: the whole point of this one is that there isn't a key.
+    keyName: '',
+    docs: 'Runs offline on your machine'
+  },
   gemini: {
     label: 'Google Gemini',
     keyName: 'GEMINI_API_KEY',
@@ -28,6 +34,8 @@ export const PROVIDERS: Record<AiProvider, { label: string; keyName: string; doc
     docs: 'console.anthropic.com/settings/keys'
   }
 }
+
+export const LOCAL_MODEL_ID = 'qwen3.5-0.8b'
 
 /** Models that exist but can't answer a prompt, so are noise in a picker. */
 const UNUSABLE = /(embedding|aqa|tts|image-generation|whisper|dall-e|moderation|imagen|veo)/i
@@ -91,6 +99,12 @@ async function describeFailure(res: Response): Promise<string> {
 
 /** The models this key can actually use, newest-looking first where known. */
 export async function listModels(provider: AiProvider): Promise<ProviderModel[]> {
+  // The local provider ships exactly one model, so there is nothing to ask
+  // anyone about — and no key to ask with.
+  if (provider === 'local') {
+    return [{ id: LOCAL_MODEL_ID, label: 'Qwen3.5 0.8B (bundled)' }]
+  }
+
   const key = process.env[PROVIDERS[provider].keyName]
   if (!key) throw new Error(`No ${PROVIDERS[provider].label} key is set.`)
 

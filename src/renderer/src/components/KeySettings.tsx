@@ -1,5 +1,201 @@
 import { useEffect, useState } from 'react'
-import type { AiProvider, ProviderModel, SecretName, SecretStatus } from '@shared/types'
+import type {
+  AiProvider,
+  LocalModelKind,
+  LocalModelStatus,
+  ProviderModel,
+  QuotaLine,
+  SecretName,
+  SecretStatus
+} from '@shared/types'
+
+/** What each downloadable model is called and costs, in the user's terms. */
+const LOCAL_MODELS: Record<
+  LocalModelKind,
+  { name: string; size: string; why: string; ready: string }
+> = {
+  llm: {
+    name: 'Qwen3.5 0.8B',
+    size: '532 MB',
+    why: 'Answers and routing, with no key and no network.',
+    ready: 'runs offline'
+  },
+  stt: {
+    name: 'Whisper base',
+    size: '290 MB',
+    why: 'Hears you without an API key. Works with any answer provider.',
+    ready: 'GPU, offline'
+  },
+  tts: {
+    name: 'Kokoro 82M',
+    size: '330 MB',
+    why: 'Speaks without a network call, at a steadier pace than Edge.',
+    ready: 'GPU, offline'
+  }
+}
+
+/**
+ * One downloadable on-device model: its state, its progress, its button.
+ *
+ * Each model owns its own state rather than sharing the panel's, because they
+ * are independent — someone can run answers in the cloud and still want the
+ * microphone to work without a key.
+ */
+function LocalModelRow({
+  kind,
+  onMessage
+}: {
+  kind: LocalModelKind
+  onMessage: (message: { text: string; bad?: boolean } | null) => void
+}): React.JSX.Element {
+  const info = LOCAL_MODELS[kind]
+  const [status, setStatus] = useState<LocalModelStatus | null>(null)
+  const [received, setReceived] = useState(0)
+  const [total, setTotal] = useState(0)
+  const [busy, setBusy] = useState(false)
+
+  const refresh = (): void => {
+    void window.nimbus.getLocalModelStatus(kind).then(setStatus)
+  }
+
+  useEffect(refresh, [kind])
+
+  useEffect(() => {
+    // Progress arrives from the main process, which owns the download, so it
+    // keeps running even if this panel is closed and reopened mid-way.
+    return window.nimbus.onLocalModelProgress((progress) => {
+      if (progress.kind !== kind) return
+      setReceived(progress.receivedBytes)
+      setTotal(progress.totalBytes)
+      if (progress.done) {
+        setBusy(false)
+        refresh()
+        if (progress.error) onMessage({ text: progress.error, bad: true })
+      }
+    })
+  }, [kind, onMessage])
+
+  const start = async (): Promise<void> => {
+    setBusy(true)
+    onMessage(null)
+    const result = await window.nimbus.downloadLocalModel(kind)
+    setBusy(false)
+    refresh()
+    if (!result.ok && result.error) onMessage({ text: result.error, bad: true })
+    else if (result.ok) onMessage({ text: `${info.name} installed.` })
+  }
+
+  return (
+    <div className="mt-1.5 rounded-lg border border-white/[0.07] bg-white/[0.03] px-2 py-1.5">
+      {status?.installed ? (
+        <div className="flex items-center gap-1.5 text-[10.5px]">
+          <span className="text-nimbus-positive">●</span>
+          <span className="text-nimbus-text">{info.name} ready</span>
+          <span className="ml-auto text-[9.5px] text-nimbus-text-dim">
+            {status.sizeBytes > 0 && `${(status.sizeBytes / 1e9).toFixed(2)} GB · `}
+            {info.ready}
+          </span>
+        </div>
+      ) : busy ? (
+        <>
+          <div className="flex items-center gap-1.5 text-[10.5px] text-nimbus-text">
+            <span>Downloading {info.name}…</span>
+            <span className="ml-auto text-[9.5px] tabular-nums text-nimbus-text-dim">
+              {total ? `${(received / 1e6).toFixed(0)} / ${(total / 1e6).toFixed(0)} MB` : '…'}
+            </span>
+          </div>
+          <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/10">
+            <div
+              className="h-full bg-nimbus-accent transition-[width] duration-200"
+              style={{ width: total ? `${(received / total) * 100}%` : '5%' }}
+            />
+          </div>
+        </>
+      ) : (
+        <div className="flex items-center gap-2">
+          <div className="min-w-0 flex-1">
+            <div className="text-[10.5px] text-nimbus-text">{info.name} not installed</div>
+            <div className="text-[9.5px] text-nimbus-text-dim">
+              One-off {info.size} download. {info.why}
+            </div>
+          </div>
+          <button
+            onClick={() => void start()}
+            className="shrink-0 rounded-lg border border-nimbus-accent/50 bg-nimbus-accent/15 px-2 py-1 text-[10px] text-nimbus-text transition-colors hover:bg-nimbus-accent/25"
+          >
+            Download
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * What's left of the free tiers.
+ *
+ * Nimbus runs entirely on free allowances, so the failure worth warning about
+ * isn't an error — it's a monthly budget running out mid-question. Only Tavily
+ * publishes usage; the rest say plainly that they can't be measured rather
+ * than showing a bar built from a guess.
+ */
+function QuotaPanel(): React.JSX.Element {
+  const [lines, setLines] = useState<QuotaLine[] | null>(null)
+
+  useEffect(() => {
+    void window.nimbus.getQuotas().then(setLines)
+  }, [])
+
+  if (!lines) {
+    return <p className="mt-1.5 text-[10px] text-nimbus-text-dim">Checking…</p>
+  }
+
+  return (
+    <ul className="mt-1.5 space-y-1.5">
+      {lines.map((line) => {
+        const measured = line.state === 'ok' && line.limit
+        const fraction = measured ? Math.min(1, (line.used ?? 0) / (line.limit ?? 1)) : 0
+        // Colour tracks how close the budget is to gone, not how much is used,
+        // so the panel is quiet until it matters.
+        const bar =
+          fraction > 0.9
+            ? 'bg-nimbus-negative'
+            : fraction > 0.7
+              ? 'bg-nimbus-yellow'
+              : 'bg-nimbus-positive'
+
+        return (
+          <li
+            key={line.service}
+            className="rounded-lg border border-white/[0.07] bg-white/[0.03] px-2 py-1.5"
+          >
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-[10.5px] text-nimbus-text">{line.service}</span>
+              <span className="text-[9.5px] text-nimbus-text-dim">{line.purpose}</span>
+              <span className="ml-auto text-[9.5px] tabular-nums text-nimbus-text-dim">
+                {measured
+                  ? `${line.used} / ${line.limit}`
+                  : line.state === 'local'
+                    ? 'on device'
+                    : line.state === 'missing'
+                      ? 'not set up'
+                      : line.state === 'error'
+                        ? 'unavailable'
+                        : 'no limit published'}
+              </span>
+            </div>
+            {measured && (
+              <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/10">
+                <div className={`h-full ${bar}`} style={{ width: `${fraction * 100}%` }} />
+              </div>
+            )}
+            <div className="mt-0.5 text-[9.5px] text-nimbus-text-dim">{line.detail}</div>
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
 
 /** Shown next to each field so it's clear what a key is actually for. */
 const KEY_INFO: Record<SecretName, { label: string; why: string; where: string }> = {
@@ -46,6 +242,7 @@ const KEY_INFO: Record<SecretName, { label: string; why: string; where: string }
 }
 
 const PROVIDER_LABELS: Record<AiProvider, string> = {
+  local: 'On this device',
   gemini: 'Google Gemini',
   openai: 'OpenAI',
   anthropic: 'Anthropic'
@@ -60,7 +257,7 @@ const PROVIDER_LABELS: Record<AiProvider, string> = {
  * have not been run against a live paid key. Failures surface as a spoken
  * error rather than a wrong answer.
  */
-const WIRED_PROVIDERS: AiProvider[] = ['gemini', 'openai', 'anthropic']
+const WIRED_PROVIDERS: AiProvider[] = ['local', 'gemini', 'openai', 'anthropic']
 
 /**
  * Lets someone run Nimbus without ever creating a `.env` file.
@@ -160,9 +357,18 @@ export function KeySettings() {
         })}
       </div>
 
+      {/* The on-device model needs a one-off download rather than a key, so it
+          gets its own panel instead of an empty key field. */}
+      {provider === 'local' && <LocalModelRow kind="llm" onMessage={setMessage} />}
+
       {lockedByEnv ? (
         <p className="mt-1.5 text-[10px] text-nimbus-text-dim">
           Pinned by your .env file (NIMBUS_PROVIDER / NIMBUS_MODEL).
+        </p>
+      ) : provider === 'local' ? (
+        <p className="mt-1.5 text-[10px] text-nimbus-text-dim">
+          Answers, routing and reminders run here. Web research still uses a cloud model when
+          one is set up.
         </p>
       ) : (
         <div className="mt-1.5 flex items-center gap-2">
@@ -194,6 +400,24 @@ export function KeySettings() {
       {modelsState === 'error' && (
         <p className="mt-1 text-[10px] text-nimbus-negative">{modelsError}</p>
       )}
+
+      {/* Its own section rather than part of the provider block: local speech
+          recognition is independent of who answers, and is worth installing
+          even when answers come from the cloud. */}
+      <div className="mt-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-nimbus-accent">
+        Speech
+      </div>
+      <p className="mt-1 text-[10px] text-nimbus-text-dim">
+        Installed, these replace the Groq key and the Edge voice — and keep what you say, and
+        what Nimbus says back, on this machine.
+      </p>
+      <LocalModelRow kind="stt" onMessage={setMessage} />
+      <LocalModelRow kind="tts" onMessage={setMessage} />
+
+      <div className="mt-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-nimbus-accent">
+        What&apos;s left this month
+      </div>
+      <QuotaPanel />
 
       <div className="mt-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-nimbus-accent">
         API keys
