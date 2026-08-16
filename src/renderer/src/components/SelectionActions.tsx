@@ -16,7 +16,8 @@ const ACTIONS: Array<{ kind: TextActionKind; label: string; hint: string }> = [
   { kind: 'rewrite', label: 'Rewrite', hint: 'Make it clearer and more professional' },
   { kind: 'summarize', label: 'Summarize', hint: 'Condense to three sentences' },
   { kind: 'explain', label: 'Explain', hint: 'Say what it means in plain language' },
-  { kind: 'translate', label: 'Translate', hint: 'Translate to English' }
+  { kind: 'translate', label: 'Translate', hint: 'Translate into your language' },
+  { kind: 'reply', label: 'Reply', hint: 'Draft a reply in the original language' }
 ]
 
 /** Action chooser shown after grabbing text from another application. */
