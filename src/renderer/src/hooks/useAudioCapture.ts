@@ -28,6 +28,11 @@ import { useCallback, useRef } from 'react'
  * and is worth it every time.
  */
 
+/**
+ * Defaults suit a meeting, where accuracy matters and nobody is waiting on the
+ * text. Subtitles override all three downwards — see `useSubtitles`, which
+ * trades a little transcription context for a visibly shorter lag.
+ */
 /** Never cut shorter than this — tiny clips give Whisper too little context. */
 const MIN_PIECE_MS = 2500
 /** Cut anyway after this, so an unbroken monologue still produces output. */
@@ -56,7 +61,12 @@ export interface UseAudioCaptureOptions {
   onError?: (message: string) => void
   /** Live level 0..1, for the recording indicator. */
   onLevel?: (level: number) => void
+  /** Shortest piece to cut, even at a pause. Lower means faster, less context. */
+  minPieceMs?: number
+  /** Longest piece before cutting regardless. This is the worst-case lag. */
   maxPieceMs?: number
+  /** Pause length that counts as a sentence boundary. */
+  silenceMs?: number
 }
 
 export interface AudioCaptureControls {
@@ -88,7 +98,9 @@ export function useAudioCapture({
   onPiece,
   onError,
   onLevel,
-  maxPieceMs = MAX_PIECE_MS
+  minPieceMs = MIN_PIECE_MS,
+  maxPieceMs = MAX_PIECE_MS,
+  silenceMs = SILENCE_MS
 }: UseAudioCaptureOptions): AudioCaptureControls {
   const streamsRef = useRef<MediaStream[]>([])
   const recordersRef = useRef<Set<MediaRecorder>>(new Set())
@@ -165,7 +177,7 @@ export function useAudioCapture({
     // `listen` is defined below and closes over refs only, so it is stable in
     // practice; the deps here are the values that actually vary.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [maxPieceMs, onError, onPiece, onLevel, stop]
+    [minPieceMs, maxPieceMs, silenceMs, onError, onPiece, onLevel, stop]
   )
 
   /**
@@ -234,7 +246,7 @@ export function useAudioCapture({
         quietMs = current < SILENCE_LEVEL ? quietMs + POLL_MS : 0
 
         const elapsed = Date.now() - startedAt
-        const atPause = elapsed >= MIN_PIECE_MS && quietMs >= SILENCE_MS
+        const atPause = elapsed >= minPieceMs && quietMs >= silenceMs
         if (!atPause && elapsed < maxPieceMs) return
 
         clearInterval(poll)

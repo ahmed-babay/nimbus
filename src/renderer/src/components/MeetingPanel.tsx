@@ -1,13 +1,17 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { MeetingControls } from '../hooks/useMeeting'
 
 /**
  * The meeting view: what has been said so far, and what to do with it.
  *
- * The transcript is shown live rather than only at the end. Watching lines
- * land is how you know it is actually working — a panel that says "recording"
- * for twenty minutes and then produces nothing is a very expensive way to
- * find out something was wrong.
+ * The transcript is **collapsed while recording**. During an actual meeting
+ * the screen belongs to the meeting — a panel unrolling live captions over the
+ * call is in the way, and reading your own conversation back at yourself while
+ * having it is no use to anyone. What stays visible is only proof of life:
+ * that it is running, how long for, and how much it has heard.
+ *
+ * It opens automatically once recording stops, because that is the moment the
+ * transcript becomes the point.
  */
 
 function clock(offsetMs: number): string {
@@ -18,14 +22,31 @@ function clock(offsetMs: number): string {
 export function MeetingPanel({ meeting }: { meeting: MeetingControls }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const recording = meeting.phase === 'recording'
+  const [expanded, setExpanded] = useState(false)
+  const [elapsedMs, setElapsedMs] = useState(0)
+
+  // Opens once when recording ends. Not tied directly to `recording` so that
+  // collapsing it again afterwards actually sticks.
+  useEffect(() => {
+    if (meeting.phase === 'stopped') setExpanded(true)
+    if (meeting.phase === 'idle') setExpanded(false)
+  }, [meeting.phase])
+
+  useEffect(() => {
+    if (!recording) return
+    const tick = (): void => setElapsedMs(Date.now() - meeting.startedAt)
+    tick()
+    const timer = setInterval(tick, 1000)
+    return () => clearInterval(timer)
+  }, [recording, meeting.startedAt])
 
   // Follow the conversation while it runs, but stop yanking the view around
   // once it has stopped and the user may be reading back through it.
   useEffect(() => {
-    if (!recording) return
+    if (!recording || !expanded) return
     const node = scrollRef.current
     if (node) node.scrollTop = node.scrollHeight
-  }, [meeting.lines.length, recording])
+  }, [meeting.lines.length, recording, expanded])
 
   return (
     <div className="mt-3 border-t border-white/[0.06] pt-2.5">
@@ -39,23 +60,42 @@ export function MeetingPanel({ meeting }: { meeting: MeetingControls }) {
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" />
               <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-red-500" />
             </span>
-            Recording — Nimbus won&apos;t answer until you stop
+            <span className="tabular-nums">{clock(elapsedMs)}</span>
           </span>
         )}
-        {meeting.pending > 0 && (
-          <span className="ml-auto text-[10px] text-nimbus-text-dim">
-            {meeting.pending} transcribing…
-          </span>
-        )}
+        <span className="ml-auto text-[10px] text-nimbus-text-dim">
+          {meeting.pending > 0
+            ? `${meeting.lines.length} lines · ${meeting.pending} transcribing…`
+            : `${meeting.lines.length} ${meeting.lines.length === 1 ? 'line' : 'lines'}`}
+        </span>
       </div>
 
-      {meeting.lines.length === 0 ? (
-        <p className="mt-2 text-[11px] text-nimbus-text-dim">
-          {recording
-            ? 'Listening to you and to the call. Lines appear as people speak.'
-            : 'Nothing was captured.'}
+      {recording && (
+        <p className="mt-1 text-[10px] text-nimbus-text-dim">
+          Listening to you and to the call. Nimbus won&apos;t speak or answer until you stop.
         </p>
-      ) : (
+      )}
+
+      {meeting.lines.length > 0 && (
+        <button
+          onClick={() => setExpanded((open) => !open)}
+          className="mt-1.5 flex w-full items-center gap-1.5 rounded-lg border border-white/[0.07] px-2 py-1 text-left text-[10.5px] text-nimbus-text-dim transition-colors hover:bg-white/[0.05] hover:text-nimbus-text"
+        >
+          <span
+            className={`inline-block transition-transform ${expanded ? 'rotate-90' : ''}`}
+            aria-hidden
+          >
+            ›
+          </span>
+          {expanded ? 'Hide transcript' : 'Show transcript'}
+        </button>
+      )}
+
+      {meeting.lines.length === 0 && !recording && (
+        <p className="mt-2 text-[11px] text-nimbus-text-dim">Nothing was captured.</p>
+      )}
+
+      {expanded && meeting.lines.length > 0 && (
         <div
           ref={scrollRef}
           className="mt-2 max-h-[240px] space-y-1.5 overflow-y-auto pr-1"

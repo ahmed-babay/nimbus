@@ -18,6 +18,21 @@ import type { Subtitle } from '@shared/types'
 
 /** Lines kept on screen at once — enough to read a spillover sentence. */
 const VISIBLE_LINES = 2
+
+/**
+ * Tuned for lag rather than for context, which is the opposite of the meeting
+ * defaults. Subtitles are read at a glance next to a moving picture, so a line
+ * that is a fraction less accurate but arrives while the speaker's mouth is
+ * still moving is worth far more than a perfect one that lands too late.
+ *
+ * The floor here is not the chunk length, it's physics: a phrase has to finish
+ * before it can be uploaded, and the round trip costs ~300ms to transcribe
+ * plus ~150ms to translate. Anything approaching "instant" would need the
+ * models running locally, which this app deliberately doesn't do.
+ */
+const FAST_MIN_PIECE_MS = 1100
+const FAST_MAX_PIECE_MS = 3500
+const FAST_SILENCE_MS = 220
 /** Total kept in memory, so the session can be reviewed after stopping. */
 const MAX_LINES = 400
 
@@ -76,6 +91,9 @@ export function useSubtitles(): SubtitleControls {
 
   const capture = useAudioCapture({
     onPiece: handlePiece,
+    minPieceMs: FAST_MIN_PIECE_MS,
+    maxPieceMs: FAST_MAX_PIECE_MS,
+    silenceMs: FAST_SILENCE_MS,
     onError: (message) => {
       setError(message)
       activeRef.current = false
