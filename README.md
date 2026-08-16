@@ -121,6 +121,45 @@ npm run typecheck   # type-check main + renderer
    hotkey. It closes when you say a dismissal ("stop", "that's it for today", "never mind",
    "bye Nimbus"), press `Esc`, or stay silent.
 
+## Local place names
+
+Speech recognition is bad at place names in a language other than the one the sentence is
+in. Measured on real audio, with an English sentence containing German names:
+
+| You said | Whisper heard |
+|---|---|
+| Luisenplatz | "Lusenplatz" |
+| Herrngarten | "Herngarten" |
+| Mathildenhöhe | **"Mephilden hole"** |
+
+Nothing downstream can geocode "Mephilden hole", so this is fixed in two places, configured
+once under `location` in `config.json`:
+
+```json
+"location": {
+  "home": "Luisenplatz, Darmstadt",
+  "region": "Darmstadt, Hesse, Germany",
+  "placeLanguage": "German",
+  "frequentPlaces": ["Luisenplatz", "Herrngarten", "Mathildenhöhe", "Hauptbahnhof"]
+}
+```
+
+1. **The transcriber gets a vocabulary hint.** Whisper's `prompt` biases vocabulary, not
+   behaviour, and the difference matters: *describing* the region ("the speaker is in
+   Darmstadt, Hesse") changed nothing at all, while listing actual place names fixed
+   "Luisenplatz" outright. That's what `frequentPlaces` is for — put the places you
+   actually say in it.
+2. **The intent router repairs what's left**, which is the reliable half. Told the region,
+   it turns "Mephilden hole" into Mathildenhöhe and "Herngarten" into Herrngarten before
+   anything is looked up — and it expands vague references into the place they mean, so
+   "the airport" becomes Frankfurt Airport rather than, as it did before this, a metro
+   station in **Copenhagen**.
+
+Distant places still work: "how far is Cologne" resolves to Köln, not to a local business
+with Cologne in its name. This affects place names only — replies stay in
+`language.native`, which is stated explicitly to the model, because once the data coming
+back is full of German station names an unprompted model starts answering in German.
+
 ## Living in a language that isn't yours
 
 Set the language you think in:
@@ -337,8 +376,7 @@ Three things learned the hard way, all verified rather than assumed:
 The map is a still, not a pannable widget: tiles are downloaded and the route projected to
 pixels in the main process, so the card just places images and draws an SVG line over them.
 That keeps it inside OpenStreetMap's tile policy for light use, and means the route can be
-drawn in the theme's own colours. The tiles are inverted in CSS so a light basemap sits in
-a dark overlay; the route line is outside that filter and keeps its real colour.
+drawn in the theme's own colours over an ordinary OpenStreetMap basemap.
 
 ## Trains, trams and buses
 
