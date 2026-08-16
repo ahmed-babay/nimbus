@@ -1,3 +1,5 @@
+import { httpFetch } from './http'
+
 const TRANSCRIPTION_URL = 'https://api.groq.com/openai/v1/audio/transcriptions'
 
 interface GroqTranscriptionResponse {
@@ -49,7 +51,10 @@ export async function transcribeAudio(audio: Buffer, mimeType: string): Promise<
   form.append('model', process.env.GROQ_WHISPER_MODEL || 'whisper-large-v3-turbo')
   form.append('response_format', 'json')
 
-  const res = await fetch(TRANSCRIPTION_URL, {
+  const res = await httpFetch(TRANSCRIPTION_URL, {
+    label: 'Groq',
+    timeoutMs: 20000,
+    retries: 2,
     method: 'POST',
     headers: { Authorization: `Bearer ${apiKey}` },
     body: form

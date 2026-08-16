@@ -1,11 +1,8 @@
-import {
-  GoogleGenerativeAI,
-  SchemaType,
-  type GenerationConfig,
-  type GenerativeModel
-} from '@google/generative-ai'
+import { SchemaType, type GenerationConfig } from '@google/generative-ai'
+import { buildModel, withModelFallback } from './gemini-client'
 import type { IntentClassification, NimbusIntent } from '../shared/types'
 import { getHistoryAsContents, getHistorySummary } from './conversation'
+import { currentTimeContext } from './now'
 
 // NOTE: Web Speech API (renderer) handles STT/TTS for free with no API key.
 // If recognition quality is ever a problem, a free-tier Whisper API call
@@ -20,29 +17,9 @@ const VALID_INTENTS: NimbusIntent[] = [
   'github',
   'search',
   'music',
+  'transit',
   'chat'
 ]
-
-let client: GoogleGenerativeAI | null = null
-
-function getClient(): GoogleGenerativeAI {
-  if (!client) {
-    const apiKey = process.env.GEMINI_API_KEY
-    if (!apiKey) {
-      throw new Error('GEMINI_API_KEY is not set. Add it to your .env file.')
-    }
-    client = new GoogleGenerativeAI(apiKey)
-  }
-  return client
-}
-
-function getModel(systemInstruction: string, generationConfig?: GenerationConfig): GenerativeModel {
-  // "-latest" aliases auto-update to Google's current model for that tier, so
-  // this doesn't go stale the way a pinned version (e.g. "gemini-2.0-flash")
-  // eventually does when Google retires it.
-  const modelName = process.env.GEMINI_MODEL || 'gemini-flash-lite-latest'
-  return getClient().getGenerativeModel({ model: modelName, systemInstruction, generationConfig })
-}
 
 const CLASSIFY_SYSTEM_PROMPT = `You are the intent router for a voice assistant called Nimbus.
 Given a single spoken user utterance, decide which of these intents it matches and extract
@@ -62,6 +39,15 @@ the relevant parameter for it, leaving the others empty:
      Set to "track" when they want a *specific* song, artist, or video —
      "play Bohemian Rhapsody", "play the new Adele single", "play a video about
      sourdough". If unsure, use "track".
+- "transit": asking about trains, S-Bahn, trams, buses or public transport
+  connections — "when is the next train to Frankfurt", "how do I get to
+  Wiesbaden", "are there trains in the next hour", "S-Bahn to the airport".
+  -> params.to (destination place or station — required)
+  -> params.from (starting station; omit if the user didn't say one)
+  -> params.when (ISO 8601 datetime if they named a time like "at 6pm" or
+     "tomorrow morning"; omit for now/next departures)
+  Use this rather than "search" for anything about catching a service: a web
+  search returns timetable *pages*, this returns actual departures.
 - "search": anything needing current, real-world, or factual information you
   cannot answer reliably from memory — recent events, who currently holds a
   role, prices or facts that change, specific people/companies/products, "look
@@ -102,7 +88,10 @@ const CLASSIFY_SCHEMA: GenerationConfig = {
           query: { type: SchemaType.STRING },
           entity: { type: SchemaType.STRING },
           playback: { type: SchemaType.STRING, enum: ['station', 'track'], format: 'enum' },
-          language: { type: SchemaType.STRING }
+          language: { type: SchemaType.STRING },
+          from: { type: SchemaType.STRING },
+          to: { type: SchemaType.STRING },
+          when: { type: SchemaType.STRING }
         }
       }
     },
@@ -114,13 +103,17 @@ export async function classifyIntent(utterance: string): Promise<IntentClassific
   // Recent turns are prepended so follow-ups resolve: "what about tomorrow?"
   // or "how about Berlin?" only make sense against what was just discussed.
   const context = getHistorySummary()
-  const model = getModel(
-    context
-      ? `${CLASSIFY_SYSTEM_PROMPT}\n\nRecent conversation (for resolving pronouns and follow-ups):\n${context}`
-      : CLASSIFY_SYSTEM_PROMPT,
-    CLASSIFY_SCHEMA
+  const systemInstruction = context
+    ? `${CLASSIFY_SYSTEM_PROMPT}
+
+${currentTimeContext()}\n\nRecent conversation (for resolving pronouns and follow-ups):\n${context}`
+    : `${CLASSIFY_SYSTEM_PROMPT}
+
+${currentTimeContext()}`
+
+  const result = await withModelFallback((name) =>
+    buildModel(name, systemInstruction, CLASSIFY_SCHEMA).generateContent(utterance)
   )
-  const result = await model.generateContent(utterance)
 
   try {
     const parsed = JSON.parse(result.response.text())
@@ -156,12 +149,13 @@ async function collectStream(
 }
 
 export async function chat(utterance: string, onChunk?: StreamHandler): Promise<string> {
-  const model = getModel(
+  const systemInstruction =
     'You are Nimbus, a concise, friendly voice assistant living in a desktop overlay. ' +
-      'Keep responses to 1-3 short sentences since they will be read aloud by text-to-speech. ' +
-      'Do not use markdown, bullet points, or emoji. ' +
-      'You are mid-conversation — refer back to what was already said when relevant.'
-  )
+    'Keep responses to 1-3 short sentences since they will be read aloud by text-to-speech. ' +
+    'Do not use markdown, bullet points, or emoji. ' +
+    'You are mid-conversation — refer back to what was already said when relevant.\n\n' +
+    currentTimeContext()
+
   // Full prior turns (not just a summary) so the model can genuinely follow
   // the thread rather than answering each utterance in isolation.
   const request = {
@@ -169,11 +163,15 @@ export async function chat(utterance: string, onChunk?: StreamHandler): Promise<
   }
 
   if (!onChunk) {
-    const result = await model.generateContent(request)
+    const result = await withModelFallback((name) =>
+      buildModel(name, systemInstruction).generateContent(request)
+    )
     return result.response.text().trim()
   }
 
-  const { stream } = await model.generateContentStream(request)
+  const { stream } = await withModelFallback((name) =>
+    buildModel(name, systemInstruction).generateContentStream(request)
+  )
   return collectStream(stream, onChunk)
 }
 
@@ -183,11 +181,12 @@ export async function formatResponse(
   data: unknown,
   onChunk?: StreamHandler
 ): Promise<string> {
-  const model = getModel(
+  const systemInstruction =
     'You turn structured data into a short, natural spoken sentence (1-3 sentences max) ' +
-      'for a voice assistant named Nimbus. Do not use markdown, bullet points, or emoji ' +
-      'since this will be spoken aloud by text-to-speech.'
-  )
+    'for a voice assistant named Nimbus. Do not use markdown, bullet points, or emoji ' +
+    'since this will be spoken aloud by text-to-speech.\n\n' +
+    currentTimeContext()
+
   const context = getHistorySummary(4)
   const prompt = [
     context ? `Recent conversation:\n${context}\n` : '',
@@ -201,10 +200,16 @@ export async function formatResponse(
     .join('\n')
 
   if (!onChunk) {
-    const result = await model.generateContent(prompt)
+    const result = await withModelFallback((name) =>
+      buildModel(name, systemInstruction).generateContent(prompt)
+    )
     return result.response.text().trim()
   }
 
-  const { stream } = await model.generateContentStream(prompt)
+  // Streaming can't retry mid-flight without replaying tokens the UI already
+  // showed, so the fallback applies to opening the stream only.
+  const { stream } = await withModelFallback((name) =>
+    buildModel(name, systemInstruction).generateContentStream(prompt)
+  )
   return collectStream(stream, onChunk)
 }

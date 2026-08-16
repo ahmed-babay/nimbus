@@ -90,6 +90,8 @@ export interface UseVoiceInputOptions {
 export interface VoiceInputControls {
   start: () => void
   stop: () => void
+  /** Stop and discard — nothing gets transcribed. */
+  cancel: () => void
   isSupported: boolean
 }
 
@@ -130,6 +132,19 @@ export function useVoiceInput({
     audioContextRef.current = null
     mediaRecorderRef.current = null
   }, [])
+
+  /**
+   * Abandons the current turn outright: whatever was recorded is dropped
+   * rather than uploaded. Bumping the session id makes the in-flight `onstop`
+   * see itself as superseded, so a turn cancelled by closing the overlay
+   * can't come back a second later as a spoken answer.
+   */
+  const cancel = useCallback(() => {
+    sessionIdRef.current += 1
+    const recorder = mediaRecorderRef.current
+    if (recorder && recorder.state !== 'inactive') recorder.stop()
+    cleanup()
+  }, [cleanup])
 
   const stop = useCallback(() => {
     const recorder = mediaRecorderRef.current
@@ -409,5 +424,5 @@ export function useVoiceInput({
       })
   }, [isSupported, onResult, onEnd, onError, onLevel, endOfSpeechMs, cleanup, stop])
 
-  return { start, stop, isSupported }
+  return { start, stop, cancel, isSupported }
 }

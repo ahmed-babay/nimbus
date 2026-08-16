@@ -121,6 +121,35 @@ npm run typecheck   # type-check main + renderer
    hotkey. It closes when you say a dismissal ("stop", "that's it for today", "never mind",
    "bye Nimbus"), press `Esc`, or stay silent.
 
+## Living in a language that isn't yours
+
+Set the language you think in:
+
+```json
+"language": { "native": "English" }
+```
+
+Nimbus then keeps **two** languages straight — yours, and whatever is on screen:
+
+- **Explanations arrive in your language.** Screenshot a letter, a form or an error in any
+  language and the answer comes back in yours, leading with what it actually means for you:
+  what's being asked, any deadline, any amount. Names, dates, reference numbers and sums are
+  quoted exactly rather than translated.
+- **Replies are drafted in *their* language.** The **Reply** button on selected text writes
+  back in the language of the original, matching its formality, with `[square brackets]`
+  for anything only you can fill in.
+- **Translate** targets your language, since the common case is a foreign document you need
+  to read.
+
+The point is the round trip. A German rent-increase notice, with `native` set to Arabic:
+
+> **Explain** → *"هذا النص عبارة عن إشعار رسمي … زيادة الإيجار بمقدار 78 يورو … الموعد النهائي 31 يناير 2027"*
+> **Reply** → *"Sehr geehrte Damen und Herren, … stimme ich der Mieterhöhung auf 858,00 EUR
+> zum 1. März 2027 hiermit zu … Vorgangsnummer: MV-2027-4471"*
+
+You understand it in your language; the reply goes back in theirs, correctly formal, without
+you writing a word of it.
+
 ## Typing instead of talking
 
 The overlay has a text field, focused the moment it opens — press the hotkey and start
@@ -217,6 +246,7 @@ Answers render as visuals where the data supports it, not just spoken text:
 | "news about tesla" | Headlines with **thumbnails** |
 | "who won the final" | Ranked results with source domains |
 | "play Bohemian Rhapsody" | Video thumbnail + duration, opens in your browser |
+| "next train to Frankfurt" | **Departure board** — times, line badges, platform, changes |
 
 Two implementation notes worth knowing:
 
@@ -244,6 +274,29 @@ Entity cards come from Wikipedia (free, no key), so "who is X" works even before
 key is set. The classifier only routes to Wikipedia when the question is *about* a named
 thing — "who is the CEO of Nvidia" is a relational question and goes to web search, since
 Wikipedia would return the tangential company page.
+
+## Trains, trams and buses
+
+"When's the next train to Frankfurt", "how do I get to Wiesbaden", "S-Bahn to the airport"
+— these route to `src/services/transit.ts` rather than to web search, because a search
+returns timetable *pages* and this returns actual departures: the time it leaves, the line
+you board, the platform, the arrival, and how many changes.
+
+Say where you're going and it assumes you're leaving from `transit.defaultOrigin` in
+`config.json`; name both ends ("from Frankfurt to Cologne") and it uses those instead.
+
+Data comes from **[Transitous](https://transitous.org/)** — free, no API key, no account.
+It runs MOTIS over the national DELFI dataset, so coverage includes regional trains,
+S-Bahn, trams and buses rather than long-distance rail alone. Two things worth knowing if
+you touch this file:
+
+- It **requires a descriptive `User-Agent`** by policy. A generic one gets `403`.
+- `*.db.transport.rest` is the other free keyless option and was the first choice, but it
+  returned `503` with an empty body on every attempt while this was being built.
+
+The card colour-codes line badges the way the operators do (S-Bahn green, U-Bahn/tram
+cyan, ICE/IC magenta, RB/RE yellow) and counts down to the next departure, so the number
+you actually act on — "in 6 min" — is the one you see first.
 
 ## Clickable results
 
@@ -324,7 +377,8 @@ means and pull out its parameters. It uses Gemini's **structured output** mode
 nicely for JSON — Gemini is constrained at the API level to emit one of the six intents plus
 a params object, so there's no free text to regex out and no risk of it wrapping the answer
 in markdown or prose. The system prompt above the schema is what tells it, in plain English,
-what each intent means and which field to fill in (city / symbol / coin / query / language).
+what each intent means and which field to fill in (city / symbol / coin / query / language /
+from / to / when).
 
 ## Web search vs. per-topic APIs
 
@@ -349,6 +403,33 @@ assumed:
 
 Swapping providers means editing one file: `src/services/search.ts`.
 
+### Deep research
+
+A single snippet search answers "what's the capital of Peru" and fails almost everything
+else people actually ask. `src/services/research.ts` runs the loop the larger assistants
+run:
+
+1. **Plan** — Gemini turns the question into the searches that would answer it. Single-fact
+   questions get exactly one query; a comparison or a two-part question gets one per part
+   (up to `search.maxQueries`). Pronouns and "latest" are resolved into real names and
+   real years first, since a search engine can't resolve either.
+2. **Read** — each query runs at Tavily's `advanced` depth with `include_raw_content`, so
+   Nimbus gets the extracted page text rather than a 200-character summary. Queries run in
+   parallel: a three-part question shouldn't take three times as long.
+3. **Merge** — results are **interleaved** across sub-queries, not pooled and ranked
+   together. Pooling looks smarter and is worse: ask about two things and the
+   better-covered one fills the entire budget, so half the question comes back unanswered.
+   Verified — pooling returned eight Deutschlandticket pages and zero about the local RMV
+   fare; interleaving put the Darmstadt operator's own page first.
+4. **Answer** — the model answers *only* from the pages read, notes when sources disagree,
+   and says the sources don't cover it rather than filling the gap from memory. Answers are
+   spoken, so it's told to use no citation markers or URLs — the sources appear on the card.
+
+Costs about 2 Tavily credits per sub-query, so a typical question is 2-6 of the 1,000
+free monthly credits, and adds roughly 4 seconds over a plain search. Turn it off with
+`search.deep: false` (falls back to the one-shot search), or keep the depth and skip the
+planning step with `search.plan: false`.
+
 **Why not MCP here?** MCP is for exposing tools to an external agent host (Claude Desktop,
 another AI client) or reusing one tool server across several different apps. Nimbus is a
 single-purpose app with a fixed, small set of tools and one caller (itself) — wiring up MCP
@@ -359,7 +440,7 @@ Claude Desktop or another agent, that's the point where MCP would start paying f
 
 ## Toggling integrations
 
-Edit `config.json` — set any of `integrations.weather/stocks/crypto/news/github` to `false`
+Edit `config.json` — set any of `integrations.weather/stocks/crypto/news/github/transit` to `false`
 to disable it (Nimbus will explain it's turned off if you ask anyway), change
 `hotkey.accelerator` (Electron [accelerator syntax](https://www.electronjs.org/docs/latest/api/accelerator))
 if Ctrl+Shift+Space conflicts with something else, or adjust `overlay.autoFadeMs`. Restart

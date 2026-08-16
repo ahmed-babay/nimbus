@@ -6,6 +6,7 @@ export type NimbusIntent =
   | 'github'
   | 'search'
   | 'music'
+  | 'transit'
   | 'chat'
 
 export interface IntentClassification {
@@ -120,12 +121,41 @@ export interface RadioCardData {
   query: string
 }
 
+export interface TransitLeg {
+  line: string
+  /** Service number, e.g. the "24514" in "RB75 (24514)". */
+  number: string | null
+  direction: string
+  from: string
+  to: string
+  departs: string
+  arrives: string
+  platform: string | null
+}
+
+export interface TransitJourney {
+  departs: string
+  arrives: string
+  /** Departure as ISO, so the card can count down to it. */
+  departsAt: string
+  durationMinutes: number
+  changes: number
+  legs: TransitLeg[]
+}
+
+export interface TransitCardData {
+  from: string
+  to: string
+  journeys: TransitJourney[]
+}
+
 export type TextActionKind =
   | 'translate'
   | 'summarize'
   | 'explain'
   | 'rewrite'
   | 'grammar'
+  | 'reply'
   | 'custom'
 
 export interface SelectionCardData {
@@ -154,6 +184,7 @@ export type ResponseCardData =
   | { type: 'entity'; data: EntityCardData }
   | { type: 'music'; data: MusicCardData }
   | { type: 'radio'; data: RadioCardData }
+  | { type: 'transit'; data: TransitCardData }
   | { type: 'screen'; data: ScreenCardData }
   | { type: 'selection'; data: SelectionCardData }
   | { type: 'text' }
@@ -186,6 +217,7 @@ export interface NimbusConfig {
     github: boolean
     search: boolean
     music: boolean
+    transit: boolean
   }
   hotkey: {
     enabled: boolean
@@ -209,9 +241,16 @@ export interface NimbusConfig {
     /** Drag to pick a region instead of grabbing the whole display. */
     selectRegion: boolean
   }
-  textActions: {
-    /** Target language for the Translate button. Speaking an instruction
-     *  ("translate to Arabic") overrides it per-use. */
-    translateTo: string
+  transit: {
+    /** Used when you say "trains to Frankfurt" without naming a start. */
+    defaultOrigin: string
+  }
+  language: {
+    /**
+     * The language you think in. Explanations, summaries and translations
+     * arrive in this; replies are drafted in whatever language the original
+     * text was written in.
+     */
+    native: string
   }
 }

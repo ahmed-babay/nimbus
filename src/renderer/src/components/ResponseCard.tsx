@@ -17,6 +17,7 @@ import type {
   SearchCardData,
   SelectionCardData,
   StockCardData,
+  TransitCardData,
   WeatherCardData
 } from '@shared/types'
 
@@ -59,11 +60,7 @@ export function ResponseCard({ response, speechProgressRef, radio, onReplace }: 
         text={displayText}
         progressRef={speechProgressRef}
         spokenRatio={wasShortened ? response.speech.length / displayText.length : 1}
-        className={
-          wasShortened
-            ? 'max-h-52 overflow-y-auto whitespace-pre-wrap text-[13px] leading-relaxed text-nimbus-text'
-            : 'whitespace-pre-wrap text-[13px] leading-relaxed text-nimbus-text'
-        }
+        className="whitespace-pre-wrap text-[13px] leading-relaxed text-nimbus-text"
       />
 
       <CardBody card={response.card} radio={radio} onReplace={onReplace} />
@@ -119,6 +116,8 @@ function CardBody({
       return <MusicBody data={card.data} />
     case 'radio':
       return <RadioBody data={card.data} radio={radio} />
+    case 'transit':
+      return <TransitBody data={card.data} />
     case 'screen':
       return <ScreenBody data={card.data} />
     case 'selection':
@@ -262,7 +261,7 @@ function SelectionBody({
       <div className="text-[10px] uppercase tracking-[0.14em] text-nimbus-accent">
         {data.actionLabel}
       </div>
-      <p className="mt-1.5 max-h-40 overflow-y-auto whitespace-pre-wrap text-[12.5px] leading-relaxed text-nimbus-text">
+      <p className="mt-1.5 whitespace-pre-wrap text-[12.5px] leading-relaxed text-nimbus-text">
         {data.result}
       </p>
 
@@ -532,6 +531,99 @@ function GithubBody({ data }: { data: GithubCardData }) {
         <li className="text-[11px] text-nimbus-text-dim">No trending repos found.</li>
       )}
     </ul>
+  )
+}
+
+/**
+ * Colour-codes the line badge the way the operators do, so an S-Bahn reads as
+ * an S-Bahn at a glance rather than as one more grey pill.
+ */
+function lineTone(line: string): string {
+  const code = line.trim().toUpperCase()
+  if (/^S\d/.test(code)) return 'bg-nimbus-green/20 text-nimbus-green ring-nimbus-green/40'
+  if (/^(U|TRAM|STR)/.test(code)) return 'bg-nimbus-cyan/20 text-nimbus-cyan ring-nimbus-cyan/40'
+  if (/^(ICE|IC|EC)/.test(code)) return 'bg-nimbus-accent/25 text-nimbus-accent-bright ring-nimbus-accent/45'
+  if (/^(RB|RE)/.test(code)) return 'bg-nimbus-yellow/20 text-nimbus-yellow ring-nimbus-yellow/40'
+  return 'bg-white/10 text-nimbus-text ring-white/20'
+}
+
+/** "in 6 min" / "in 1 h 20" — the number you actually act on when leaving. */
+function countdown(iso: string): string {
+  if (!iso) return ''
+  const minutes = Math.round((new Date(iso).getTime() - Date.now()) / 60000)
+  if (Number.isNaN(minutes) || minutes < 0) return 'now'
+  if (minutes === 0) return 'now'
+  if (minutes < 60) return `in ${minutes} min`
+  return `in ${Math.floor(minutes / 60)} h ${minutes % 60}`
+}
+
+function TransitBody({ data }: { data: TransitCardData }) {
+  return (
+    <div className={panel}>
+      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-nimbus-text-dim">
+        <span className="truncate">{data.from}</span>
+        <span className="shrink-0 text-nimbus-accent">→</span>
+        <span className="truncate">{data.to}</span>
+      </div>
+
+      <ul className="mt-2 divide-y divide-white/[0.06]">
+        {data.journeys.slice(0, 4).map((journey, index) => {
+          const soon = countdown(journey.departsAt)
+          const first = journey.legs[0]
+          const platform = first?.platform
+          return (
+            <li
+              key={`${journey.departsAt}-${index}`}
+              className="flex items-center gap-3 py-2 first:pt-0.5 last:pb-0.5"
+            >
+              {/* Departure reads like a platform board: big, monospaced, lit. */}
+              <div className="w-[52px] shrink-0">
+                <div className="font-mono text-[15px] font-semibold leading-none tabular-nums text-nimbus-yellow">
+                  {journey.departs}
+                </div>
+                {soon && <div className="mt-1 text-[9.5px] text-nimbus-text-dim">{soon}</div>}
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-1">
+                  {journey.legs.map((leg, legIndex) => (
+                    <span key={`${leg.line}-${legIndex}`} className="flex items-center gap-1">
+                      {legIndex > 0 && <span className="text-[9px] text-nimbus-text-dim">›</span>}
+                      <span
+                        className={`rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold leading-none ring-1 ${lineTone(leg.line)}`}
+                      >
+                        {leg.line}
+                      </span>
+                    </span>
+                  ))}
+                  {journey.legs.length === 0 && (
+                    <span className="text-[10px] text-nimbus-text-dim">Walk</span>
+                  )}
+                </div>
+                <div className="mt-1 truncate text-[10px] text-nimbus-text-dim">
+                  {first?.direction || first?.to || ''}
+                  {first?.number && <span className="opacity-60"> · #{first.number}</span>}
+                  {platform && <span className="text-nimbus-cyan"> · Pl. {platform}</span>}
+                </div>
+              </div>
+
+              <div className="shrink-0 text-right">
+                <div className="font-mono text-[11px] tabular-nums text-nimbus-text">
+                  {journey.arrives}
+                </div>
+                <div className="mt-1 text-[9.5px] text-nimbus-text-dim">
+                  {journey.durationMinutes} min
+                  {journey.changes > 0 && ` · ${journey.changes}×`}
+                </div>
+              </div>
+            </li>
+          )
+        })}
+        {data.journeys.length === 0 && (
+          <li className="text-[11px] text-nimbus-text-dim">No connections found.</li>
+        )}
+      </ul>
+    </div>
   )
 }
 

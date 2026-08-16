@@ -1,5 +1,6 @@
 import type { NewsArticle, NewsCardData } from '../shared/types'
 import { fetchImagesAsDataUris } from './images'
+import { httpFetch } from './http'
 
 const GNEWS_SEARCH_URL = 'https://gnews.io/api/v4/search'
 const GNEWS_TOP_URL = 'https://gnews.io/api/v4/top-headlines'
@@ -41,7 +42,7 @@ async function getNewsFromGNews(apiKey: string, query?: string): Promise<NewsCar
     ? `${GNEWS_SEARCH_URL}?q=${encodeURIComponent(query)}&lang=en&max=${MAX_ARTICLES}&apikey=${apiKey}`
     : `${GNEWS_TOP_URL}?lang=en&max=${MAX_ARTICLES}&apikey=${apiKey}`
 
-  const res = await fetch(url)
+  const res = await httpFetch(url, { label: 'GNews' })
   if (!res.ok) throw new Error(`GNews request failed (${res.status}).`)
 
   const json = (await res.json()) as GNewsResponse
@@ -66,7 +67,8 @@ async function getNewsFromGNews(apiKey: string, query?: string): Promise<NewsCar
  * onto individual headlines they may have nothing to do with.
  */
 async function getNewsFromTavily(apiKey: string, query?: string): Promise<NewsCardData> {
-  const res = await fetch(TAVILY_URL, {
+  const res = await httpFetch(TAVILY_URL, {
+    label: 'Tavily news',
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
     body: JSON.stringify({

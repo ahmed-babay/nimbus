@@ -5,8 +5,10 @@ import { getCryptoPrice } from './crypto'
 import { getNews } from './news'
 import { getTrendingRepos } from './github'
 import { webSearch } from './search'
+import { research } from './research'
 import { lookupEntity } from './wikipedia'
 import { findMusic } from './music'
+import { findJourneys } from './transit'
 import { findStation } from './radio'
 import { recordTurn } from './conversation'
 import type { NimbusResponse } from '../shared/types'
@@ -148,6 +150,17 @@ async function resolveUtterance(
         }
       }
 
+      case 'transit': {
+        if (!config.integrations.transit) {
+          throw new Error('Transit lookups are disabled in config.json.')
+        }
+        const destination = params.to
+        if (!destination) throw new Error("I didn't catch where you're heading.")
+        const data = await findJourneys(params.from, destination, params.when)
+        const speech = await formatResponse('transit', utterance, data, onChunk)
+        return { speech, card: { type: 'transit', data } }
+      }
+
       case 'search': {
         if (!config.integrations.search) {
           throw new Error('Web search is disabled in config.json.')
@@ -192,6 +205,28 @@ async function resolveUtterance(
               onChunk
             )
             return { speech, card: { type: 'entity', data: entity } }
+          }
+        }
+
+        // Deep mode plans sub-queries and reads the pages themselves; it costs
+        // more search credits and a couple of seconds, and answers questions a
+        // snippet search simply can't.
+        if (config.search?.deep) {
+          // Once a chunk has reached the UI there's no falling back — a second
+          // attempt would stream a fresh answer on top of the first.
+          let streamed = false
+          const track = onChunk
+            ? (chunk: string) => {
+                streamed = true
+                onChunk(chunk)
+              }
+            : undefined
+          try {
+            const { speech, card } = await research(utterance, query, track)
+            return { speech, card: { type: 'search', data: card } }
+          } catch (err) {
+            if (streamed) throw err
+            console.warn('[nimbus] deep search failed, falling back:', err)
           }
         }
 

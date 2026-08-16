@@ -1,4 +1,5 @@
 import type { GithubCardData, GithubRepo } from '../shared/types'
+import { httpFetch } from './http'
 
 const SEARCH_URL = 'https://api.github.com/search/repositories'
 
@@ -32,7 +33,7 @@ export async function getTrendingRepos(language?: string): Promise<GithubCardDat
     headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`
   }
 
-  const res = await fetch(
+  const res = await httpFetch(
     `${SEARCH_URL}?q=${encodeURIComponent(q)}&sort=stars&order=desc&per_page=5`,
     { headers }
   )

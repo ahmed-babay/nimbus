@@ -47,6 +47,9 @@ export interface NimbusOverlayState {
   /** Whether speech input is enabled, and its toggle. */
   micEnabled: boolean
   toggleMic: () => void
+  /** Whether answers are spoken aloud, and its toggle. */
+  ttsEnabled: boolean
+  toggleTts: () => void
   dismiss: () => void
 }
 
@@ -105,6 +108,20 @@ export function useNimbus(): NimbusOverlayState {
    *  only this toggle does, so both input methods stay available. */
   const [micEnabled, setMicEnabled] = useState(true)
   const micEnabledRef = useRef(true)
+  const [ttsEnabled, setTtsEnabled] = useState(true)
+  const ttsEnabledRef = useRef(true)
+  useEffect(() => {
+    ttsEnabledRef.current = ttsEnabled
+  }, [ttsEnabled])
+  /** Bumped on dismiss. Async work started before a close checks this and
+   *  bows out, so a pending answer cannot speak into a shut overlay. */
+  const generationRef = useRef(0)
+  /** Mirrors isOpen for async callbacks. Discarding in-flight work is not
+   *  enough on its own — a late transcript could still start a brand new
+   *  turn and speak into a closed overlay. */
+  const isOpenRef = useRef(false)
+  /** stopPlayback is declared later; reached by ref from toggleTts. */
+  const stopPlaybackNowRef = useRef<(() => void) | null>(null)
   useEffect(() => {
     micEnabledRef.current = micEnabled
   }, [micEnabled])
@@ -133,6 +150,10 @@ export function useNimbus(): NimbusOverlayState {
   useEffect(() => {
     stateRef.current = state
   }, [state])
+
+  useEffect(() => {
+    isOpenRef.current = isOpen
+  }, [isOpen])
 
   useEffect(() => {
     // Pending selections count as content: if the user says nothing, the
@@ -164,6 +185,10 @@ export function useNimbus(): NimbusOverlayState {
     }
   }, [])
 
+  useEffect(() => {
+    stopPlaybackNowRef.current = stopPlayback
+  }, [stopPlayback])
+
   const dismiss = useCallback(() => {
     clearFadeTimer()
     setIsOpen(false)
@@ -172,7 +197,9 @@ export function useNimbus(): NimbusOverlayState {
     radioActiveRef.current = false
     startPendingRadioRef.current = null
     radioRef.current.stop()
-    stopVoiceInputRef.current?.()
+    generationRef.current += 1
+    // cancel, not stop: a stopped recorder still uploads and answers.
+    cancelVoiceInputRef.current?.()
     setState('idle')
     setResponse(null)
     setError(null)
@@ -266,9 +293,28 @@ export function useNimbus(): NimbusOverlayState {
   // element autoplay gating that silently dropped us to the robotic fallback.
   const speak = useCallback(
     (text: string) => {
+      if (!isOpenRef.current) return
+
+      // Muted: show the answer, skip the voice, and carry on to the next turn.
+      if (!ttsEnabledRef.current) {
+        speechProgressRef.current = 1
+        startPendingRadioRef.current?.()
+        listenAgain()
+        return
+      }
+
+      // Synthesis is a network round trip; the overlay can be closed before
+      // it returns. Anything started in this generation must not act once
+      // that has happened, or Nimbus talks into a shut overlay.
+      const generation = generationRef.current
+
       window.nimbus
         .synthesizeSpeech(text)
         .then(async ({ audio, mimeType }) => {
+          if (generation !== generationRef.current) {
+            console.log('[nimbus] discarding speech for a closed session')
+            return
+          }
           console.log(
             `[nimbus] TTS audio received: ${audio?.byteLength ?? 0} bytes (${mimeType})`
           )
@@ -282,6 +328,7 @@ export function useNimbus(): NimbusOverlayState {
 
           // decodeAudioData detaches the buffer it's given, so hand it a copy.
           const buffer = await ctx.decodeAudioData(audio.slice(0))
+          if (generation !== generationRef.current) return
 
           stopPlayback()
           const source = ctx.createBufferSource()
@@ -335,9 +382,14 @@ export function useNimbus(): NimbusOverlayState {
       setStreamingText('')
       setTranscript(finalTranscript)
       setState('thinking')
+      const generation = generationRef.current
       window.nimbus
         .sendTranscript(finalTranscript)
         .then((res) => {
+          if (generation !== generationRef.current) {
+            console.log('[nimbus] discarding answer for a closed session')
+            return
+          }
           setStreamingText('')
           setPendingCapture(null)
           // Reset before the card renders. If it still held 1 from the last
@@ -378,6 +430,11 @@ export function useNimbus(): NimbusOverlayState {
 
   const handleResult = useCallback(
     (finalTranscript: string) => {
+      // Closed: ignore anything that arrives late rather than waking back up.
+      if (!isOpenRef.current) {
+        console.log('[nimbus] ignoring input for a closed overlay')
+        return
+      }
       // While something is playing, "stop" means "stop the music" — not
       // "close Nimbus". Checked first so playback commands win.
       if (radioActiveRef.current && isStopPlaybackPhrase(finalTranscript)) {
@@ -552,6 +609,20 @@ export function useNimbus(): NimbusOverlayState {
     })
   }, [])
 
+  /** Explicit on/off for spoken answers. */
+  const toggleTts = useCallback(() => {
+    setTtsEnabled((on) => {
+      const next = !on
+      ttsEnabledRef.current = next
+      // Silence anything mid-sentence rather than letting it finish.
+      if (!next) {
+        window.speechSynthesis?.cancel()
+        stopPlaybackNowRef.current?.()
+      }
+      return next
+    })
+  }, [])
+
   /** Closes the mic the moment typing starts, before it hears the keyboard. */
   const handleTypingStart = useCallback(() => {
     if (stateRef.current === 'listening') {
@@ -589,7 +660,11 @@ export function useNimbus(): NimbusOverlayState {
     [scheduleAutoFade]
   )
 
-  const { start: startVoiceInput, stop: stopVoiceInput } = useVoiceInput({
+  const {
+    start: startVoiceInput,
+    stop: stopVoiceInput,
+    cancel: cancelVoiceInput
+  } = useVoiceInput({
     onResult: handleResult,
     onEnd: handleVoiceEnd,
     onError: handleVoiceError,
@@ -600,11 +675,13 @@ export function useNimbus(): NimbusOverlayState {
   // Keep stable refs so `dismiss`/`listenAgain` (defined above the hook
   // call) can reach the latest start()/stop() without being redeclared.
   const stopVoiceInputRef = useRef(stopVoiceInput)
+  const cancelVoiceInputRef = useRef(cancelVoiceInput)
   const startVoiceInputRef = useRef(startVoiceInput)
   useEffect(() => {
     stopVoiceInputRef.current = stopVoiceInput
+    cancelVoiceInputRef.current = cancelVoiceInput
     startVoiceInputRef.current = startVoiceInput
-  }, [stopVoiceInput, startVoiceInput])
+  }, [stopVoiceInput, cancelVoiceInput, startVoiceInput])
 
   useEffect(() => {
     window.nimbus.getConfig().then(setConfig).catch(() => setConfig(null))
@@ -713,6 +790,8 @@ export function useNimbus(): NimbusOverlayState {
     onTypingStart: handleTypingStart,
     micEnabled,
     toggleMic,
+    ttsEnabled,
+    toggleTts,
     dismiss
   }
 }
