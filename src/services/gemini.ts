@@ -4,6 +4,7 @@ import type { IntentClassification, NimbusIntent } from '../shared/types'
 import { getHistoryAsContents, getHistorySummary } from './conversation'
 import { currentTimeContext } from './now'
 import { placeContext, replyLanguageContext } from './region'
+import { factsContext } from './memory'
 
 // NOTE: Web Speech API (renderer) handles STT/TTS for free with no API key.
 // If recognition quality is ever a problem, a free-tier Whisper API call
@@ -20,6 +21,8 @@ const VALID_INTENTS: NimbusIntent[] = [
   'music',
   'transit',
   'directions',
+  'remember',
+  'recall',
   'chat'
 ]
 
@@ -77,6 +80,24 @@ the relevant parameter for it, leaving the others empty:
   Leave params.entity EMPTY for relational or event questions where the answer
   is a fact *about* something rather than a description of it — "who is the CEO
   of Nvidia", "who won the final", "when does X release".
+- "remember": asking Nimbus to keep something about them for the future —
+  "remember that I take the RB68", "my home station is Luisenplatz", "don't
+  forget I'm vegetarian", "forget what I said about the gym".
+  -> params.fact (the thing to remember, rewritten as a short standalone
+     statement in the third person: "Takes the RB68 to work". Do not include
+     "remember that".)
+  -> params.forget (set instead of params.fact when they want something
+     dropped; give the phrase identifying it, e.g. "gym")
+  Only use this when they are stating something about themselves or their
+  preferences for later. A question is never "remember".
+- "recall": asking what was said or looked up before — "what was that station
+  you told me", "what did we talk about yesterday", "what do you know about
+  me", "what did I ask about the tickets".
+  -> params.query (key words to search past answers for; omit to list the most
+     recent ones, and omit it for "what do you know about me")
+  "Remind me…" is not automatically recall: "remind me what the weather is"
+  wants today's weather, not something said before. Use "recall" only when
+  they are asking about a past conversation.
 - "chat": only for things needing no external information at all — greetings,
   small talk, jokes, opinions, or rephrasing/reasoning about what was already said.
 
@@ -127,6 +148,8 @@ const CLASSIFY_SCHEMA: GenerationConfig = {
           to: { type: SchemaType.STRING },
           when: { type: SchemaType.STRING },
           topic: { type: SchemaType.STRING },
+          fact: { type: SchemaType.STRING },
+          forget: { type: SchemaType.STRING },
           mode: {
             type: SchemaType.STRING,
             enum: ['driving', 'cycling', 'walking', 'transit'],
@@ -148,6 +171,7 @@ export async function classifyIntent(utterance: string): Promise<IntentClassific
     '',
     currentTimeContext(),
     placeContext(),
+    factsContext(),
     context ? `\nRecent conversation (for resolving pronouns and follow-ups):\n${context}` : ''
   ]
     .filter((part) => part !== '')
@@ -196,6 +220,8 @@ export async function chat(utterance: string, onChunk?: StreamHandler): Promise<
     'Keep responses to 1-3 short sentences since they will be read aloud by text-to-speech. ' +
     'Do not use markdown, bullet points, or emoji. ' +
     'You are mid-conversation — refer back to what was already said when relevant.\n\n' +
+    `${replyLanguageContext()}\n\n` +
+    `${factsContext()}\n\n` +
     currentTimeContext()
 
   // Full prior turns (not just a summary) so the model can genuinely follow
