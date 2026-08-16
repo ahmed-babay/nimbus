@@ -84,6 +84,19 @@ export function showOverlay(window: BrowserWindow, extraChannel?: string): void 
   if (extraChannel) window.webContents.send(extraChannel)
 }
 
+/**
+ * Shows the overlay *without* starting a listening turn. `showOverlay` always
+ * sends WAKE, which puts Nimbus straight into recording — right when the user
+ * summoned it, wrong when Nimbus is the one initiating (a reminder firing
+ * shouldn't open a hot microphone).
+ */
+export function presentOverlay(window: BrowserWindow, channel: string, payload?: unknown): void {
+  window.setIgnoreMouseEvents(true, { forward: true })
+  window.show()
+  window.focus()
+  window.webContents.send(channel, payload)
+}
+
 export function hideOverlay(window: BrowserWindow): void {
   window.setIgnoreMouseEvents(true, { forward: true })
   window.hide()

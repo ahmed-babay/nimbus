@@ -33,6 +33,20 @@ interface MotisItinerary {
   legs?: MotisLeg[]
 }
 
+/**
+ * Either a place to look up by name, or one whose coordinates are already
+ * known. Coordinates are strongly preferred when the caller has them: this
+ * router does its own geocoding, and asking two geocoders the same question
+ * gets two different answers — "Cologne" resolved to Köln for the map and to
+ * a same-named village for the timetable, which turned a 101-minute ICE trip
+ * into an eleven-hour bus chain.
+ */
+export type PlaceRef = string | { lat: number; lon: number; name: string }
+
+function placeLabel(ref: PlaceRef): string {
+  return typeof ref === 'string' ? ref : ref.name
+}
+
 /** Resolves a place name to a stop the router understands. */
 async function findStop(query: string): Promise<GeocodeResult | null> {
   const res = await httpFetch(`${BASE_URL}/geocode?text=${encodeURIComponent(query)}`, {
@@ -73,6 +87,14 @@ function splitLine(routeName: string): { line: string; number: string | null } {
   return { line: match[1].trim(), number: match[2].trim() }
 }
 
+/** MOTIS accepts a "lat,lon" pair anywhere it accepts a stop id. */
+async function resolveStop(ref: PlaceRef): Promise<GeocodeResult | null> {
+  if (typeof ref !== 'string') {
+    return { id: `${ref.lat},${ref.lon}`, name: ref.name, type: 'STOP' }
+  }
+  return findStop(ref)
+}
+
 function clockTime(iso: string | undefined, timeZone: string): string {
   if (!iso) return ''
   return new Date(iso).toLocaleTimeString('de-DE', {
@@ -93,8 +115,8 @@ function clockTime(iso: string | undefined, timeZone: string): string {
  * this was building.
  */
 export async function findJourneys(
-  from: string | undefined,
-  to: string,
+  from: PlaceRef | undefined,
+  to: PlaceRef,
   departAfter?: string
 ): Promise<TransitCardData> {
   const origin = from || config.transit?.defaultOrigin
@@ -104,9 +126,9 @@ export async function findJourneys(
     )
   }
 
-  const [fromStop, toStop] = await Promise.all([findStop(origin), findStop(to)])
-  if (!fromStop?.id) throw new Error(`I couldn't find a stop called "${origin}".`)
-  if (!toStop?.id) throw new Error(`I couldn't find a stop called "${to}".`)
+  const [fromStop, toStop] = await Promise.all([resolveStop(origin), resolveStop(to)])
+  if (!fromStop?.id) throw new Error(`I couldn't find a stop called "${placeLabel(origin)}".`)
+  if (!toStop?.id) throw new Error(`I couldn't find a stop called "${placeLabel(to)}".`)
 
   // An unparseable time is better ignored than allowed to throw — "now" is
   // almost always what was meant.
@@ -155,8 +177,8 @@ export async function findJourneys(
   const withService = journeys.filter((j) => j.legs.length > 0)
 
   return {
-    from: fromStop.name ?? origin,
-    to: toStop.name ?? to,
+    from: fromStop.name ?? placeLabel(origin),
+    to: toStop.name ?? placeLabel(to),
     journeys: withService.length > 0 ? withService : journeys
   }
 }

@@ -6,12 +6,25 @@ import { getNews } from './news'
 import { getTrendingRepos } from './github'
 import { webSearch } from './search'
 import { research } from './research'
+import { tryIllustrate } from './illustrate'
+import { addReminder, cancelReminders, pendingReminders } from './reminders'
+import { planDepartureAlarm } from './departure-alarm'
+import { buildBriefing } from './briefing'
+import {
+  forgetFacts,
+  getFacts,
+  recentAnswers,
+  recordAnswer,
+  rememberFact,
+  searchAnswers
+} from './memory'
 import { lookupEntity } from './wikipedia'
 import { findMusic } from './music'
 import { findJourneys } from './transit'
+import { getDirections, modeFromUtterance } from './maps'
 import { findStation } from './radio'
 import { recordTurn } from './conversation'
-import type { NimbusResponse } from '../shared/types'
+import type { MemoryCardData, NimbusIntent, NimbusResponse, TravelMode } from '../shared/types'
 import config from '../../config.json'
 
 /**
@@ -40,11 +53,26 @@ function capSpokenLength(text: string): string {
   return trimmed
 }
 
+/** "in 20 minutes" / "at 18:00" — how a new reminder is confirmed aloud. */
+function describeWhen(at: Date): string {
+  const minutes = Math.round((at.getTime() - Date.now()) / 60_000)
+  if (minutes <= 1) return "I'll tell you in a moment"
+  if (minutes < 90) return `I'll tell you in ${minutes} minutes`
+  const clock = at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  const sameDay = at.toDateString() === new Date().toDateString()
+  return `I'll tell you at ${clock}${sameDay ? '' : ` on ${at.toLocaleDateString([], { weekday: 'long' })}`}`
+}
+
+/** Card shown after storing or dropping a fact: the profile as it now stands. */
+function memoryCard(query: string): MemoryCardData {
+  return { query, answers: [], facts: getFacts() }
+}
+
 export async function handleUtterance(
   utterance: string,
   onChunk?: StreamHandler
 ): Promise<NimbusResponse> {
-  const resolved = await resolveUtterance(utterance, onChunk)
+  const { intent, ...resolved } = await resolveUtterance(utterance, onChunk)
   const spoken = capSpokenLength(resolved.speech)
   const response: NimbusResponse = {
     ...resolved,
@@ -57,15 +85,29 @@ export async function handleUtterance(
   // sitting in history when chat() appends it to its own `contents`.
   recordTurn('user', utterance)
   recordTurn('model', response.speech)
+  // The archive keeps the full answer, not the spoken truncation — the whole
+  // point of looking something up again is getting all of it back.
+  if (intent !== 'recall' && intent !== 'remember') {
+    recordAnswer(utterance, resolved.speech, intent)
+  }
   return response
 }
 
 async function resolveUtterance(
   utterance: string,
   onChunk?: StreamHandler
-): Promise<NimbusResponse> {
+): Promise<NimbusResponse & { intent: NimbusIntent }> {
   const { intent, params } = await classifyIntent(utterance)
+  const response = await runIntent(intent, params, utterance, onChunk)
+  return { ...response, intent }
+}
 
+async function runIntent(
+  intent: NimbusIntent,
+  params: Record<string, string>,
+  utterance: string,
+  onChunk?: StreamHandler
+): Promise<NimbusResponse> {
   try {
     switch (intent) {
       case 'weather': {
@@ -161,11 +203,170 @@ async function resolveUtterance(
         return { speech, card: { type: 'transit', data } }
       }
 
+      case 'directions': {
+        if (!config.integrations.maps) {
+          throw new Error('Maps and directions are disabled in config.json.')
+        }
+        const destination = params.to
+        if (!destination) throw new Error("I didn't catch where you want to go.")
+        const data = await getDirections(
+          params.from,
+          destination,
+          (params.mode as TravelMode) || modeFromUtterance(utterance)
+        )
+        // The map answers "where"; the spoken line answers "how far and how
+        // long", so it only needs the costed options, not the geometry.
+        const speech = await formatResponse(
+          'directions',
+          utterance,
+          { from: data.from, to: data.to, options: data.options },
+          onChunk
+        )
+        return { speech, card: { type: 'directions', data } }
+      }
+
+      case 'remember': {
+        if (params.forget) {
+          const removed = forgetFacts(params.forget)
+          const speech =
+            removed.length > 0
+              ? `Forgotten: ${removed.map((fact) => fact.text).join('; ')}.`
+              : `I wasn't holding anything about "${params.forget}".`
+          return { speech, card: { type: 'memory', data: memoryCard('') } }
+        }
+
+        const fact = rememberFact(params.fact || utterance)
+        if (!fact) throw new Error("I didn't catch what to remember.")
+        // Skipping the model round-trip keeps this instant, and there's
+        // nothing to phrase — echoing it back is the useful confirmation.
+        return {
+          speech: `Got it — I'll remember that.`,
+          card: { type: 'memory', data: memoryCard('') }
+        }
+      }
+
+      case 'alarm': {
+        if (params.cancel !== undefined && !params.task && !params.when && !params.leaveFor) {
+          const cancelled = cancelReminders(params.cancel)
+          return {
+            speech:
+              cancelled.length > 0
+                ? `Cancelled ${cancelled.length === 1 ? 'it' : `${cancelled.length} reminders`}.`
+                : "You don't have a reminder like that.",
+            card: { type: 'reminder', data: { created: null, pending: pendingReminders() } }
+          }
+        }
+
+        // "Tell me when to leave" — worked out from the timetable, not a clock
+        // time the user had to know in advance.
+        if (params.leaveFor) {
+          const alarm = await planDepartureAlarm(params.leaveFor, params.from)
+          const created = addReminder({
+            at: alarm.at,
+            text: alarm.text,
+            departure: alarm.departure
+          })
+          const leaveIn = Math.max(
+            0,
+            Math.round((new Date(alarm.at).getTime() - Date.now()) / 60_000)
+          )
+          return {
+            speech: `The ${alarm.departure.line} leaves at ${alarm.departure.departs}. I'll tell you to go in ${leaveIn} minutes.`,
+            card: { type: 'reminder', data: { created, pending: pendingReminders() } }
+          }
+        }
+
+        if (!params.task && !params.when) {
+          const pending = pendingReminders()
+          return {
+            speech:
+              pending.length > 0
+                ? `You have ${pending.length} reminder${pending.length === 1 ? '' : 's'} coming up.`
+                : "You don't have any reminders set.",
+            card: { type: 'reminder', data: { created: null, pending } }
+          }
+        }
+
+        const at = new Date(params.when ?? '')
+        if (Number.isNaN(at.getTime())) {
+          throw new Error("I didn't catch when you want to be reminded.")
+        }
+        const created = addReminder({ at: at.toISOString(), text: params.task || 'Reminder.' })
+        return {
+          speech: `Right — ${describeWhen(at)}.`,
+          card: { type: 'reminder', data: { created, pending: pendingReminders() } }
+        }
+      }
+
+      case 'briefing': {
+        const data = await buildBriefing()
+        if (!data.weather && !data.commute && !data.news && data.reminders.length === 0) {
+          throw new Error("I couldn't put a briefing together — nothing was reachable.")
+        }
+        // Only the parts that came back are described, so a failed section is
+        // simply absent rather than being apologised for.
+        const speech = await formatResponse(
+          'briefing',
+          utterance,
+          {
+            weather: data.weather && {
+              city: data.weather.city,
+              temp: data.weather.temp,
+              condition: data.weather.condition
+            },
+            nextDepartures: data.commute?.journeys.slice(0, 2).map((journey) => ({
+              departs: journey.departs,
+              line: journey.legs[0]?.line,
+              to: data.commute?.to
+            })),
+            reminders: data.reminders.map((reminder) => reminder.text),
+            headlines: data.news?.articles.map((article) => article.title)
+          },
+          onChunk
+        )
+        return { speech, card: { type: 'briefing', data } }
+      }
+
+      case 'recall': {
+        const query = params.query
+        const answers = query ? searchAnswers(query) : recentAnswers()
+        const facts = getFacts()
+
+        if (answers.length === 0) {
+          // "What do you know about me" searches for nothing useful — the
+          // answer to it is the profile, which would otherwise sit on the
+          // card while the spoken reply claimed there was nothing.
+          if (facts.length > 0) {
+            const speech = await formatResponse('recall', utterance, { knownAboutUser: facts.map((fact) => fact.text) }, onChunk)
+            return { speech, card: { type: 'memory', data: { query: query || '', answers: [], facts } } }
+          }
+          return {
+            speech: query
+              ? `I don't have anything saved about ${query}.`
+              : "I haven't answered anything yet.",
+            card: { type: 'memory', data: memoryCard(query || '') }
+          }
+        }
+        // The model reads the matches back conversationally rather than the
+        // card being the whole answer — this is usually asked hands-free.
+        const speech = await formatResponse(
+          'recall',
+          utterance,
+          answers.map((entry) => ({ asked: entry.question, answered: entry.answer, at: entry.at })),
+          onChunk
+        )
+        return { speech, card: { type: 'memory', data: { query: query || '', answers, facts } } }
+      }
+
       case 'search': {
         if (!config.integrations.search) {
           throw new Error('Web search is disabled in config.json.')
         }
         const query = params.query || utterance
+        // Runs alongside the search and synthesis, so pictures cost no extra
+        // wall-clock time. Skipped for entity answers, which already carry
+        // their own Wikipedia photo.
+        const pictures = params.entity ? Promise.resolve([]) : tryIllustrate(params.topic)
 
         // Wikipedia is the right tool only when the question is *about* a
         // named thing ("who is Marie Curie") — it gives a description and a
@@ -223,7 +424,10 @@ async function resolveUtterance(
             : undefined
           try {
             const { speech, card } = await research(utterance, query, track)
-            return { speech, card: { type: 'search', data: card } }
+            return {
+              speech,
+              card: { type: 'search', data: { ...card, illustrations: await pictures } }
+            }
           } catch (err) {
             if (streamed) throw err
             console.warn('[nimbus] deep search failed, falling back:', err)
@@ -246,12 +450,23 @@ async function resolveUtterance(
           if (!data.answer) throw err
           speech = data.answer
         }
-        return { speech, card: { type: 'search', data } }
+        return {
+          speech,
+          card: { type: 'search', data: { ...data, illustrations: await pictures } }
+        }
       }
 
       default: {
+        // Started before the answer so the pictures are fetched while the
+        // model is still writing, rather than after it finishes.
+        const pictures = tryIllustrate(params.topic)
         const speech = await chat(utterance, onChunk)
-        return { speech, card: { type: 'text' } }
+        const illustrations = await pictures
+        if (illustrations.length === 0) return { speech, card: { type: 'text' } }
+        return {
+          speech,
+          card: { type: 'explainer', data: { topic: params.topic as string, illustrations } }
+        }
       }
     }
   } catch (err) {

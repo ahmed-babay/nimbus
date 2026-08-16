@@ -3,6 +3,7 @@ import { buildModel, withModelFallback } from './gemini-client'
 import { deepSearch, type Evidence } from './search'
 import { getHistorySummary } from './conversation'
 import { currentTimeContext } from './now'
+import { replyLanguageContext } from './region'
 import type { StreamHandler } from './gemini'
 import type { SearchCardData } from '../shared/types'
 import config from '../../config.json'
@@ -117,7 +118,7 @@ export async function research(
     throw new Error("I searched but couldn't find anything useful on that.")
   }
 
-  const systemInstruction = `${SYNTHESIS_PROMPT}\n\n${currentTimeContext()}`
+  const systemInstruction = `${SYNTHESIS_PROMPT}\n\n${replyLanguageContext()}\n\n${currentTimeContext()}`
   const context = getHistorySummary(4)
   const prompt = [
     context ? `Recent conversation:\n${context}\n` : '',

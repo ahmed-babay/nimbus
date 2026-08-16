@@ -121,6 +121,45 @@ npm run typecheck   # type-check main + renderer
    hotkey. It closes when you say a dismissal ("stop", "that's it for today", "never mind",
    "bye Nimbus"), press `Esc`, or stay silent.
 
+## Local place names
+
+Speech recognition is bad at place names in a language other than the one the sentence is
+in. Measured on real audio, with an English sentence containing German names:
+
+| You said | Whisper heard |
+|---|---|
+| Luisenplatz | "Lusenplatz" |
+| Herrngarten | "Herngarten" |
+| Mathildenhöhe | **"Mephilden hole"** |
+
+Nothing downstream can geocode "Mephilden hole", so this is fixed in two places, configured
+once under `location` in `config.json`:
+
+```json
+"location": {
+  "home": "Luisenplatz, Darmstadt",
+  "region": "Darmstadt, Hesse, Germany",
+  "placeLanguage": "German",
+  "frequentPlaces": ["Luisenplatz", "Herrngarten", "Mathildenhöhe", "Hauptbahnhof"]
+}
+```
+
+1. **The transcriber gets a vocabulary hint.** Whisper's `prompt` biases vocabulary, not
+   behaviour, and the difference matters: *describing* the region ("the speaker is in
+   Darmstadt, Hesse") changed nothing at all, while listing actual place names fixed
+   "Luisenplatz" outright. That's what `frequentPlaces` is for — put the places you
+   actually say in it.
+2. **The intent router repairs what's left**, which is the reliable half. Told the region,
+   it turns "Mephilden hole" into Mathildenhöhe and "Herngarten" into Herrngarten before
+   anything is looked up — and it expands vague references into the place they mean, so
+   "the airport" becomes Frankfurt Airport rather than, as it did before this, a metro
+   station in **Copenhagen**.
+
+Distant places still work: "how far is Cologne" resolves to Köln, not to a local business
+with Cologne in its name. This affects place names only — replies stay in
+`language.native`, which is stated explicitly to the model, because once the data coming
+back is full of German station names an unprompted model starts answering in German.
+
 ## Living in a language that isn't yours
 
 Set the language you think in:
@@ -247,6 +286,8 @@ Answers render as visuals where the data supports it, not just spoken text:
 | "who won the final" | Ranked results with source domains |
 | "play Bohemian Rhapsody" | Video thumbnail + duration, opens in your browser |
 | "next train to Frankfurt" | **Departure board** — times, line badges, platform, changes |
+| "how far is Cologne" | **Map with the route drawn**, and a tab per travel mode |
+| "how does a jet engine work" | **Diagrams and photos** alongside the explanation |
 
 Two implementation notes worth knowing:
 
@@ -262,6 +303,30 @@ Two implementation notes worth knowing:
   (a press photo went from ~427KB of base64 to ~43KB — it's displayed in an 80px strip).
   Images are time-limited and always optional: a failed image never fails the answer.
 
+### Pictures for explanations
+
+When an answer would be clearer with a picture, one comes with it — a labelled cutaway for
+"how does a jet engine work", the cycle diagram for "what's the Krebs cycle". These come
+from **Wikipedia** (`src/services/illustrate.ts`): free, no key, and unlike an image search
+it returns the *explanatory* picture rather than a stock photo.
+
+The whole trick is asking it the right thing. Wikipedia search is only as good as its
+query, and the raw utterance is a bad one — "tell me about the Roman aqueducts" matched
+*Chinatown (1974 film)*. So the intent classifier extracts a bare article title alongside
+the intent (`params.topic`), which costs no extra model call: "why is the sky blue" becomes
+**Rayleigh scattering**, "what's the Krebs cycle" becomes **citric acid cycle**. It's left
+empty for jokes, arithmetic, prices and schedules, so pictures appear when they explain
+something and not otherwise.
+
+Two details:
+
+- The fetch runs **in parallel with the answer**, so illustrations cost no extra
+  wall-clock time, and a failure never blocks a reply.
+- Wikipedia's diagrams are rendered SVGs — dark line art on a **transparent** background.
+  The image pipeline flattens everything to JPEG by default, which paints transparency
+  black and would have turned every diagram into a black rectangle on this theme. Those
+  keep their alpha instead and the card puts them on a light plate; photos still get JPEG.
+
 ### News: GNews is optional
 
 News runs on the Tavily key you already need for search (`topic: "news"`), so there's no
@@ -274,6 +339,44 @@ Entity cards come from Wikipedia (free, no key), so "who is X" works even before
 key is set. The classifier only routes to Wikipedia when the question is *about* a named
 thing — "who is the CEO of Nvidia" is a relational question and goes to web search, since
 Wikipedia would return the tangential company page.
+
+## Maps and directions
+
+"How far is the Mathildenhöhe from here", "how long to Cologne by car", "is the botanical
+garden walkable" — `src/services/maps.ts` answers with a drawn map and **every travel mode
+costed at once**, so the card's Drive / Bike / Walk / Transit tabs switch instantly without
+another request. Say how you want to travel and that tab opens first; otherwise pick one.
+
+"From here" means `location.home` in `config.json`. Set it to a street address if you want
+the walking times to be honest — the fallback is IP geolocation, which is city-level at
+best and put a Darmstadt machine in Frankfurt during testing.
+
+Everything here is keyless:
+
+| Piece | Service | Why |
+|---|---|---|
+| Place → coordinates | **Nominatim** | Biased to a ~55 km box around home, so "the botanical garden" means the local one. |
+| Car / bike / walk | **Valhalla** (FOSSGIS) | Real per-mode costing. |
+| Public transport | **Transitous** | The same departure lookup the transit card uses, so "by train" gives actual services. |
+| The map itself | **OpenStreetMap tiles** | ~4-9 tiles per lookup, fetched once. |
+
+Three things learned the hard way, all verified rather than assumed:
+
+- **The OSRM demo server is car-only.** Its URL takes a `/foot/` profile and cheerfully
+  answers with car speeds — it put 4.1 km on foot at nine minutes. Valhalla costs the same
+  trip as 12 min driving, 13 cycling, 40 walking. That's why routing goes to Valhalla.
+- **Never hand a second geocoder the raw words.** Nominatim resolved "Cologne" to Köln
+  while Transitous, geocoding the same string itself, matched a same-named village — the
+  card offered an eleven-hour, four-change bus chain for what is a 101-minute ICE trip.
+  `findJourneys` now takes coordinates, and the fix also repaired short trips, where the
+  stop-name lookup had been silently returning no journeys at all.
+- **Valhalla encodes its route geometry at polyline precision 6**, not the usual 5. A
+  stock decoder reads those coordinates ten times too large and lands you in the ocean.
+
+The map is a still, not a pannable widget: tiles are downloaded and the route projected to
+pixels in the main process, so the card just places images and draws an SVG line over them.
+That keeps it inside OpenStreetMap's tile policy for light use, and means the route can be
+drawn in the theme's own colours over an ordinary OpenStreetMap basemap.
 
 ## Trains, trams and buses
 
@@ -351,6 +454,88 @@ If you'd rather have *specific tracks* playing in-app too, that needs a catalogu
 licenses direct streaming — [Jamendo](https://developer.jamendo.com/) (free key, Creative
 Commons) is the usual choice, and would slot in beside `radio.ts`.
 
+## The daily briefing
+
+"What does my day look like" / "brief me" / "catch me up" — weather, the next departures on
+your usual route, reminders due in the next 18 hours, and today's headlines, in one answer.
+
+No new capability: it's five services that already existed, asked at once. All three network
+sections run in parallel (a briefing that took the sum of their latencies would be slower
+than asking the questions separately) and each is settled independently, so a section that
+fails is simply absent rather than taking the briefing down with it. A real run assembles in
+about 2.4 seconds.
+
+Configure it under `briefing` in `config.json`: `commuteTo` for the departures, `weatherCity`,
+and `newsTopic` (empty is fine — see below).
+
+Two things the briefing exposed that were quietly wrong elsewhere:
+
+- **Generic headlines are worthless.** Asked for "top news headlines today", the news
+  provider returns aggregator filler — *"School Assembly News Headlines"*, *"MONDAY NEWS IN
+  A RUSH"*. Asked for a **country** it returns real reporting from DW, Reuters and Forbes.
+  So `newsTopic` defaults to the country in `location.region`, which is also the news a
+  briefing should carry: the one where you live.
+- **OpenWeatherMap calls this location "Regierungsbezirk Darmstadt"** — the administrative
+  district rather than the city. Its coordinates are right, so the briefing shows the
+  configured city name instead; adding a country code to the query does not help.
+
+## Reminders, and knowing when to leave
+
+"Remind me in 20 minutes to call the landlord" is table stakes. The one worth having is
+**"tell me when I need to leave to catch the last train to Frankfurt"** — Nimbus works the
+moment out from the live timetable rather than a clock time you had to know in advance.
+Ordinary AI assistants can't do this; it needs a departure board and a door-to-door plan.
+
+The walk is free to account for. Because the journey planner is handed *coordinates* rather
+than a station name, MOTIS plans door-to-door and puts a walking leg on the front — so the
+itinerary's own start time is already the moment you must be out of the door, and the first
+transit leg's departure is when the train actually goes. The difference between them is the
+walk, with no second routing request. Three minutes of slack are subtracted on top. A real
+run: the F at 15:31 to Frankfurt Hbf, one minute to the stop, alarm set for 15:27.
+
+Firing is a 30-second **poll**, not a `setTimeout` per reminder, in
+`src/main/reminder-scheduler.ts`. Timers don't survive a restart, drift while the machine is
+asleep, and silently cap out around 24.8 days; a sorted list checked twice a minute behaves
+correctly when the laptop has been shut since the reminder was set, and anything that came
+due while the app was closed fires on startup. Due reminders are marked fired in the same
+step that claims them, so one can't fire twice.
+
+When a reminder fires, Nimbus shows itself and speaks — but **does not open the microphone**.
+`showOverlay` always sends WAKE, which starts recording; that's right when you summoned it
+and wrong when Nimbus is the one initiating, since a hot mic in an empty room is exactly how
+ambient noise became hallucinated questions earlier in this project. `presentOverlay` exists
+for that case. A desktop notification goes out as well, in case you're full-screen in
+another app.
+
+## What Nimbus remembers between sessions
+
+Until this existed, closing the app meant every answer it had ever given was gone and it
+re-learned who you were on each launch. `src/services/memory.ts` keeps two things in
+`userData/memory.json`, split because they behave differently:
+
+**Facts** — a short profile you dictate. "Remember that I take the RB68 to work", "my home
+station is Luisenplatz", "forget what I said about the gym". These are small enough to put
+in front of the model on *every* turn, which is the entire point: it stops re-asking what
+it already knows. The classifier rewrites them into standalone statements, so "remember
+that I take the RB68 to work" is stored as "Takes the RB68 to work". Capped at 40, and
+restating one replaces it rather than growing the prompt.
+
+**Answers** — an append-only archive, searchable by voice: "what was that station you told
+me about", "what did I ask about the tickets". Never injected wholesale; there could be
+thousands. Search is plain keyword scoring with a double weight on matches in the question,
+which carries the topic more reliably than the answer body. Deliberately not embeddings —
+that would mean a paid API on every write or a local model, and for "what was that station
+you mentioned" the words you say are very nearly the words you said the first time.
+
+Two robustness details, both verified rather than assumed: writes go through a temp file
+and a rename, so a crash mid-write leaves the previous store intact instead of a
+half-written file that fails to parse forever after; and a corrupt store logs and starts
+empty rather than crashing the app on every launch from then on.
+
+This is separate from the rolling 12-turn window in `src/services/conversation.ts`, which
+exists so follow-ups like "what about tomorrow?" resolve and is *supposed* to be discarded
+when the overlay closes.
+
 ## Conversation memory
 
 `src/services/conversation.ts` keeps a rolling window of the last 12 turns in the main
@@ -378,7 +563,13 @@ nicely for JSON — Gemini is constrained at the API level to emit one of the si
 a params object, so there's no free text to regex out and no risk of it wrapping the answer
 in markdown or prose. The system prompt above the schema is what tells it, in plain English,
 what each intent means and which field to fill in (city / symbol / coin / query / language /
-from / to / when).
+from / to / when / mode / topic).
+
+The router runs at **temperature 0**. At the default it drifted between identical runs —
+"how long to Cologne by car" filled in the travel mode on one call and left it blank on the
+next — which is unfixable-looking flakiness from the outside. Travel mode additionally has
+a plain keyword fallback in `src/services/maps.ts`, since even at temperature 0 the model
+fills that field for only about one wording in ten.
 
 ## Web search vs. per-topic APIs
 
@@ -440,7 +631,7 @@ Claude Desktop or another agent, that's the point where MCP would start paying f
 
 ## Toggling integrations
 
-Edit `config.json` — set any of `integrations.weather/stocks/crypto/news/github/transit` to `false`
+Edit `config.json` — set any of `integrations.weather/stocks/crypto/news/github/transit/maps` to `false`
 to disable it (Nimbus will explain it's turned off if you ask anyway), change
 `hotkey.accelerator` (Electron [accelerator syntax](https://www.electronjs.org/docs/latest/api/accelerator))
 if Ctrl+Shift+Space conflicts with something else, or adjust `overlay.autoFadeMs`. Restart

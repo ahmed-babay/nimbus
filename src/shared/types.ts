@@ -7,6 +7,11 @@ export type NimbusIntent =
   | 'search'
   | 'music'
   | 'transit'
+  | 'directions'
+  | 'remember'
+  | 'recall'
+  | 'alarm'
+  | 'briefing'
   | 'chat'
 
 export interface IntentClassification {
@@ -95,10 +100,30 @@ export interface SearchResult {
   snippet: string
 }
 
+/** A picture that helps explain the answer, with its source article. */
+export interface Illustration {
+  /** base64 data URI — the overlay's CSP blocks remote image URLs. */
+  image: string
+  caption: string
+  url: string
+  /**
+   * Line art or a schematic rather than a photo. These must be shown whole on
+   * a light backdrop; cropping a labelled diagram loses the labels.
+   */
+  diagram: boolean
+}
+
 export interface SearchCardData {
   query: string
   answer: string | null
   results: SearchResult[]
+  illustrations?: Illustration[]
+}
+
+/** A spoken explanation that had no data card of its own, but earned pictures. */
+export interface ExplainerCardData {
+  topic: string
+  illustrations: Illustration[]
 }
 
 export interface MusicCardData {
@@ -149,6 +174,102 @@ export interface TransitCardData {
   journeys: TransitJourney[]
 }
 
+export interface BriefingCardData {
+  weather: WeatherCardData | null
+  /** Next departures on the usual route, when one is configured. */
+  commute: TransitCardData | null
+  news: NewsCardData | null
+  /** Reminders due within the next few hours. */
+  reminders: Reminder[]
+}
+
+export interface Reminder {
+  id: string
+  /** When it fires, ISO. */
+  at: string
+  /** What to say — already phrased as the spoken line. */
+  text: string
+  /**
+   * A "leave now" alarm worked out from a departure, rather than a plain
+   * time the user named. Kept so the card can show why it's set when it is.
+   */
+  departure?: {
+    line: string
+    departs: string
+    from: string
+    to: string
+    /** Travel time to the stop that was subtracted, in minutes. */
+    travelMinutes: number
+  }
+  fired: boolean
+}
+
+export interface ReminderCardData {
+  /** The one just created, when this card is confirming a new reminder. */
+  created: Reminder | null
+  pending: Reminder[]
+}
+
+/** Something the user asked Nimbus to remember about them. */
+export interface MemoryFact {
+  id: string
+  text: string
+  at: string
+}
+
+/** An archived answer, searchable long after the conversation ended. */
+export interface RememberedAnswer {
+  id: string
+  at: string
+  question: string
+  answer: string
+  intent: string
+}
+
+export interface MemoryCardData {
+  /** What was searched for, or empty when simply listing recent answers. */
+  query: string
+  answers: RememberedAnswer[]
+  facts: MemoryFact[]
+}
+
+export type TravelMode = 'driving' | 'cycling' | 'walking' | 'transit'
+
+export interface RouteOption {
+  mode: TravelMode
+  /** Null for public transport, where a road distance means nothing. */
+  distanceKm: number | null
+  durationMinutes: number | null
+}
+
+/** One map tile, already downloaded, positioned in the map's pixel space. */
+export interface MapTile {
+  x: number
+  y: number
+  /** base64 data URI — the overlay's CSP blocks remote image URLs. */
+  image: string
+}
+
+export interface RenderedMap {
+  width: number
+  height: number
+  tiles: MapTile[]
+  /** Route lines as pixel coordinates, keyed by travel mode. */
+  routes: Record<string, Array<[number, number]>>
+  start: [number, number]
+  end: [number, number]
+}
+
+export interface DirectionsCardData {
+  from: string
+  to: string
+  selected: TravelMode
+  options: RouteOption[]
+  /** Real departures, when public transport is an option between these points. */
+  transit: TransitCardData | null
+  map: RenderedMap
+}
+
 export type TextActionKind =
   | 'translate'
   | 'summarize'
@@ -187,6 +308,11 @@ export type ResponseCardData =
   | { type: 'transit'; data: TransitCardData }
   | { type: 'screen'; data: ScreenCardData }
   | { type: 'selection'; data: SelectionCardData }
+  | { type: 'directions'; data: DirectionsCardData }
+  | { type: 'memory'; data: MemoryCardData }
+  | { type: 'reminder'; data: ReminderCardData }
+  | { type: 'briefing'; data: BriefingCardData }
+  | { type: 'explainer'; data: ExplainerCardData }
   | { type: 'text' }
 
 export interface SynthesizedSpeech {
@@ -218,6 +344,7 @@ export interface NimbusConfig {
     search: boolean
     music: boolean
     transit: boolean
+    maps: boolean
   }
   hotkey: {
     enabled: boolean
@@ -240,6 +367,28 @@ export interface NimbusConfig {
   screenshot: {
     /** Drag to pick a region instead of grabbing the whole display. */
     selectRegion: boolean
+  }
+  briefing: {
+    /** Where the next departures come from, e.g. "Frankfurt". Omit to skip. */
+    commuteTo: string
+    /** City for the weather line; defaults to the first part of location.region. */
+    weatherCity: string
+    /** Headline topic, or empty for the top stories. */
+    newsTopic: string
+  }
+  location: {
+    /** Where 'from here' means. A street address is far more precise than
+     *  the city-level guess an IP lookup gives. */
+    home: string
+    /** Your area, e.g. "Darmstadt, Hesse, Germany". Biases place lookups and
+     *  tells the model which places you are likely to mean. */
+    region: string
+    /** The language local place names are in. Answers stay in language.native;
+     *  this only affects how place names are spelled and searched. */
+    placeLanguage: string
+    /** Places you say often. Given to the transcriber as a vocabulary hint,
+     *  which is the only form of hint it measurably acts on. */
+    frequentPlaces: string[]
   }
   transit: {
     /** Used when you say "trains to Frankfurt" without naming a start. */

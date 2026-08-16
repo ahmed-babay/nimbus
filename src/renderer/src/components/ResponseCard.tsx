@@ -5,19 +5,27 @@ import { ImageCarousel } from './ImageCarousel'
 import { Sparkline } from './Sparkline'
 import { SpokenText } from './SpokenText'
 import type {
+  BriefingCardData,
   CryptoCardData,
+  DirectionsCardData,
   EntityCardData,
+  ExplainerCardData,
   GithubCardData,
+  Illustration,
+  MemoryCardData,
   MusicCardData,
   NewsCardData,
   NimbusResponse,
   RadioCardData,
+  ReminderCardData,
+  RenderedMap,
   ResponseCardData,
   ScreenCardData,
   SearchCardData,
   SelectionCardData,
   StockCardData,
   TransitCardData,
+  TravelMode,
   WeatherCardData
 } from '@shared/types'
 
@@ -118,6 +126,16 @@ function CardBody({
       return <RadioBody data={card.data} radio={radio} />
     case 'transit':
       return <TransitBody data={card.data} />
+    case 'directions':
+      return <DirectionsBody data={card.data} />
+    case 'memory':
+      return <MemoryBody data={card.data} />
+    case 'reminder':
+      return <ReminderBody data={card.data} />
+    case 'briefing':
+      return <BriefingBody data={card.data} />
+    case 'explainer':
+      return <ExplainerBody data={card.data} />
     case 'screen':
       return <ScreenBody data={card.data} />
     case 'selection':
@@ -557,9 +575,10 @@ function countdown(iso: string): string {
   return `in ${Math.floor(minutes / 60)} h ${minutes % 60}`
 }
 
-function TransitBody({ data }: { data: TransitCardData }) {
+/** `bare` drops the panel chrome when this is nested inside another card. */
+function TransitBody({ data, bare = false }: { data: TransitCardData; bare?: boolean }) {
   return (
-    <div className={panel}>
+    <div className={bare ? '' : panel}>
       <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-nimbus-text-dim">
         <span className="truncate">{data.from}</span>
         <span className="shrink-0 text-nimbus-accent">→</span>
@@ -635,20 +654,511 @@ function hostOf(url: string): string {
   }
 }
 
-function SearchBody({ data }: { data: SearchCardData }) {
+const MODE_LABEL: Record<TravelMode, string> = {
+  driving: 'Drive',
+  cycling: 'Bike',
+  walking: 'Walk',
+  transit: 'Transit'
+}
+
+/** Simple glyphs rather than an icon dependency — these are 14px tall. */
+function ModeIcon({ mode }: { mode: TravelMode }) {
+  const common = {
+    width: 14,
+    height: 14,
+    viewBox: '0 0 24 24',
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 2,
+    strokeLinecap: 'round' as const,
+    strokeLinejoin: 'round' as const
+  }
+  switch (mode) {
+    case 'driving':
+      return (
+        <svg {...common}>
+          <path d="M5 17h14M4 17v-4l2-5h12l2 5v4" />
+          <circle cx="7.5" cy="17.5" r="1.5" />
+          <circle cx="16.5" cy="17.5" r="1.5" />
+        </svg>
+      )
+    case 'cycling':
+      return (
+        <svg {...common}>
+          <circle cx="6" cy="17" r="3.5" />
+          <circle cx="18" cy="17" r="3.5" />
+          <path d="M6 17l4-8h5l3 8M9 9h4" />
+        </svg>
+      )
+    case 'walking':
+      return (
+        <svg {...common}>
+          <circle cx="13" cy="4" r="1.6" />
+          <path d="M11 21l2-6-3-3 1-5 3 3 2 1M10 12l-2 4" />
+        </svg>
+      )
+    default:
+      return (
+        <svg {...common}>
+          <rect x="6" y="3" width="12" height="13" rx="2.5" />
+          <path d="M6 10h12M9 20l-2 2M15 20l2 2" />
+          <circle cx="9" cy="13" r="0.8" fill="currentColor" />
+          <circle cx="15" cy="13" r="0.8" fill="currentColor" />
+        </svg>
+      )
+  }
+}
+
+function duration(minutes: number | null): string {
+  if (minutes === null) return '—'
+  if (minutes < 60) return `${minutes} min`
+  return `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, '0')}`
+}
+
+/**
+ * The map is a still: tiles were downloaded and projected in the main process,
+ * so this only places them and draws the line. Tiles are shown in their own
+ * colours — an earlier version inverted them to match the dark overlay, which
+ * made the map unreadable.
+ */
+function RouteMap({ map, mode }: { map: RenderedMap; mode: TravelMode }) {
+  const points = map.routes[mode]
+  const path = points?.map(([x, y]) => `${x},${y}`).join(' ')
+
   return (
-    <ul className={`${panel} space-y-2`}>
-      {data.results.slice(0, 3).map((result) => (
-        <ListRow
-          key={result.url}
-          primary={result.title}
-          secondary={hostOf(result.url)}
-          url={result.url}
-        />
-      ))}
-      {data.results.length === 0 && (
-        <li className="text-[11px] text-nimbus-text-dim">No results found.</li>
+    <div
+      className="relative overflow-hidden rounded-lg ring-1 ring-black/25"
+      style={{ width: map.width, height: map.height }}
+    >
+      <div className="absolute inset-0">
+        {map.tiles.map((tile) => (
+          <img
+            key={`${tile.x}-${tile.y}`}
+            src={tile.image}
+            alt=""
+            draggable={false}
+            className="absolute max-w-none"
+            style={{ left: tile.x, top: tile.y, width: 256, height: 256 }}
+          />
+        ))}
+      </div>
+
+      <svg
+        className="absolute inset-0"
+        width={map.width}
+        height={map.height}
+        aria-label={`Route by ${MODE_LABEL[mode]}`}
+      >
+        {path && (
+          <>
+            {/* Dark casing under the line, so it reads over any terrain. */}
+            <polyline
+              points={path}
+              fill="none"
+              stroke="rgba(0,0,0,0.55)"
+              strokeWidth={6}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            <motion.polyline
+              key={mode}
+              points={path}
+              fill="none"
+              stroke="var(--color-nimbus-accent)"
+              strokeWidth={3}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              initial={{ pathLength: 0, opacity: 0.4 }}
+              animate={{ pathLength: 1, opacity: 1 }}
+              transition={{ duration: 0.6, ease: 'easeOut' }}
+            />
+          </>
+        )}
+        {/* Public transport has no road geometry — the endpoints still do. */}
+        <circle cx={map.start[0]} cy={map.start[1]} r={5} fill="var(--color-nimbus-cyan)" stroke="rgba(0,0,0,0.6)" strokeWidth={2} />
+        <circle cx={map.end[0]} cy={map.end[1]} r={5} fill="var(--color-nimbus-yellow)" stroke="rgba(0,0,0,0.6)" strokeWidth={2} />
+      </svg>
+    </div>
+  )
+}
+
+function DirectionsBody({ data }: { data: DirectionsCardData }) {
+  const [mode, setMode] = useState<TravelMode>(data.selected)
+  const active = data.options.find((option) => option.mode === mode)
+
+  return (
+    <div className={panel}>
+      <RouteMap map={data.map} mode={mode} />
+
+      {/* Every mode was costed up front, so switching is instant. */}
+      <div className="mt-2 flex gap-1">
+        {data.options.map((option) => {
+          const selected = option.mode === mode
+          return (
+            <button
+              key={option.mode}
+              onClick={() => setMode(option.mode)}
+              className={`flex flex-1 flex-col items-center gap-1 rounded-lg border px-1 py-1.5 transition-colors ${
+                selected
+                  ? 'border-nimbus-accent/60 bg-nimbus-accent/15 text-nimbus-text'
+                  : 'border-white/[0.07] text-nimbus-text-dim hover:bg-white/[0.05]'
+              }`}
+            >
+              <span className={selected ? 'text-nimbus-accent-bright' : ''}>
+                <ModeIcon mode={option.mode} />
+              </span>
+              <span className="text-[11px] font-medium tabular-nums leading-none">
+                {duration(option.durationMinutes)}
+              </span>
+              <span className="text-[9px] uppercase tracking-wide leading-none opacity-70">
+                {MODE_LABEL[option.mode]}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+
+      <div className="mt-2 flex items-center gap-1.5 text-[10px] text-nimbus-text-dim">
+        <span className="truncate">{data.from}</span>
+        <span className="shrink-0 text-nimbus-accent">→</span>
+        <span className="truncate">{data.to}</span>
+        {active?.distanceKm != null && (
+          <span className="ml-auto shrink-0 tabular-nums">{active.distanceKm} km</span>
+        )}
+      </div>
+
+      {/* Picking public transport should answer "which service", not just
+          "how long" — so the real departures come with it. */}
+      {mode === 'transit' && data.transit && (
+        <div className="mt-2 border-t border-white/[0.07] pt-2">
+          <TransitBody data={data.transit} bare />
+        </div>
       )}
-    </ul>
+    </div>
+  )
+}
+
+/**
+ * Pictures that illustrate an explanation. The lead image is shown large
+ * because it's the one that does the explaining; the rest are supporting
+ * thumbnails. Diagrams sit whole on a light plate — a labelled cutaway is
+ * useless cropped, and Wikipedia's line art is dark ink on transparency,
+ * invisible against this theme without one.
+ */
+function Illustrations({ items }: { items: Illustration[] }) {
+  const [lead, ...rest] = items
+  if (!lead) return null
+
+  return (
+    <div className="mb-3">
+      <motion.button
+        {...mediaIn}
+        onClick={() => openLink(lead.url)}
+        title={lead.caption}
+        className="group block w-full overflow-hidden rounded-lg shadow-lg ring-1 ring-white/15 transition-shadow hover:ring-nimbus-accent/50"
+      >
+        <img
+          src={lead.image}
+          alt={lead.caption}
+          className={`h-40 w-full ${
+            lead.diagram ? 'bg-white/95 object-contain p-1.5' : 'object-cover'
+          }`}
+        />
+        <div className="truncate bg-black/40 px-2 py-1 text-left text-[10px] text-nimbus-text-dim group-hover:text-nimbus-accent-bright">
+          {lead.caption}
+        </div>
+      </motion.button>
+
+      {rest.length > 0 && (
+        <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+          {rest.slice(0, 2).map((item) => (
+            <motion.button
+              {...mediaIn}
+              key={item.url}
+              onClick={() => openLink(item.url)}
+              title={item.caption}
+              className="group overflow-hidden rounded-lg ring-1 ring-white/10 transition-shadow hover:ring-nimbus-accent/50"
+            >
+              <img
+                src={item.image}
+                alt={item.caption}
+                className={`h-16 w-full ${
+                  item.diagram ? 'bg-white/95 object-contain p-1' : 'object-cover'
+                }`}
+              />
+              <div className="truncate bg-black/40 px-1.5 py-0.5 text-left text-[9px] text-nimbus-text-dim group-hover:text-nimbus-accent-bright">
+                {item.caption}
+              </div>
+            </motion.button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Small titled band, so the briefing's sections read as one card not four. */
+function BriefingSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="border-t border-white/[0.07] pt-2 first:border-0 first:pt-0">
+      <div className="text-[9.5px] uppercase tracking-wider text-nimbus-accent/80">{title}</div>
+      <div className="mt-1">{children}</div>
+    </div>
+  )
+}
+
+function BriefingBody({ data }: { data: BriefingCardData }) {
+  return (
+    <div className={`${panel} space-y-2`}>
+      {data.weather && (
+        <BriefingSection title="Weather">
+          <div className="flex items-baseline gap-2">
+            <span className="text-lg font-semibold tabular-nums text-nimbus-text">
+              {data.weather.temp}°
+            </span>
+            <span className="text-[11px] capitalize text-nimbus-text-dim">
+              {data.weather.condition} · {data.weather.city}
+            </span>
+            <span className="ml-auto text-[10px] text-nimbus-text-dim">
+              feels {data.weather.feelsLike}°
+            </span>
+          </div>
+        </BriefingSection>
+      )}
+
+      {data.commute && (
+        <BriefingSection title={`Next to ${data.commute.to.split(',')[0]}`}>
+          <ul className="space-y-1">
+            {data.commute.journeys.slice(0, 3).map((journey, index) => (
+              <li
+                key={`${journey.departsAt}-${index}`}
+                className="flex items-baseline gap-2 text-[11px]"
+              >
+                <span className="shrink-0 font-mono tabular-nums text-nimbus-yellow">
+                  {journey.departs}
+                </span>
+                <span
+                  className={`shrink-0 rounded px-1 py-px font-mono text-[9.5px] leading-none ring-1 ${lineTone(journey.legs[0]?.line ?? '')}`}
+                >
+                  {journey.legs[0]?.line || 'Walk'}
+                </span>
+                <span className="ml-auto shrink-0 text-[10px] text-nimbus-text-dim">
+                  {journey.durationMinutes} min
+                  {journey.changes > 0 && ` · ${journey.changes}×`}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </BriefingSection>
+      )}
+
+      {data.reminders.length > 0 && (
+        <BriefingSection title="Coming up">
+          <ul className="space-y-1">
+            {data.reminders.slice(0, 4).map((reminder) => (
+              <li key={reminder.id} className="flex items-baseline gap-2 text-[11px]">
+                <span className="shrink-0 tabular-nums text-nimbus-text-dim">
+                  {new Date(reminder.at).toLocaleTimeString([], {
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  })}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-nimbus-text">{reminder.text}</span>
+              </li>
+            ))}
+          </ul>
+        </BriefingSection>
+      )}
+
+      {data.news && (
+        <BriefingSection title="Headlines">
+          <ul className="space-y-1.5">
+            {data.news.articles.map((article) => (
+              <li key={article.url}>
+                <button
+                  onClick={() => openLink(article.url)}
+                  title={article.url}
+                  className="group flex w-full items-start gap-2 text-left"
+                >
+                  {article.image && (
+                    <img
+                      src={article.image}
+                      alt=""
+                      className="h-8 w-12 shrink-0 rounded object-cover ring-1 ring-white/10"
+                    />
+                  )}
+                  <span className="line-clamp-2 min-w-0 flex-1 text-[11px] leading-snug text-nimbus-text group-hover:text-nimbus-accent-bright">
+                    {article.title}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </BriefingSection>
+      )}
+    </div>
+  )
+}
+
+function ReminderBody({ data }: { data: ReminderCardData }) {
+  const { created } = data
+  // A fired reminder arrives with only `created` set; a "what's pending"
+  // question arrives with only the list.
+  const others = data.pending.filter((item) => item.id !== created?.id)
+
+  return (
+    <div className={panel}>
+      {created && (
+        <div className="flex items-start gap-2.5">
+          <span className="mt-0.5 shrink-0 text-nimbus-yellow">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="13" r="8" />
+              <path d="M12 9v4l2.5 2M5 3L2.5 5.5M19 3l2.5 2.5" />
+            </svg>
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="text-[12.5px] leading-snug text-nimbus-text">{created.text}</div>
+            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-nimbus-text-dim">
+              <span className="tabular-nums text-nimbus-yellow">
+                {new Date(created.at).toLocaleTimeString([], {
+                  hour: '2-digit',
+                  minute: '2-digit'
+                })}
+              </span>
+              {/* Showing the working: the alarm is a departure minus the walk,
+                  so it's worth saying which train it came from. */}
+              {created.departure && (
+                <>
+                  <span className="opacity-50">·</span>
+                  <span>
+                    {created.departure.line} at {created.departure.departs} to{' '}
+                    {created.departure.to}
+                  </span>
+                  {created.departure.travelMinutes > 0 && (
+                    <>
+                      <span className="opacity-50">·</span>
+                      <span>{created.departure.travelMinutes} min to the stop</span>
+                    </>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {others.length > 0 && (
+        <ul className={created ? 'mt-2.5 space-y-1 border-t border-white/[0.07] pt-2' : 'space-y-1'}>
+          {others.slice(0, 5).map((item) => (
+            <li key={item.id} className="flex items-baseline gap-2 text-[11px]">
+              <span className="shrink-0 tabular-nums text-nimbus-text-dim">
+                {new Date(item.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </span>
+              <span className="min-w-0 flex-1 truncate text-nimbus-text">{item.text}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {!created && others.length === 0 && (
+        <div className="text-[11px] text-nimbus-text-dim">No reminders set.</div>
+      )}
+    </div>
+  )
+}
+
+/** "3 days ago" / "just now" — when an archived answer was given. */
+function whenAgo(iso: string): string {
+  const minutes = Math.round((Date.now() - new Date(iso).getTime()) / 60000)
+  if (!Number.isFinite(minutes) || minutes < 1) return 'just now'
+  if (minutes < 60) return `${minutes} min ago`
+  const hours = Math.round(minutes / 60)
+  if (hours < 24) return `${hours} h ago`
+  const days = Math.round(hours / 24)
+  return days === 1 ? 'yesterday' : `${days} days ago`
+}
+
+function MemoryBody({ data }: { data: MemoryCardData }) {
+  const hasAnswers = data.answers.length > 0
+  return (
+    <div className={panel}>
+      {hasAnswers && (
+        <>
+          <div className="text-[10px] uppercase tracking-wide text-nimbus-text-dim">
+            {data.query ? `Earlier: ${data.query}` : 'Recently'}
+          </div>
+          <ul className="mt-1.5 space-y-2">
+            {data.answers.map((entry) => (
+              <li key={entry.id} className="border-l-2 border-nimbus-accent/40 pl-2">
+                <div className="flex items-baseline gap-1.5">
+                  <span className="min-w-0 flex-1 truncate text-[11.5px] text-nimbus-text">
+                    {entry.question}
+                  </span>
+                  <span className="shrink-0 text-[9.5px] text-nimbus-text-dim">
+                    {whenAgo(entry.at)}
+                  </span>
+                </div>
+                <div className="mt-0.5 line-clamp-3 text-[11px] leading-snug text-nimbus-text-dim">
+                  {entry.answer}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      {/* After "remember that…" there are no search results — the useful
+          feedback is the profile as it now stands. */}
+      {data.facts.length > 0 && (
+        <div className={hasAnswers ? 'mt-2.5 border-t border-white/[0.07] pt-2' : ''}>
+          <div className="text-[10px] uppercase tracking-wide text-nimbus-text-dim">
+            What I know about you
+          </div>
+          <ul className="mt-1 space-y-1">
+            {data.facts.slice(-6).map((fact) => (
+              <li key={fact.id} className="flex gap-1.5 text-[11px] text-nimbus-text">
+                <span className="text-nimbus-cyan">•</span>
+                <span className="min-w-0 flex-1">{fact.text}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {!hasAnswers && data.facts.length === 0 && (
+        <div className="text-[11px] text-nimbus-text-dim">Nothing saved yet.</div>
+      )}
+    </div>
+  )
+}
+
+function ExplainerBody({ data }: { data: ExplainerCardData }) {
+  return (
+    <div className={panel}>
+      <Illustrations items={data.illustrations} />
+      <div className="text-[10px] uppercase tracking-wide text-nimbus-text-dim">{data.topic}</div>
+    </div>
+  )
+}
+
+function SearchBody({ data }: { data: SearchCardData }) {
+  const illustrations = data.illustrations ?? []
+  return (
+    <div className={panel}>
+      {illustrations.length > 0 && <Illustrations items={illustrations} />}
+      <ul className="space-y-2">
+        {data.results.slice(0, 3).map((result) => (
+          <ListRow
+            key={result.url}
+            primary={result.title}
+            secondary={hostOf(result.url)}
+            url={result.url}
+          />
+        ))}
+        {data.results.length === 0 && (
+          <li className="text-[11px] text-nimbus-text-dim">No results found.</li>
+        )}
+      </ul>
+    </div>
   )
 }
