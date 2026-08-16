@@ -3,7 +3,8 @@ import { getNews } from './news'
 import { findJourneys } from './transit'
 import { geocode, homeLocation } from './maps'
 import { pendingReminders } from './reminders'
-import type { BriefingCardData } from '../shared/types'
+import { eventsToday, today, upcomingEvents } from './events'
+import type { BriefingCardData, CalendarEvent } from '../shared/types'
 import config from '../../config.json'
 
 /**
@@ -45,8 +46,24 @@ async function weatherSection(): Promise<BriefingCardData['weather']> {
   }
 }
 
-async function commuteSection(): Promise<BriefingCardData['commute']> {
-  const destination = config.briefing?.commuteTo
+/**
+ * Departures are shown only when an event actually calls for them — one
+ * starting today or tomorrow, somewhere other than home. A fixed daily commute
+ * was the first version and it was noise: most days you aren't taking that
+ * train, so it trained you to ignore the section.
+ */
+function travelDestination(events: CalendarEvent[]): string | null {
+  const cutoff = new Date()
+  cutoff.setDate(cutoff.getDate() + 1)
+  const tomorrow = cutoff.toISOString().slice(0, 10)
+
+  const travelling = events.find(
+    (event) => event.location && event.startDate <= tomorrow && (event.endDate ?? event.startDate) >= today()
+  )
+  return travelling?.location ?? null
+}
+
+async function commuteSection(destination: string | null): Promise<BriefingCardData['commute']> {
   if (!destination || !config.integrations.transit) return null
   try {
     // Coordinates on both ends, for the reason documented in transit.ts:
@@ -93,13 +110,20 @@ export async function buildBriefing(): Promise<BriefingCardData> {
     (reminder) => new Date(reminder.at).getTime() <= horizon
   )
 
+  // Local reads, so these are free and happen before the network work — the
+  // events decide whether a departure lookup is even wanted.
+  const todaysEvents = eventsToday()
+  const upcoming = upcomingEvents(21).filter(
+    (event) => !todaysEvents.some((current) => current.id === event.id)
+  )
+
   // All three network sections at once: a briefing that took the sum of their
   // latencies would be slower than asking the questions separately.
   const [weather, commute, news] = await Promise.all([
     weatherSection(),
-    commuteSection(),
+    commuteSection(travelDestination([...todaysEvents, ...upcoming])),
     newsSection()
   ])
 
-  return { weather, commute, news, reminders }
+  return { weather, today: todaysEvents, upcoming, commute, news, reminders }
 }

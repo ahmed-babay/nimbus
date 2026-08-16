@@ -1,4 +1,10 @@
-import { classifyIntent, chat, formatResponse, type StreamHandler } from './gemini'
+import {
+  classifyIntent,
+  chat,
+  extractEvent,
+  formatResponse,
+  type StreamHandler
+} from './gemini'
 import { getWeather } from './weather'
 import { getStockQuote } from './stocks'
 import { getCryptoPrice } from './crypto'
@@ -10,6 +16,7 @@ import { tryIllustrate } from './illustrate'
 import { addReminder, cancelReminders, pendingReminders } from './reminders'
 import { planDepartureAlarm } from './departure-alarm'
 import { buildBriefing } from './briefing'
+import { addEvent, removeEvents, upcomingEvents } from './events'
 import {
   forgetFacts,
   getFacts,
@@ -61,6 +68,17 @@ function describeWhen(at: Date): string {
   const clock = at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   const sameDay = at.toDateString() === new Date().toDateString()
   return `I'll tell you at ${clock}${sameDay ? '' : ` on ${at.toLocaleDateString([], { weekday: 'long' })}`}`
+}
+
+/** "on Monday 24 August" / "24 to 27 August" — how an event is confirmed aloud. */
+function describeEventDates(event: { startDate: string; endDate?: string }): string {
+  const start = new Date(`${event.startDate}T12:00:00`)
+  const long: Intl.DateTimeFormatOptions = { weekday: 'long', day: 'numeric', month: 'long' }
+  if (!event.endDate || event.endDate === event.startDate) {
+    return `on ${start.toLocaleDateString('en-GB', long)}`
+  }
+  const end = new Date(`${event.endDate}T12:00:00`)
+  return `from ${start.toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })} to ${end.toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })}`
 }
 
 /** Card shown after storing or dropping a fact: the profile as it now stands. */
@@ -298,9 +316,64 @@ async function runIntent(
         }
       }
 
+      case 'event': {
+        if (params.cancel !== undefined && !params.eventTitle) {
+          const removed = removeEvents(params.cancel)
+          return {
+            speech:
+              removed.length > 0
+                ? `Removed ${removed.map((event) => event.title).join('; ')}.`
+                : "I don't have an event like that.",
+            card: { type: 'event', data: { created: null, upcoming: upcomingEvents() } }
+          }
+        }
+
+        if (!params.eventTitle) {
+          const upcoming = upcomingEvents()
+          return {
+            speech:
+              upcoming.length > 0
+                ? await formatResponse(
+                    'event',
+                    utterance,
+                    upcoming.map((event) => ({
+                      what: event.title,
+                      from: event.startDate,
+                      to: event.endDate,
+                      where: event.location
+                    })),
+                    onChunk
+                  )
+                : "You haven't told me about anything coming up.",
+            card: { type: 'event', data: { created: null, upcoming } }
+          }
+        }
+
+        // Details come from the focused extractor, not from the router's
+        // params — see extractEvent for why the router can't be trusted with
+        // the dates. The router's job here was only to recognise the intent.
+        const details = await extractEvent(utterance)
+        const created = addEvent({
+          title: details.title || params.eventTitle,
+          startDate: details.startDate || params.eventStart,
+          endDate: details.endDate || params.eventEnd,
+          location: details.location || params.eventPlace
+        })
+        return {
+          speech: `Noted — ${created.title}, ${describeEventDates(created)}.`,
+          card: { type: 'event', data: { created, upcoming: upcomingEvents() } }
+        }
+      }
+
       case 'briefing': {
         const data = await buildBriefing()
-        if (!data.weather && !data.commute && !data.news && data.reminders.length === 0) {
+        if (
+          !data.weather &&
+          !data.news &&
+          data.reminders.length === 0 &&
+          data.today.length === 0 &&
+          data.upcoming.length === 0
+        ) {
           throw new Error("I couldn't put a briefing together — nothing was reachable.")
         }
         // Only the parts that came back are described, so a failed section is
@@ -314,6 +387,13 @@ async function runIntent(
               temp: data.weather.temp,
               condition: data.weather.condition
             },
+            today: data.today.map((event) => ({ what: event.title, where: event.location })),
+            comingUp: data.upcoming.map((event) => ({
+              what: event.title,
+              from: event.startDate,
+              to: event.endDate,
+              where: event.location
+            })),
             nextDepartures: data.commute?.journeys.slice(0, 2).map((journey) => ({
               departs: journey.departs,
               line: journey.legs[0]?.line,
