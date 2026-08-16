@@ -152,6 +152,13 @@ export const CAPABILITIES: Capability[] = [
   },
   {
     group: 'On your screen',
+    title: 'Read an official letter',
+    example: 'what does this letter say',
+    keywords: 'document form invoice bill contract deadline paperwork brief rechnung bescheid amt behörde',
+    requires: 'Ctrl+Shift+S first'
+  },
+  {
+    group: 'On your screen',
     title: 'Act on selected text',
     example: 'translate this into English',
     keywords: 'selection rewrite summarise grammar reply',
