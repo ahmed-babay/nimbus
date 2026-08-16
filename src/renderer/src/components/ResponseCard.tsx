@@ -1181,15 +1181,45 @@ function BriefingBody({ data }: { data: BriefingCardData }) {
   )
 }
 
+/** Drops a reminder from the list without waiting for a reload. */
+function CancelReminder({ id, onGone }: { id: string; onGone: (id: string) => void }) {
+  return (
+    <button
+      onClick={() => {
+        // Removed from the list as soon as the store confirms it, so the row
+        // doesn't linger looking like the click missed.
+        void window.nimbus.cancelReminder(id).then((removed) => {
+          if (removed) onGone(id)
+        })
+      }}
+      // Named for screen readers; the glyph alone says nothing out loud.
+      aria-label="Cancel this reminder"
+      title="Cancel this reminder"
+      className="shrink-0 rounded px-1 text-[11px] leading-none text-nimbus-text-dim transition-colors hover:bg-white/[0.08] hover:text-nimbus-negative"
+    >
+      ×
+    </button>
+  )
+}
+
 function ReminderBody({ data }: { data: ReminderCardData }) {
   const { created } = data
+  // Cancelled rows are tracked here rather than by refetching: the card is
+  // handed a snapshot, and asking the main process for a fresh list would
+  // rebuild the whole response for one deletion.
+  const [cancelled, setCancelled] = useState<string[]>([])
+  const forget = (id: string): void => setCancelled((current) => [...current, id])
+
   // A fired reminder arrives with only `created` set; a "what's pending"
   // question arrives with only the list.
-  const others = data.pending.filter((item) => item.id !== created?.id)
+  const others = data.pending.filter(
+    (item) => item.id !== created?.id && !cancelled.includes(item.id)
+  )
+  const createdCancelled = created ? cancelled.includes(created.id) : false
 
   return (
     <div className={panel}>
-      {created && (
+      {created && !createdCancelled && (
         <div className="flex items-start gap-2.5">
           <span className="mt-0.5 shrink-0 text-nimbus-yellow">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
@@ -1225,23 +1255,31 @@ function ReminderBody({ data }: { data: ReminderCardData }) {
               )}
             </div>
           </div>
+          <CancelReminder id={created.id} onGone={forget} />
         </div>
       )}
 
       {others.length > 0 && (
-        <ul className={created ? 'mt-2.5 space-y-1 border-t border-white/[0.07] pt-2' : 'space-y-1'}>
+        <ul
+          className={
+            created && !createdCancelled
+              ? 'mt-2.5 space-y-1 border-t border-white/[0.07] pt-2'
+              : 'space-y-1'
+          }
+        >
           {others.slice(0, 5).map((item) => (
             <li key={item.id} className="flex items-baseline gap-2 text-[11px]">
               <span className="shrink-0 tabular-nums text-nimbus-text-dim">
                 {new Date(item.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </span>
               <span className="min-w-0 flex-1 truncate text-nimbus-text">{item.text}</span>
+              <CancelReminder id={item.id} onGone={forget} />
             </li>
           ))}
         </ul>
       )}
 
-      {!created && others.length === 0 && (
+      {(!created || createdCancelled) && others.length === 0 && (
         <div className="text-[11px] text-nimbus-text-dim">No reminders set.</div>
       )}
     </div>

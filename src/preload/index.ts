@@ -79,6 +79,8 @@ const api = {
     sourceHint: string
   ): Promise<Subtitle | null> =>
     ipcRenderer.invoke(IPC.SUBTITLE_FOR, pcm, offsetMs, previous, sourceHint),
+  cancelReminder: (id: string): Promise<boolean> =>
+    ipcRenderer.invoke(IPC.CANCEL_REMINDER, id),
   getQuotas: (): Promise<QuotaLine[]> => ipcRenderer.invoke(IPC.GET_QUOTAS),
   isWakeWordReady: (): Promise<boolean> => ipcRenderer.invoke(IPC.WAKE_WORD_READY),
   /** Returns only whether it was the wake phrase — never what was said. */

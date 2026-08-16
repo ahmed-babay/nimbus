@@ -56,7 +56,7 @@
     "native": "English"
   },
   "wakeWord": {
-    "enabled": true,
-    "phrase": "hello nimbus"
+    "enabled": false,
+    "phrase": "hi nimbus"
   }
 }
