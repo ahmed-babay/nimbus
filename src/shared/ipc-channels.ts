@@ -31,6 +31,8 @@ export const IPC = {
   SET_MOUSE_IGNORE: 'nimbus:set-mouse-ignore',
   /** renderer -> main: put an answer on the clipboard */
   COPY_TEXT: 'nimbus:copy-text',
+  /** main -> renderer: a reminder came due; payload is the Reminder to show and speak */
+  REMINDER_DUE: 'nimbus:reminder-due',
   /** main -> region picker: the frozen screenshot to drag a selection over */
   REGION_IMAGE: 'nimbus:region-image',
   /** region picker -> main: chosen region (0..1), or null to cancel */

@@ -10,6 +10,7 @@ export type NimbusIntent =
   | 'directions'
   | 'remember'
   | 'recall'
+  | 'remind'
   | 'chat'
 
 export interface IntentClassification {
@@ -172,6 +173,33 @@ export interface TransitCardData {
   journeys: TransitJourney[]
 }
 
+export interface Reminder {
+  id: string
+  /** When it fires, ISO. */
+  at: string
+  /** What to say — already phrased as the spoken line. */
+  text: string
+  /**
+   * A "leave now" alarm worked out from a departure, rather than a plain
+   * time the user named. Kept so the card can show why it's set when it is.
+   */
+  departure?: {
+    line: string
+    departs: string
+    from: string
+    to: string
+    /** Travel time to the stop that was subtracted, in minutes. */
+    travelMinutes: number
+  }
+  fired: boolean
+}
+
+export interface ReminderCardData {
+  /** The one just created, when this card is confirming a new reminder. */
+  created: Reminder | null
+  pending: Reminder[]
+}
+
 /** Something the user asked Nimbus to remember about them. */
 export interface MemoryFact {
   id: string
@@ -272,6 +300,7 @@ export type ResponseCardData =
   | { type: 'selection'; data: SelectionCardData }
   | { type: 'directions'; data: DirectionsCardData }
   | { type: 'memory'; data: MemoryCardData }
+  | { type: 'reminder'; data: ReminderCardData }
   | { type: 'explainer'; data: ExplainerCardData }
   | { type: 'text' }
 
