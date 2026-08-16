@@ -244,7 +244,7 @@ async function runIntent(
         }
       }
 
-      case 'remind': {
+      case 'alarm': {
         if (params.cancel !== undefined && !params.task && !params.when && !params.leaveFor) {
           const cancelled = cancelReminders(params.cancel)
           return {

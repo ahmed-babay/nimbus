@@ -10,7 +10,7 @@ export type NimbusIntent =
   | 'directions'
   | 'remember'
   | 'recall'
-  | 'remind'
+  | 'alarm'
   | 'chat'
 
 export interface IntentClassification {

@@ -23,6 +23,7 @@ const VALID_INTENTS: NimbusIntent[] = [
   'directions',
   'remember',
   'recall',
+  'alarm',
   'chat'
 ]
 
@@ -98,7 +99,7 @@ the relevant parameter for it, leaving the others empty:
   "Remind me…" is not automatically recall: "remind me what the weather is"
   wants today's weather, not something said before. Use "recall" only when
   they are asking about a past conversation.
-- "remind": asking to be told something later, or asking what reminders exist.
+- "alarm": asking to be told something later, or asking what reminders exist.
   -> params.task (what to remind them about, phrased as the spoken line:
      "call the landlord". Omit when they're just asking what's pending.)
   -> params.when (ISO 8601 datetime for when it should fire — work it out from
