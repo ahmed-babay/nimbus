@@ -7,7 +7,8 @@
     "github": true,
     "search": true,
     "music": true,
-    "transit": true
+    "transit": true,
+    "maps": true
   },
   "hotkey": {
     "enabled": true,
@@ -29,6 +30,9 @@
     "deep": true,
     "plan": true,
     "maxQueries": 3
+  },
+  "location": {
+    "home": "Darmstadt Hbf"
   },
   "transit": {
     "defaultOrigin": "Darmstadt Hbf"

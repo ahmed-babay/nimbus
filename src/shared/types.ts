@@ -7,6 +7,7 @@ export type NimbusIntent =
   | 'search'
   | 'music'
   | 'transit'
+  | 'directions'
   | 'chat'
 
 export interface IntentClassification {
@@ -169,6 +170,43 @@ export interface TransitCardData {
   journeys: TransitJourney[]
 }
 
+export type TravelMode = 'driving' | 'cycling' | 'walking' | 'transit'
+
+export interface RouteOption {
+  mode: TravelMode
+  /** Null for public transport, where a road distance means nothing. */
+  distanceKm: number | null
+  durationMinutes: number | null
+}
+
+/** One map tile, already downloaded, positioned in the map's pixel space. */
+export interface MapTile {
+  x: number
+  y: number
+  /** base64 data URI — the overlay's CSP blocks remote image URLs. */
+  image: string
+}
+
+export interface RenderedMap {
+  width: number
+  height: number
+  tiles: MapTile[]
+  /** Route lines as pixel coordinates, keyed by travel mode. */
+  routes: Record<string, Array<[number, number]>>
+  start: [number, number]
+  end: [number, number]
+}
+
+export interface DirectionsCardData {
+  from: string
+  to: string
+  selected: TravelMode
+  options: RouteOption[]
+  /** Real departures, when public transport is an option between these points. */
+  transit: TransitCardData | null
+  map: RenderedMap
+}
+
 export type TextActionKind =
   | 'translate'
   | 'summarize'
@@ -207,6 +245,7 @@ export type ResponseCardData =
   | { type: 'transit'; data: TransitCardData }
   | { type: 'screen'; data: ScreenCardData }
   | { type: 'selection'; data: SelectionCardData }
+  | { type: 'directions'; data: DirectionsCardData }
   | { type: 'explainer'; data: ExplainerCardData }
   | { type: 'text' }
 
@@ -239,6 +278,7 @@ export interface NimbusConfig {
     search: boolean
     music: boolean
     transit: boolean
+    maps: boolean
   }
   hotkey: {
     enabled: boolean
@@ -261,6 +301,11 @@ export interface NimbusConfig {
   screenshot: {
     /** Drag to pick a region instead of grabbing the whole display. */
     selectRegion: boolean
+  }
+  location: {
+    /** Where 'from here' means. A street address is far more precise than
+     *  the city-level guess an IP lookup gives. */
+    home: string
   }
   transit: {
     /** Used when you say "trains to Frankfurt" without naming a start. */
