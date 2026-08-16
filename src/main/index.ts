@@ -14,6 +14,7 @@ import { runTextAction } from '../services/text-actions'
 import type { TextActionKind } from '../shared/types'
 import { transcribeAudio } from '../services/whisper'
 import { synthesizeSpeech } from '../services/tts'
+import { withDeadline } from '../services/http'
 import { IPC } from '../shared/ipc-channels'
 import type { NimbusConfig, NimbusResponse, SynthesizedSpeech } from '../shared/types'
 import config from '../../config.json'
@@ -31,6 +32,10 @@ app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
 // before a screenshot is taken. Without it the overlay is still on screen in
 // the captured frame even though the window reports itself hidden.
 const OVERLAY_HIDE_REPAINT_MS = 180
+// Upper bound on a whole turn, covering intent routing plus whatever service
+// it calls. Generous enough for a slow search, short enough that a stuck
+// dependency surfaces as an error rather than a spinner that never ends.
+const TURN_DEADLINE_MS = 25000
 
 let overlayWindow: BrowserWindow | null = null
 // Held only between the capture hotkey and the question that follows it, then
@@ -53,7 +58,11 @@ function registerIpcHandlers(): void {
       const capture = pendingCapture
       pendingCapture = null
       try {
-        const speech = await askAboutScreen(utterance, capture, stream)
+        const speech = await withDeadline(
+          askAboutScreen(utterance, capture, stream),
+          TURN_DEADLINE_MS,
+          'Reading the screen'
+        )
         recordTurn('user', utterance)
         recordTurn('model', speech)
         return { speech, card: { type: 'screen', data: { thumbnail: capture.thumbnail } } }
@@ -65,7 +74,17 @@ function registerIpcHandlers(): void {
       }
     }
 
-    const response = await handleUtterance(utterance, stream)
+    // Backstop: no matter what a service does, this handler always settles.
+    // An un-timed-out fetch once left the overlay on "Thinking…" indefinitely
+    // with no error to show, which is worse than simply failing.
+    const response = await withDeadline(
+      handleUtterance(utterance, stream),
+      TURN_DEADLINE_MS,
+      'That'
+    ).catch((err: unknown) => ({
+      speech: err instanceof Error ? err.message : 'Something went wrong.',
+      card: { type: 'text' } as const
+    }))
 
     // "Play X" means play it — open the video straight away in the default
     // browser, which uses YouTube's own player and the user's own session.
