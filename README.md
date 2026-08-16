@@ -454,6 +454,35 @@ If you'd rather have *specific tracks* playing in-app too, that needs a catalogu
 licenses direct streaming — [Jamendo](https://developer.jamendo.com/) (free key, Creative
 Commons) is the usual choice, and would slot in beside `radio.ts`.
 
+## What Nimbus remembers between sessions
+
+Until this existed, closing the app meant every answer it had ever given was gone and it
+re-learned who you were on each launch. `src/services/memory.ts` keeps two things in
+`userData/memory.json`, split because they behave differently:
+
+**Facts** — a short profile you dictate. "Remember that I take the RB68 to work", "my home
+station is Luisenplatz", "forget what I said about the gym". These are small enough to put
+in front of the model on *every* turn, which is the entire point: it stops re-asking what
+it already knows. The classifier rewrites them into standalone statements, so "remember
+that I take the RB68 to work" is stored as "Takes the RB68 to work". Capped at 40, and
+restating one replaces it rather than growing the prompt.
+
+**Answers** — an append-only archive, searchable by voice: "what was that station you told
+me about", "what did I ask about the tickets". Never injected wholesale; there could be
+thousands. Search is plain keyword scoring with a double weight on matches in the question,
+which carries the topic more reliably than the answer body. Deliberately not embeddings —
+that would mean a paid API on every write or a local model, and for "what was that station
+you mentioned" the words you say are very nearly the words you said the first time.
+
+Two robustness details, both verified rather than assumed: writes go through a temp file
+and a rename, so a crash mid-write leaves the previous store intact instead of a
+half-written file that fails to parse forever after; and a corrupt store logs and starts
+empty rather than crashing the app on every launch from then on.
+
+This is separate from the rolling 12-turn window in `src/services/conversation.ts`, which
+exists so follow-ups like "what about tomorrow?" resolve and is *supposed* to be discarded
+when the overlay closes.
+
 ## Conversation memory
 
 `src/services/conversation.ts` keeps a rolling window of the last 12 turns in the main
