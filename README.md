@@ -322,6 +322,60 @@ How it reads another app's selection, since there's no API for that:
 The capture costs roughly 0.7s, which is PowerShell's start-up time — a persistent helper
 process would remove it if that ever becomes annoying.
 
+## Paperwork mode
+
+Capture an official letter (Ctrl+Shift+S) and ask about it — "what does this letter say",
+"was steht in diesem Schreiben" — and instead of prose you get the four things that actually
+matter from a Behörde letter: **what it is, what it wants from you, by when, and how much.**
+Those are the hardest things to find in a formal letter written in a language you don't read
+well, and the most expensive to get wrong.
+
+Verified against a rendered Stadtwerke electricity bill:
+
+```
+type      : Invoice              sender    : Stadtwerke Darmstadt AG
+amount    : 284,60 EUR           reference : R-2026-88134
+deadline  : 2026-08-31   ← from "bis zum 31.08.2026"
+action    : Transfer the requested amount quoting the invoice number before the deadline.
+also      : late interest 5pp above base rate · monthly payment auto-rises to
+            96,00 EUR on 01.09.2026 · right to object in writing within six weeks
+```
+
+It picked the invoice number over the customer number, preserved the German decimal comma,
+resolved the deadline to a real date, and caught all three consequential clauses — while
+answering in `language.native`.
+
+The deadline is a **button**, not a line of text: one click sets a reminder for it, because a
+due date you have to re-enter by hand is a due date you forget. "Draft a reply" and "More
+detail" sit next to it.
+
+Routing is a **keyword test**, not another model call — instant, free and predictable, in
+both your language and German (`Schreiben`, `Rechnung`, `Bescheid`, `Mahnung`, `Frist`…).
+"What is on my screen" and "what is this error" deliberately stay on the prose path. If the
+structured read fails for any reason, it falls through to the ordinary screen answer rather
+than losing the capture.
+
+### On ambient capture, deliberately not built
+
+Two features were designed and then **cut on privacy grounds**, and the reasoning is worth
+keeping:
+
+- **Screen rewind** (a rolling buffer of screenshots so you could ask about something that
+  already scrolled past)
+- **Clipboard watching** (offering actions on whatever you copy)
+
+Everything Nimbus reads today is *explicitly captured*: you press a hotkey, one frame or one
+selection is taken, used for that turn, and dropped. Consent is per-capture and the blast
+radius is the thing you chose. Both cut features invert that — consent once, capture forever
+— and you cannot pre-approve what will be on screen or on your clipboard in two minutes.
+Password managers work by putting secrets on the clipboard; a screen buffer is a new
+on-disk archive of banking, messages and internal tools, and answering from it means
+sending those frames to a model. The payoff was convenience. Bad trade, so: not built.
+
+The rule this leaves: **explicit capture is fine, ambient capture of content is not.** Wake
+word is the interesting edge — ambient *listening* but not ambient *disclosure*, since Vosk
+runs offline and nothing leaves the machine until the wake word fires.
+
 ## Ask about your screen
 
 Press **Ctrl+Shift+S** (configurable) and the screen freezes so you can **drag a box around
