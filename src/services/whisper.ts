@@ -1,4 +1,5 @@
 import { httpFetch } from './http'
+import { transcriptionHint } from './region'
 
 const TRANSCRIPTION_URL = 'https://api.groq.com/openai/v1/audio/transcriptions'
 
@@ -50,6 +51,12 @@ export async function transcribeAudio(audio: Buffer, mimeType: string): Promise<
   form.append('file', new Blob([audio], { type: mimeType }), `audio.${extension}`)
   form.append('model', process.env.GROQ_WHISPER_MODEL || 'whisper-large-v3-turbo')
   form.append('response_format', 'json')
+  // Whisper takes an optional prompt as a vocabulary hint. Naming the region
+  // measurably improves local place names — "Lusenplatz" became "Luisenplatz"
+  // and "Mephilden hole" became "Mathildenhole" on the same audio. It doesn't
+  // fix everything, so the intent router corrects what's left.
+  const hint = transcriptionHint()
+  if (hint) form.append('prompt', hint)
 
   const res = await httpFetch(TRANSCRIPTION_URL, {
     label: 'Groq',
