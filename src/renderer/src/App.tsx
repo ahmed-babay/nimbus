@@ -139,6 +139,7 @@ export default function App() {
                         speechProgressRef={speechProgressRef}
                         radio={radio}
                         onReplace={replaceSelection}
+                        onAsk={submitText}
                       />
                     ) : error ? (
                       <p className="text-[13px] leading-relaxed text-nimbus-negative">{error}</p>

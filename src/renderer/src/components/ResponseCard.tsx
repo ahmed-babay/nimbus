@@ -18,6 +18,7 @@ import type {
   MusicCardData,
   NewsCardData,
   NimbusResponse,
+  PaperworkCardData,
   RadioCardData,
   ReminderCardData,
   RenderedMap,
@@ -36,6 +37,8 @@ interface ResponseCardProps {
   speechProgressRef: RefObject<number>
   radio: RadioPlayerControls
   onReplace: (text: string) => void
+  /** Sends a follow-up through the normal pipeline, for card buttons. */
+  onAsk: (text: string) => void
 }
 
 const panel =
@@ -49,7 +52,13 @@ const mediaIn = {
 }
 
 /** Generic response card; body varies by `card.type`. */
-export function ResponseCard({ response, speechProgressRef, radio, onReplace }: ResponseCardProps) {
+export function ResponseCard({
+  response,
+  speechProgressRef,
+  radio,
+  onReplace,
+  onAsk
+}: ResponseCardProps) {
   // When the answer was too long to speak in full, show the whole thing —
   // and skip the spoken-word reveal, which only tracks the spoken portion.
   const displayText = response.fullText ?? response.speech
@@ -73,7 +82,7 @@ export function ResponseCard({ response, speechProgressRef, radio, onReplace }: 
         className="whitespace-pre-wrap text-[13px] leading-relaxed text-nimbus-text"
       />
 
-      <CardBody card={response.card} radio={radio} onReplace={onReplace} />
+      <CardBody card={response.card} radio={radio} onReplace={onReplace} onAsk={onAsk} />
 
       {showCopy && <CopyButton text={displayText} />}
     </motion.div>
@@ -101,11 +110,13 @@ function CopyButton({ text }: { text: string }) {
 function CardBody({
   card,
   radio,
-  onReplace
+  onReplace,
+  onAsk
 }: {
   card: ResponseCardData
   radio: RadioPlayerControls
   onReplace: (text: string) => void
+  onAsk: (text: string) => void
 }) {
   switch (card.type) {
     case 'weather':
@@ -140,6 +151,8 @@ function CardBody({
       return <EventBody data={card.data} />
     case 'explainer':
       return <ExplainerBody data={card.data} />
+    case 'paperwork':
+      return <PaperworkBody data={card.data} onAsk={onAsk} />
     case 'screen':
       return <ScreenBody data={card.data} />
     case 'selection':
@@ -308,6 +321,98 @@ function SelectionBody({
 }
 
 /** Shows the exact frame the answer was based on. */
+/**
+ * An official letter, reduced to what you have to act on. The deadline is a
+ * button rather than a line of text: a due date you have to re-enter by hand
+ * is a due date you forget.
+ */
+function PaperworkBody({ data, onAsk }: { data: PaperworkCardData; onAsk: (text: string) => void }) {
+  const facts: Array<[string, string]> = [
+    ['From', data.sender],
+    ['Amount', data.amount],
+    ['Reference', data.reference]
+  ]
+
+  return (
+    <div className={panel}>
+      <div className="flex items-start gap-2.5">
+        <motion.img
+          {...mediaIn}
+          src={data.thumbnail}
+          alt="The document that was read"
+          className="h-[62px] w-[46px] shrink-0 rounded object-cover object-top ring-1 ring-white/15"
+        />
+        <div className="min-w-0 flex-1">
+          <div className="text-[11.5px] font-medium text-nimbus-accent-bright">
+            {data.documentType}
+          </div>
+          {data.actionRequired && (
+            <div className="mt-0.5 text-[12px] leading-snug text-nimbus-text">
+              {data.actionRequired}
+            </div>
+          )}
+          {data.deadlineLabel && (
+            <div className="mt-1 inline-block rounded bg-nimbus-yellow/15 px-1.5 py-0.5 text-[10px] text-nimbus-yellow">
+              {data.deadlineLabel}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {facts.some(([, value]) => value) && (
+        <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5">
+          {facts
+            .filter(([, value]) => value)
+            .map(([label, value]) => (
+              <div key={label} className="contents">
+                <dt className="text-[10px] text-nimbus-text-dim">{label}</dt>
+                <dd className="min-w-0 truncate text-[10.5px] text-nimbus-text">{value}</dd>
+              </div>
+            ))}
+        </dl>
+      )}
+
+      {data.keyPoints.length > 0 && (
+        <ul className="mt-2 space-y-0.5 border-t border-white/[0.07] pt-2">
+          {data.keyPoints.map((point) => (
+            <li key={point} className="flex gap-1.5 text-[10.5px] leading-snug text-nimbus-text-dim">
+              <span className="shrink-0 text-nimbus-cyan">•</span>
+              <span className="min-w-0 flex-1">{point}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className="mt-2 flex flex-wrap gap-1.5 border-t border-white/[0.07] pt-2">
+        {data.deadline && (
+          <button
+            onClick={() =>
+              onAsk(
+                `remind me on ${data.deadline} about ${data.documentType}${data.sender ? ` from ${data.sender}` : ''}`
+              )
+            }
+            className="rounded-lg border border-nimbus-yellow/40 px-2 py-1 text-[10px] text-nimbus-yellow transition-colors hover:bg-nimbus-yellow/15"
+          >
+            Remind me
+          </button>
+        )}
+        <button
+          onClick={() => onAsk(`draft a reply to this ${data.documentType.toLowerCase()}`)}
+          className="rounded-lg border border-nimbus-border px-2 py-1 text-[10px] text-nimbus-text-dim transition-colors hover:bg-white/[0.06] hover:text-nimbus-text"
+        >
+          Draft a reply
+        </button>
+        <button
+          onClick={() => onAsk('explain this document to me in more detail')}
+          className="rounded-lg border border-nimbus-border px-2 py-1 text-[10px] text-nimbus-text-dim transition-colors hover:bg-white/[0.06] hover:text-nimbus-text"
+        >
+          More detail
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function ScreenBody({ data }: { data: ScreenCardData }) {
   return (
     <motion.div {...mediaIn} className="mt-2.5">
