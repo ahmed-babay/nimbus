@@ -250,14 +250,80 @@ export async function classifyIntent(utterance: string): Promise<IntentClassific
     const intent: NimbusIntent = VALID_INTENTS.includes(parsed.intent) ? parsed.intent : 'chat'
     const rawParams: Record<string, string> =
       parsed.params && typeof parsed.params === 'object' ? parsed.params : {}
-    // Drop empty-string params the model left blank for unused fields.
-    const params = Object.fromEntries(
-      Object.entries(rawParams).filter(([, value]) => typeof value === 'string' && value.length > 0)
-    )
-    return { intent, params }
+    return { intent, params: cleanParams(rawParams, utterance) }
   } catch {
     return { intent: 'chat', params: {} }
   }
+}
+
+
+/**
+ * Words a model writes when it has nothing to say but the schema demands a
+ * string anyway.
+ */
+const PLACEHOLDERS = new Set(['none', 'n/a', 'na', 'null', 'nil', 'unknown', 'empty', '-', 'chat'])
+
+/** Short openers that are never a request for information. */
+const GREETING = /^(hi|hey|hello|yo|hiya|sup|greetings)/i
+const PLEASANTRY =
+  /^(thanks|thank you|thx|cheers|ok|okay|cool|nice|great|bye|goodbye|see you|good morning|good afternoon|good evening|good night|how are you|how's it going|what's up)/i
+
+/** True for openers and sign-offs that never carry a request. */
+function isSmallTalk(utterance: string): boolean {
+  const text = utterance.trim().replace(/[!.?]+$/, '')
+  // Length-capped so "hey, how far is the airport" is still a real question.
+  if (text.length > 24) return false
+  return GREETING.test(text) || PLEASANTRY.test(text)
+}
+
+/**
+ * Filters what the router extracted down to what the user actually said.
+ *
+ * A constrained-decoding grammar has to emit a value for every property in the
+ * schema, so a local model asked to route "hi" cannot leave the fields blank —
+ * it invents them. In practice that produced `topic: "Nimbus"` and
+ * `topic: "Berlin"` for plain greetings, which then went off and fetched
+ * Wikipedia photographs of clouds and of Darmstadt. Cloud models sidestepped
+ * this by simply omitting the keys, so the bug only appeared on-device.
+ *
+ * The rule is grounding: a parameter has to be traceable to the utterance.
+ * A real topic is always something the user mentioned — "how does a jet engine
+ * work" yields "jet engine" — whereas an invented one shares no words with
+ * what was said, which makes it cheap to spot without another model call.
+ */
+function cleanParams(raw: Record<string, string>, utterance: string): Record<string, string> {
+  const said = utterance.toLowerCase()
+  const smallTalk = isSmallTalk(utterance)
+
+  const entries = Object.entries(raw).filter(([key, value]) => {
+    if (typeof value !== 'string') return false
+    const trimmed = value.trim()
+    if (!trimmed) return false
+    if (PLACEHOLDERS.has(trimmed.toLowerCase())) return false
+
+    // Nothing is being asked for, so nothing should be extracted.
+    if (smallTalk) return false
+
+    // `topic` only ever drives illustrations, and an illustration of something
+    // the user never mentioned is pure noise.
+    if (key === 'topic') return isGrounded(trimmed, said)
+
+    return true
+  })
+
+  return Object.fromEntries(entries)
+}
+
+/** True when a meaningful word of `value` actually appears in the utterance. */
+function isGrounded(value: string, said: string): boolean {
+  const words = value
+    .toLowerCase()
+    .split(/[^a-z0-9äöüß]+/i)
+    .filter((word) => word.length > 3)
+
+  // Nothing substantial to check against — keep it rather than guess wrong.
+  if (words.length === 0) return true
+  return words.some((word) => said.includes(word))
 }
 
 const EVENT_SCHEMA: GenerationConfig = {
