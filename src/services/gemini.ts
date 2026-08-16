@@ -1,9 +1,5 @@
-import {
-  GoogleGenerativeAI,
-  SchemaType,
-  type GenerationConfig,
-  type GenerativeModel
-} from '@google/generative-ai'
+import { SchemaType, type GenerationConfig } from '@google/generative-ai'
+import { buildModel, withModelFallback } from './gemini-client'
 import type { IntentClassification, NimbusIntent } from '../shared/types'
 import { getHistoryAsContents, getHistorySummary } from './conversation'
 
@@ -22,27 +18,6 @@ const VALID_INTENTS: NimbusIntent[] = [
   'music',
   'chat'
 ]
-
-let client: GoogleGenerativeAI | null = null
-
-function getClient(): GoogleGenerativeAI {
-  if (!client) {
-    const apiKey = process.env.GEMINI_API_KEY
-    if (!apiKey) {
-      throw new Error('GEMINI_API_KEY is not set. Add it to your .env file.')
-    }
-    client = new GoogleGenerativeAI(apiKey)
-  }
-  return client
-}
-
-function getModel(systemInstruction: string, generationConfig?: GenerationConfig): GenerativeModel {
-  // "-latest" aliases auto-update to Google's current model for that tier, so
-  // this doesn't go stale the way a pinned version (e.g. "gemini-2.0-flash")
-  // eventually does when Google retires it.
-  const modelName = process.env.GEMINI_MODEL || 'gemini-flash-lite-latest'
-  return getClient().getGenerativeModel({ model: modelName, systemInstruction, generationConfig })
-}
 
 const CLASSIFY_SYSTEM_PROMPT = `You are the intent router for a voice assistant called Nimbus.
 Given a single spoken user utterance, decide which of these intents it matches and extract
@@ -114,13 +89,13 @@ export async function classifyIntent(utterance: string): Promise<IntentClassific
   // Recent turns are prepended so follow-ups resolve: "what about tomorrow?"
   // or "how about Berlin?" only make sense against what was just discussed.
   const context = getHistorySummary()
-  const model = getModel(
-    context
-      ? `${CLASSIFY_SYSTEM_PROMPT}\n\nRecent conversation (for resolving pronouns and follow-ups):\n${context}`
-      : CLASSIFY_SYSTEM_PROMPT,
-    CLASSIFY_SCHEMA
+  const systemInstruction = context
+    ? `${CLASSIFY_SYSTEM_PROMPT}\n\nRecent conversation (for resolving pronouns and follow-ups):\n${context}`
+    : CLASSIFY_SYSTEM_PROMPT
+
+  const result = await withModelFallback((name) =>
+    buildModel(name, systemInstruction, CLASSIFY_SCHEMA).generateContent(utterance)
   )
-  const result = await model.generateContent(utterance)
 
   try {
     const parsed = JSON.parse(result.response.text())
@@ -156,12 +131,12 @@ async function collectStream(
 }
 
 export async function chat(utterance: string, onChunk?: StreamHandler): Promise<string> {
-  const model = getModel(
+  const systemInstruction =
     'You are Nimbus, a concise, friendly voice assistant living in a desktop overlay. ' +
-      'Keep responses to 1-3 short sentences since they will be read aloud by text-to-speech. ' +
-      'Do not use markdown, bullet points, or emoji. ' +
-      'You are mid-conversation — refer back to what was already said when relevant.'
-  )
+    'Keep responses to 1-3 short sentences since they will be read aloud by text-to-speech. ' +
+    'Do not use markdown, bullet points, or emoji. ' +
+    'You are mid-conversation — refer back to what was already said when relevant.'
+
   // Full prior turns (not just a summary) so the model can genuinely follow
   // the thread rather than answering each utterance in isolation.
   const request = {
@@ -169,11 +144,15 @@ export async function chat(utterance: string, onChunk?: StreamHandler): Promise<
   }
 
   if (!onChunk) {
-    const result = await model.generateContent(request)
+    const result = await withModelFallback((name) =>
+      buildModel(name, systemInstruction).generateContent(request)
+    )
     return result.response.text().trim()
   }
 
-  const { stream } = await model.generateContentStream(request)
+  const { stream } = await withModelFallback((name) =>
+    buildModel(name, systemInstruction).generateContentStream(request)
+  )
   return collectStream(stream, onChunk)
 }
 
@@ -183,11 +162,11 @@ export async function formatResponse(
   data: unknown,
   onChunk?: StreamHandler
 ): Promise<string> {
-  const model = getModel(
+  const systemInstruction =
     'You turn structured data into a short, natural spoken sentence (1-3 sentences max) ' +
-      'for a voice assistant named Nimbus. Do not use markdown, bullet points, or emoji ' +
-      'since this will be spoken aloud by text-to-speech.'
-  )
+    'for a voice assistant named Nimbus. Do not use markdown, bullet points, or emoji ' +
+    'since this will be spoken aloud by text-to-speech.'
+
   const context = getHistorySummary(4)
   const prompt = [
     context ? `Recent conversation:\n${context}\n` : '',
@@ -201,10 +180,16 @@ export async function formatResponse(
     .join('\n')
 
   if (!onChunk) {
-    const result = await model.generateContent(prompt)
+    const result = await withModelFallback((name) =>
+      buildModel(name, systemInstruction).generateContent(prompt)
+    )
     return result.response.text().trim()
   }
 
-  const { stream } = await model.generateContentStream(prompt)
+  // Streaming can't retry mid-flight without replaying tokens the UI already
+  // showed, so the fallback applies to opening the stream only.
+  const { stream } = await withModelFallback((name) =>
+    buildModel(name, systemInstruction).generateContentStream(prompt)
+  )
   return collectStream(stream, onChunk)
 }
