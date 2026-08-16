@@ -10,8 +10,19 @@ import { GoogleGenerativeAI, type GenerationConfig, type GenerativeModel } from 
  * looks like congestion falls back to the slower-but-available one rather
  * than failing or hanging the turn.
  */
-const PRIMARY_MODEL = process.env.GEMINI_MODEL || 'gemini-flash-latest'
-const FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL || 'gemini-flash-lite-latest'
+const PRIMARY_MODEL = process.env.GEMINI_MODEL || 'gemini-flash-lite-latest'
+const FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL || 'gemini-flash-latest'
+
+/**
+ * How long to wait on the primary before *also* trying the fallback.
+ *
+ * Falling back only on errors isn't enough: free-tier congestion shows up as
+ * a request that succeeds but takes 20-30 seconds, which is indistinguishable
+ * from broken to anyone waiting. After this the fallback is raced alongside,
+ * and whichever answers first wins — so a slow primary costs a few seconds,
+ * not the whole turn.
+ */
+const PRIMARY_SOFT_TIMEOUT_MS = Number(process.env.GEMINI_SOFT_TIMEOUT_MS || 6000)
 
 let client: GoogleGenerativeAI | null = null
 
@@ -50,14 +61,47 @@ function isOverloaded(error: unknown): boolean {
  * primary is congested. `work` receives the model name so callers can build
  * whatever configuration they need (schemas, system prompts, streaming).
  */
+const FAILED = Symbol('failed')
+const SLOW = Symbol('slow')
+/** A promise that never settles — used to drop a loser from a race. */
+const never = <T,>(): Promise<T> => new Promise<T>(() => {})
+
 export async function withModelFallback<T>(work: (modelName: string) => Promise<T>): Promise<T> {
-  try {
-    return await work(PRIMARY_MODEL)
-  } catch (error) {
-    if (!isOverloaded(error)) throw error
-    console.warn(
-      `[gemini] ${PRIMARY_MODEL} unavailable (${error instanceof Error ? error.message.slice(0, 60) : error}); trying ${FALLBACK_MODEL}`
-    )
-    return work(FALLBACK_MODEL)
-  }
+  const started = Date.now()
+  let primaryError: unknown = null
+
+  // Resolves to FAILED rather than rejecting, so a dead primary ends the race
+  // immediately instead of either winning it or hanging until the timeout.
+  const primary = work(PRIMARY_MODEL).catch((error): T | typeof FAILED => {
+    primaryError = error
+    return FAILED
+  })
+
+  const first = await Promise.race([
+    primary,
+    new Promise<typeof SLOW>((resolve) => setTimeout(() => resolve(SLOW), PRIMARY_SOFT_TIMEOUT_MS))
+  ])
+
+  if (first !== SLOW && first !== FAILED) return first
+
+  // A genuine error (bad request, missing key) won't be fixed by another
+  // model — only congestion is worth a second attempt.
+  if (first === FAILED && primaryError && !isOverloaded(primaryError)) throw primaryError
+
+  console.warn(
+    `[gemini] ${PRIMARY_MODEL} ${first === FAILED ? 'failed' : 'slow'} after ${Date.now() - started}ms; using ${FALLBACK_MODEL}`
+  )
+
+  const fallback = work(FALLBACK_MODEL).catch((error) => {
+    throw primaryError ?? error
+  })
+
+  // Primary already dead — nothing left to race against.
+  if (first === FAILED) return fallback
+
+  // Still in flight: take whichever answers first, ignoring a late failure.
+  return Promise.race([
+    primary.then((value) => (value === FAILED ? never<T>() : value)),
+    fallback
+  ])
 }
