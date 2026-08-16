@@ -50,6 +50,8 @@ export interface NimbusOverlayState {
   /** Whether answers are spoken aloud, and its toggle. */
   ttsEnabled: boolean
   toggleTts: () => void
+  /** Shows the settings panel — reachable without hunting for the tray icon. */
+  openSettings: () => void
   dismiss: () => void
 }
 
@@ -188,6 +190,16 @@ export function useNimbus(): NimbusOverlayState {
   useEffect(() => {
     stopPlaybackNowRef.current = stopPlayback
   }, [stopPlayback])
+
+  const openSettings = useCallback(() => {
+    // Cancels the fade: settings is read-and-type, not glanced at, and having
+    // the panel vanish mid-paste of an API key would be maddening.
+    clearFadeTimer()
+    setIsOpen(true)
+    isOpenRef.current = true
+    hasContentRef.current = true
+    setMode('settings')
+  }, [clearFadeTimer])
 
   const dismiss = useCallback(() => {
     clearFadeTimer()
@@ -830,6 +842,7 @@ export function useNimbus(): NimbusOverlayState {
     toggleMic,
     ttsEnabled,
     toggleTts,
+    openSettings,
     dismiss
   }
 }

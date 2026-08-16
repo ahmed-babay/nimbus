@@ -9,6 +9,8 @@ interface TextInputProps {
   /** Fired on the first keystroke, so the mic can be closed before it hears
    *  typing and submits a competing transcript. */
   onTypingStart?: () => void
+  /** Runs a palette entry that opens a panel rather than asking something. */
+  onAction?: (action: NonNullable<Capability['action']>) => void
   placeholder?: string
 }
 
@@ -26,6 +28,7 @@ export function TextInput({
   onSubmit,
   focusKey,
   onTypingStart,
+  onAction,
   placeholder = 'Type a message, or / to see what I can do…'
 }: TextInputProps) {
   const [value, setValue] = useState('')
@@ -53,6 +56,12 @@ export function TextInput({
   }, [focusKey])
 
   const pick = (capability: Capability): void => {
+    // Some entries are not questions — settings opens a panel instead.
+    if (capability.action) {
+      setValue('')
+      onAction?.(capability.action)
+      return
+    }
     // Deliberately fills the box rather than submitting: you see the phrasing
     // that works, can edit it before sending, and learn it for next time.
     setValue(capability.example)

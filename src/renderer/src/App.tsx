@@ -41,6 +41,7 @@ export default function App() {
     toggleMic,
     ttsEnabled,
     toggleTts,
+    openSettings,
     dismiss
   } = useNimbus()
   // Paced reveal: the model streams in a few big chunks, which otherwise
@@ -118,6 +119,7 @@ export default function App() {
                   onToggleMic={toggleMic}
                   ttsEnabled={ttsEnabled}
                   onToggleTts={toggleTts}
+                  onSettings={openSettings}
                 />
 
                 {/* No items-start here: it would let the scrolling child size
@@ -218,6 +220,7 @@ export default function App() {
                 {/* Always available — talking isn't possible everywhere. */}
                 <TextInput
                   onSubmit={submitText}
+                  onAction={() => openSettings()}
                   focusKey={isVisible}
                   onTypingStart={onTypingStart}
                 />
@@ -249,7 +252,8 @@ function Header({
   micEnabled,
   onToggleMic,
   ttsEnabled,
-  onToggleTts
+  onToggleTts,
+  onSettings
 }: {
   state: NimbusState
   onClose: () => void
@@ -257,6 +261,7 @@ function Header({
   onToggleMic: () => void
   ttsEnabled: boolean
   onToggleTts: () => void
+  onSettings: () => void
 }) {
   return (
     <div className="flex items-center justify-between">
@@ -303,6 +308,14 @@ function Header({
           }`}
         >
           {ttsEnabled ? 'Sound on' : 'Sound off'}
+        </button>
+        <button
+          onClick={onSettings}
+          aria-label="Settings and API keys"
+          title="Settings — API keys and model"
+          className="arcade-type rounded border border-nimbus-border px-1.5 py-0.5 text-[9px] text-nimbus-text-dim transition-colors hover:bg-nimbus-accent/20 hover:text-nimbus-text"
+        >
+          Setup
         </button>
         <button
           onClick={onClose}

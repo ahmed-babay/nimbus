@@ -25,9 +25,19 @@ export interface Capability {
   keywords?: string
   /** Needs something captured first (screenshot, selection). */
   requires?: string
+  /** Opens a panel instead of typing the example — for things that are not
+   *  questions, like the settings screen. */
+  action?: 'settings'
 }
 
 export const CAPABILITIES: Capability[] = [
+  {
+    group: 'Setup',
+    title: 'Settings and API keys',
+    example: 'open settings',
+    keywords: 'api key model provider gemini openai anthropic config setup token',
+    action: 'settings'
+  },
   // Everyday lookups
   {
     group: 'Look things up',
