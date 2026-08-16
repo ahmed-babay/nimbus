@@ -44,6 +44,12 @@ export const IPC = {
   REMINDER_DUE: 'nimbus:reminder-due',
   /** renderer -> main (invoke): one captured piece of video audio, returns a Subtitle or null */
   SUBTITLE_FOR: 'nimbus:subtitle-for',
+  /** renderer -> main (invoke): one captured piece of a meeting, returns the text or null */
+  MEETING_PIECE: 'nimbus:meeting-piece',
+  /** renderer -> main (invoke): write the transcript to a file the user chooses */
+  SAVE_MEETING: 'nimbus:save-meeting',
+  /** renderer -> main (invoke): summarise the captured meeting */
+  SUMMARIZE_MEETING: 'nimbus:summarize-meeting',
   /** main -> region picker: the frozen screenshot to drag a selection over */
   REGION_IMAGE: 'nimbus:region-image',
   /** region picker -> main: chosen region (0..1), or null to cancel */

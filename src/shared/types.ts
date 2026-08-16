@@ -484,3 +484,19 @@ export interface Subtitle {
   /** Position within the session, so lines can't render out of order. */
   offsetMs: number
 }
+
+/** One utterance in a captured meeting. */
+export interface MeetingLine {
+  /** 'you' is this microphone; 'them' is everyone on the far end. */
+  speaker: 'you' | 'them'
+  text: string
+  /** Milliseconds since capture began, used for ordering and timestamps. */
+  offsetMs: number
+}
+
+export interface MeetingSummary {
+  summary: string
+  decisions: string[]
+  actions: string[]
+  openQuestions: string[]
+}

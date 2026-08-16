@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, ipcMain, session, shell } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, session, shell } from 'electron'
 import { electronApp, optimizer } from '@electron-toolkit/utils'
 import dotenv from 'dotenv'
 import { createTray } from './tray'
@@ -20,6 +20,10 @@ import { runTextAction } from '../services/text-actions'
 import type { TextActionKind } from '../shared/types'
 import { transcribeAudio } from '../services/whisper'
 import { subtitleFor, type Subtitle } from '../services/subtitles'
+import { formatTranscript, summarizeMeeting, transcribePiece } from '../services/meeting'
+import type { MeetingLine, MeetingSummary } from '../shared/types'
+import { writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { synthesizeSpeech } from '../services/tts'
 import { withDeadline } from '../services/http'
 import { IPC } from '../shared/ipc-channels'
@@ -262,6 +266,59 @@ function registerIpcHandlers(): void {
         return null
       }
     }
+  )
+
+  ipcMain.handle(
+    IPC.MEETING_PIECE,
+    async (
+      _event,
+      audio: ArrayBuffer,
+      mimeType: string,
+      previous: string
+    ): Promise<string | null> => {
+      // As with subtitles, one failed upload must not end the recording —
+      // losing a sentence of a meeting is recoverable, losing the meeting is
+      // not.
+      try {
+        return await transcribePiece(Buffer.from(audio), mimeType, previous)
+      } catch (error) {
+        console.warn('[meeting] piece failed:', error)
+        return null
+      }
+    }
+  )
+
+  ipcMain.handle(
+    IPC.SAVE_MEETING,
+    async (
+      _event,
+      lines: MeetingLine[],
+      startedAt: number
+    ): Promise<{ ok: boolean; path?: string; error?: string }> => {
+      const when = new Date(startedAt)
+      const stamp = `${when.getFullYear()}-${String(when.getMonth() + 1).padStart(2, '0')}-${String(when.getDate()).padStart(2, '0')}`
+
+      const result = await dialog.showSaveDialog({
+        title: 'Save meeting transcript',
+        defaultPath: join(app.getPath('documents'), `meeting-${stamp}.txt`),
+        filters: [{ name: 'Text', extensions: ['txt'] }]
+      })
+      if (result.canceled || !result.filePath) return { ok: false }
+
+      try {
+        await writeFile(result.filePath, formatTranscript(lines, startedAt), 'utf8')
+        return { ok: true, path: result.filePath }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Could not write the file.'
+        return { ok: false, error: message }
+      }
+    }
+  )
+
+  ipcMain.handle(
+    IPC.SUMMARIZE_MEETING,
+    async (_event, lines: MeetingLine[], startedAt: number): Promise<MeetingSummary> =>
+      summarizeMeeting(lines, startedAt)
   )
 
   ipcMain.handle(IPC.SYNTHESIZE_SPEECH, async (_event, text: string): Promise<SynthesizedSpeech> => {

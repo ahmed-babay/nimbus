@@ -7,6 +7,8 @@ import type {
   NimbusResponse,
   ProviderModel,
   Reminder,
+  MeetingLine,
+  MeetingSummary,
   SecretName,
   SecretStatus,
   Subtitle,
@@ -73,6 +75,15 @@ const api = {
     sourceHint: string
   ): Promise<Subtitle | null> =>
     ipcRenderer.invoke(IPC.SUBTITLE_FOR, audio, mimeType, offsetMs, previous, sourceHint),
+  meetingPiece: (audio: ArrayBuffer, mimeType: string, previous: string): Promise<string | null> =>
+    ipcRenderer.invoke(IPC.MEETING_PIECE, audio, mimeType, previous),
+  saveMeeting: (
+    lines: MeetingLine[],
+    startedAt: number
+  ): Promise<{ ok: boolean; path?: string; error?: string }> =>
+    ipcRenderer.invoke(IPC.SAVE_MEETING, lines, startedAt),
+  summarizeMeeting: (lines: MeetingLine[], startedAt: number): Promise<MeetingSummary> =>
+    ipcRenderer.invoke(IPC.SUMMARIZE_MEETING, lines, startedAt),
   synthesizeSpeech: (text: string): Promise<SynthesizedSpeech> =>
     ipcRenderer.invoke(IPC.SYNTHESIZE_SPEECH, text),
   hide: (): void => {
