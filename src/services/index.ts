@@ -7,13 +7,21 @@ import { getTrendingRepos } from './github'
 import { webSearch } from './search'
 import { research } from './research'
 import { tryIllustrate } from './illustrate'
+import {
+  forgetFacts,
+  getFacts,
+  recentAnswers,
+  recordAnswer,
+  rememberFact,
+  searchAnswers
+} from './memory'
 import { lookupEntity } from './wikipedia'
 import { findMusic } from './music'
 import { findJourneys } from './transit'
 import { getDirections, modeFromUtterance } from './maps'
 import { findStation } from './radio'
 import { recordTurn } from './conversation'
-import type { NimbusResponse, TravelMode } from '../shared/types'
+import type { MemoryCardData, NimbusIntent, NimbusResponse, TravelMode } from '../shared/types'
 import config from '../../config.json'
 
 /**
@@ -42,11 +50,16 @@ function capSpokenLength(text: string): string {
   return trimmed
 }
 
+/** Card shown after storing or dropping a fact: the profile as it now stands. */
+function memoryCard(query: string): MemoryCardData {
+  return { query, answers: [], facts: getFacts() }
+}
+
 export async function handleUtterance(
   utterance: string,
   onChunk?: StreamHandler
 ): Promise<NimbusResponse> {
-  const resolved = await resolveUtterance(utterance, onChunk)
+  const { intent, ...resolved } = await resolveUtterance(utterance, onChunk)
   const spoken = capSpokenLength(resolved.speech)
   const response: NimbusResponse = {
     ...resolved,
@@ -59,15 +72,29 @@ export async function handleUtterance(
   // sitting in history when chat() appends it to its own `contents`.
   recordTurn('user', utterance)
   recordTurn('model', response.speech)
+  // The archive keeps the full answer, not the spoken truncation — the whole
+  // point of looking something up again is getting all of it back.
+  if (intent !== 'recall' && intent !== 'remember') {
+    recordAnswer(utterance, resolved.speech, intent)
+  }
   return response
 }
 
 async function resolveUtterance(
   utterance: string,
   onChunk?: StreamHandler
-): Promise<NimbusResponse> {
+): Promise<NimbusResponse & { intent: NimbusIntent }> {
   const { intent, params } = await classifyIntent(utterance)
+  const response = await runIntent(intent, params, utterance, onChunk)
+  return { ...response, intent }
+}
 
+async function runIntent(
+  intent: NimbusIntent,
+  params: Record<string, string>,
+  utterance: string,
+  onChunk?: StreamHandler
+): Promise<NimbusResponse> {
   try {
     switch (intent) {
       case 'weather': {
@@ -183,6 +210,57 @@ async function resolveUtterance(
           onChunk
         )
         return { speech, card: { type: 'directions', data } }
+      }
+
+      case 'remember': {
+        if (params.forget) {
+          const removed = forgetFacts(params.forget)
+          const speech =
+            removed.length > 0
+              ? `Forgotten: ${removed.map((fact) => fact.text).join('; ')}.`
+              : `I wasn't holding anything about "${params.forget}".`
+          return { speech, card: { type: 'memory', data: memoryCard('') } }
+        }
+
+        const fact = rememberFact(params.fact || utterance)
+        if (!fact) throw new Error("I didn't catch what to remember.")
+        // Skipping the model round-trip keeps this instant, and there's
+        // nothing to phrase — echoing it back is the useful confirmation.
+        return {
+          speech: `Got it — I'll remember that.`,
+          card: { type: 'memory', data: memoryCard('') }
+        }
+      }
+
+      case 'recall': {
+        const query = params.query
+        const answers = query ? searchAnswers(query) : recentAnswers()
+        const facts = getFacts()
+
+        if (answers.length === 0) {
+          // "What do you know about me" searches for nothing useful — the
+          // answer to it is the profile, which would otherwise sit on the
+          // card while the spoken reply claimed there was nothing.
+          if (facts.length > 0) {
+            const speech = await formatResponse('recall', utterance, { knownAboutUser: facts.map((fact) => fact.text) }, onChunk)
+            return { speech, card: { type: 'memory', data: { query: query || '', answers: [], facts } } }
+          }
+          return {
+            speech: query
+              ? `I don't have anything saved about ${query}.`
+              : "I haven't answered anything yet.",
+            card: { type: 'memory', data: memoryCard(query || '') }
+          }
+        }
+        // The model reads the matches back conversationally rather than the
+        // card being the whole answer — this is usually asked hands-free.
+        const speech = await formatResponse(
+          'recall',
+          utterance,
+          answers.map((entry) => ({ asked: entry.question, answered: entry.answer, at: entry.at })),
+          onChunk
+        )
+        return { speech, card: { type: 'memory', data: { query: query || '', answers, facts } } }
       }
 
       case 'search': {
