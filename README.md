@@ -189,6 +189,63 @@ The point is the round trip. A German rent-increase notice, with `native` set to
 You understand it in your language; the reply goes back in theirs, correctly formal, without
 you writing a word of it.
 
+## Running on your own machine
+
+Three of the four models Nimbus uses can run locally, downloaded once from settings and
+then never touching the network. Each is independent — local speech recognition works
+perfectly well while answers still come from Gemini.
+
+| Piece | Model | Size | Replaces | Measured |
+|---|---|---|---|---|
+| Answers | Qwen3.5 0.8B | 532 MB | Gemini | see `local-llm.ts` |
+| Speech to text | Whisper base | 290 MB | **a required Groq key** | 370ms for a 3s utterance |
+| Text to speech | Kokoro 82M | 330 MB | Edge Read Aloud | 588–650ms per sentence |
+| Wake word | — | — | — | keyword spotting, see below |
+
+All of them run on **WebGPU**, which ships bundled with `onnxruntime-node` on every
+platform — there is no CUDA toolkit for anyone to install. That choice was measured rather
+than assumed, on an RTX 3070 laptop:
+
+- **Whisper**, 13.7s of German: 4742ms on CPU, **690ms on WebGPU**, identical transcripts.
+  DirectML was tried and is unusable — quantised weights fail outright and fp32 took 170s
+  to load.
+- **Kokoro**, one 7.3s sentence: ~10.7s on CPU (slower than saying it), **~600ms on
+  WebGPU**. There is deliberately no CPU fallback, because it would be worse than the
+  cloud in every case.
+
+Speech recognition is the one that changes what Nimbus *is*: transcription used to be the
+last thing that made an API key mandatory, so the overlay simply could not hear you
+without one. Now the key is optional and it works on a plane.
+
+Two quirks worth knowing if you touch this:
+
+- **Audio is decoded in the renderer**, not the main process. Chromium has the WebM/Opus
+  codec and Node does not, so `src/renderer/src/lib/pcm.ts` hands 16kHz mono samples across
+  IPC rather than shipping compressed audio to a process that would need a codec bundled to
+  read it.
+- **Whisper guesses language badly on short clips** — three seconds of German came back as
+  *"Good evening. In the today's"* because it decided the clip was English. Both callers
+  now say what language to expect rather than letting it detect one.
+
+### "Hello Nimbus"
+
+Off unless `wakeWord.enabled` is set in `config.json`, and it is honest about what it is:
+**keyword spotting, not a trained wake-word model.** A model like openWakeWord answers
+exactly one question — "was that the phrase?" — and never turns nearby speech into text.
+There is no pretrained model for "Nimbus", and making one means generating synthetic speech
+and training a classifier offline.
+
+So the trade is bounded instead of hidden. It refuses to run without the on-device
+recogniser, so ambient audio is never uploaded anywhere; the main process returns only a
+boolean, so the words never reach the renderer; and nothing is stored. It also suspends
+itself while the overlay is open or Nimbus is speaking — otherwise it hears its own voice
+say the name and wakes in a loop.
+
+Matching allows one edit, so "nimbis" and "limbus" wake it while "minibus" does not. Two
+edits was tried and dropped: it admits "nimble", an ordinary English word, to catch a
+mishearing that was guessed at rather than observed. A false positive opens a hot
+microphone mid-conversation; a false negative costs you saying the name twice.
+
 ## Settings: API keys without a .env file
 
 Open settings from the tray and every key can be pasted in directly, so Nimbus is usable by
@@ -613,6 +670,40 @@ you touch this file:
 The card colour-codes line badges the way the operators do (S-Bahn green, U-Bahn/tram
 cyan, ICE/IC magenta, RB/RE yellow) and counts down to the next departure, so the number
 you actually act on — "in 6 min" — is the one you see first.
+
+### Keeping an eye on one journey
+
+Add "keep me posted", "let me know if it's delayed" or "tell me about any delays" to a
+transit question and Nimbus stops answering once and starts *following* that train.
+
+```
+"I want the 17:30 to Frankfurt, keep me updated"
+  -> The S6 to Frankfurt Hbf leaves Darmstadt Hauptbahnhof at 17:32.
+     It's on time right now. I'll tell you if that changes.
+
+  ...later, unprompted:
+  -> Your S6 to Frankfurt Hbf is now 8 minutes late, leaving at 17:40.
+```
+
+This needs no new API and no key. Every leg the timetable returns carries both
+`scheduledStartTime` and `startTime` — the difference between them *is* the delay — so a
+watch is a stored trip plus a poll every 150 seconds.
+
+Two details in `src/services/watchers.ts` that are less obvious than they look:
+
+- The train is followed by **`tripId`, not by time**. Re-planning the route and taking
+  "the departure nearest 17:30" would quietly switch to a *different* train the moment the
+  watched one slipped past the next one.
+- Re-checking searches from **20 minutes before** the scheduled departure. The planner
+  returns departures strictly *after* the time it's given, so asking it for the watched
+  train's own scheduled time returns every train except that one. That bug made watches go
+  permanently silent — which is indistinguishable from "no delays", and the one failure a
+  delay alert must not have.
+
+Updates are only spoken when the delay actually moves by two minutes or more. A watcher
+that announced "still on time" every few minutes would be switched off within the hour,
+and then it wouldn't be there for the delay that mattered. Watches are dropped ten minutes
+after the train leaves.
 
 ## Clickable results
 
