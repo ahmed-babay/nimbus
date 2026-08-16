@@ -465,8 +465,43 @@ than asking the questions separately) and each is settled independently, so a se
 fails is simply absent rather than taking the briefing down with it. A real run assembles in
 about 2.4 seconds.
 
-Configure it under `briefing` in `config.json`: `commuteTo` for the departures, `weatherCity`,
-and `newsTopic` (empty is fine — see below).
+Configure it under `briefing` in `config.json`: `weatherCity` and `newsTopic` (empty is
+fine — see below).
+
+### Your own days
+
+Tell Nimbus what's happening and it carries it: *"I need to go to Düsseldorf for the Reply
+Leadvise event from the 24th to the 27th"*, *"I'm at my girlfriend's this weekend"*,
+*"dentist on Tuesday"*. Ask *"what have I got coming up"* to hear the list, or *"cancel the
+Düsseldorf trip"* to drop one.
+
+Events are a third kind of thing, deliberately separate from the other two: a **fact** is
+true until you change it, a **reminder** fires once at a minute and is done, an **event**
+occupies whole days, is worth mentioning on each of them, and *stops existing on its own*
+once its last day passes. Expiry happens on read rather than on a timer, so a finished event
+is never mentioned again no matter how long the app was shut. Dates are stored day-granular
+(`YYYY-MM-DD`) because "the 24th to the 27th" has no meaningful time of day, and pretending
+otherwise only invents timezone bugs.
+
+The first version of this section was a **fixed daily commute**, and it was wrong: you don't
+take that train most days, so it trained you to ignore the section. Departures now appear
+only when an event actually calls for them — one starting today or tomorrow, somewhere other
+than home.
+
+**Dates come from their own model call**, not from the intent router. The router reliably
+recognises *that* something is an event and just as reliably drops the dates: its prompt
+covers fifteen intents and ~25 parameters, and the extra fields fall off the end. "Reply
+Leadvise event from the 24th to the 27th" came back with a title and **no dates at all**, and
+tightening the wording made it worse — the one case that had worked stopped working too. A
+short single-purpose prompt gets every case right, and only runs when an event is actually
+being created:
+
+| You say (today is Sun 16 Aug) | Extracted |
+|---|---|
+| "…Reply Leadvise event from the 24th to the 27th" in Düsseldorf | 24 Aug → 27 Aug @Düsseldorf |
+| "dentist on Tuesday" | 18 Aug |
+| "I'm at my girlfriend's this weekend" | 22 Aug → 23 Aug |
+| "conference in Berlin next Monday and Tuesday" | 24 Aug → 25 Aug @Berlin |
 
 Two things the briefing exposed that were quietly wrong elsewhere:
 
