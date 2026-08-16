@@ -4,6 +4,12 @@ import { join } from 'node:path'
 import type { Llama, LlamaChatSession, LlamaContext, LlamaModel } from 'node-llama-cpp'
 import type { LlmRequest } from './llm'
 
+/** The shape node-llama-cpp wants for prior turns. */
+type ChatTurn =
+  | { type: 'system'; text: string }
+  | { type: 'user'; text: string }
+  | { type: 'model'; response: string[] }
+
 /**
  * The model that runs on your own machine.
  *
@@ -96,7 +102,6 @@ export async function unloadLocalModel(): Promise<void> {
   }
   const current = loaded
   loaded = null
-  evaluatedSystem = null
   if (!current) return
   // Disposed innermost first; a context outliving its model crashes the
   // native side rather than throwing.
@@ -175,17 +180,28 @@ function toJsonSchema(schema: Record<string, unknown>): Record<string, unknown> 
   return converted
 }
 
-function buildPrompt(request: LlmRequest): { system: string; prompt: string } {
-  const history = request.messages
-    .slice(0, -1)
-    .map((message) => `${message.role === 'user' ? 'User' : 'Assistant'}: ${message.text}`)
-    .join('\n')
+/**
+ * Splits the request into the chat turns the model's own template expects,
+ * plus the single message it should answer now.
+ *
+ * These used to be flattened into one user message as a "User: ... Assistant:
+ * ..." transcript, which was a bad mistake: a base-style model handed a script
+ * continues the script. Asked for Tesla news mid-conversation it wrote itself
+ * a scene — "I am just checking my phone... the sun is setting over the city"
+ * — because completing a transcript is exactly what the input asked for.
+ * Real turns let the chat template mark the roles, so the model answers the
+ * last message instead of writing the next line of a play.
+ */
+function buildTurns(request: LlmRequest): { history: ChatTurn[]; prompt: string } {
+  const messages = request.messages
+  const history: ChatTurn[] = []
 
-  const last = request.messages[request.messages.length - 1]?.text ?? ''
-  return {
-    system: request.system ?? '',
-    prompt: history ? `${history}\nUser: ${last}` : last
+  for (const message of messages.slice(0, -1)) {
+    if (message.role === 'user') history.push({ type: 'user', text: message.text })
+    else history.push({ type: 'model', response: [message.text] })
   }
+
+  return { history, prompt: messages[messages.length - 1]?.text ?? '' }
 }
 
 /**
@@ -207,27 +223,14 @@ function enqueue<T>(work: () => Promise<T>): Promise<T> {
  * Prepares the shared session for a turn. Nimbus manages its own conversation
  * history, so the model's is cleared each time rather than allowed to grow.
  */
-let evaluatedSystem: string | null = null
-
-async function beginTurn(system: string): Promise<LlamaChatSession> {
+async function beginTurn(system: string, history: ChatTurn[]): Promise<LlamaChatSession> {
   const { session } = await load()
 
   // Deliberately not `resetChatHistory()`, which throws away the sequence's
-  // evaluated state: setting the history to the same system message lets
-  // llama.cpp keep whatever prefix still matches.
-  //
-  // Measured honestly, this did not speed anything up — a routing call stayed
-  // at roughly 3s either way, so the cost is the grammar-constrained sampling
-  // rather than the ~2,100-token prompt. It is kept because discarding state
-  // we might reuse is still the wrong default, not because it is a win.
-  if (system !== evaluatedSystem) {
-    session.setChatHistory(system ? [{ type: 'system', text: system }] : [])
-    evaluatedSystem = system
-  } else {
-    // Same prompt as last time: drop the previous turn's exchange, keep the
-    // cached system prefix.
-    session.setChatHistory([{ type: 'system', text: system }])
-  }
+  // evaluated state: setting the history explicitly lets llama.cpp keep
+  // whatever prefix still matches.
+  const turns: ChatTurn[] = system ? [{ type: 'system', text: system }, ...history] : [...history]
+  session.setChatHistory(turns as Parameters<typeof session.setChatHistory>[0])
 
   return session
 }
@@ -266,10 +269,10 @@ export async function localComplete(request: LlmRequest): Promise<string> {
     throw new Error('The local model cannot read images yet. Switch to a cloud provider for that.')
   }
 
-  const { system, prompt } = buildPrompt(request)
+  const { history, prompt } = buildTurns(request)
 
   return enqueue(async () => {
-    const session = await beginTurn(system)
+    const session = await beginTurn(request.system ?? '', history)
     const options: Record<string, unknown> = {
       ...NO_THINKING,
       temperature: request.temperature ?? 0.7
@@ -297,10 +300,10 @@ export async function localStreamComplete(
   request: LlmRequest,
   onChunk: (text: string) => void
 ): Promise<string> {
-  const { system, prompt } = buildPrompt(request)
+  const { history, prompt } = buildTurns(request)
 
   return enqueue(async () => {
-    const session = await beginTurn(system)
+    const session = await beginTurn(request.system ?? '', history)
     const answer = await session.prompt(prompt, {
       ...NO_THINKING,
       temperature: request.temperature ?? 0.7,
