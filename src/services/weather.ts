@@ -1,4 +1,5 @@
 import type { WeatherCardData } from '../shared/types'
+import { httpFetch } from './http'
 
 const BASE_URL = 'https://api.openweathermap.org/data/2.5/weather'
 
@@ -19,7 +20,7 @@ export async function getWeather(city: string): Promise<WeatherCardData> {
   }
 
   const url = `${BASE_URL}?q=${encodeURIComponent(city)}&units=metric&appid=${apiKey}`
-  const res = await fetch(url)
+  const res = await httpFetch(url, { label: 'OpenWeatherMap' })
 
   if (!res.ok) {
     if (res.status === 404) {

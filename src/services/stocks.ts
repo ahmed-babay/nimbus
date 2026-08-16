@@ -1,4 +1,5 @@
 import type { StockCardData } from '../shared/types'
+import { httpFetch } from './http'
 
 const CHART_URL = 'https://query1.finance.yahoo.com/v8/finance/chart'
 const SEARCH_URL = 'https://query1.finance.yahoo.com/v1/finance/search'
@@ -18,7 +19,7 @@ interface YahooSearchResponse {
  * 404'd. Callers try the input as a symbol first and only come here on a miss.
  */
 async function searchSymbol(input: string): Promise<string | null> {
-  const res = await fetch(
+  const res = await httpFetch(
     `${SEARCH_URL}?q=${encodeURIComponent(input)}&quotesCount=5&newsCount=0`,
     { headers: { 'User-Agent': BROWSER_UA } }
   )
@@ -39,7 +40,7 @@ async function searchSymbol(input: string): Promise<string | null> {
 async function fetchQuote(
   ticker: string
 ): Promise<{ meta: YahooChartResult['meta']; history: number[] } | null> {
-  const res = await fetch(`${CHART_URL}/${encodeURIComponent(ticker)}?interval=1d&range=1mo`, {
+  const res = await httpFetch(`${CHART_URL}/${encodeURIComponent(ticker)}?interval=1d&range=1mo`, {
     headers: { 'User-Agent': BROWSER_UA }
   })
   if (!res.ok) return null

@@ -1,4 +1,5 @@
 import type { SearchCardData, SearchResult } from '../shared/types'
+import { httpFetch } from './http'
 
 const SEARCH_URL = 'https://api.tavily.com/search'
 
@@ -36,7 +37,8 @@ export async function webSearch(query: string): Promise<SearchCardData> {
     )
   }
 
-  const res = await fetch(SEARCH_URL, {
+  const res = await httpFetch(SEARCH_URL, {
+    label: 'Tavily',
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
