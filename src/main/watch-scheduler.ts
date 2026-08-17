@@ -22,6 +22,9 @@ import { checkPriceAlerts, priceAlerts, type PriceUpdate } from '../services/wat
 
 const TICK_MS = 150_000
 
+/** Long enough for the app to finish appearing before it starts fetching. */
+const FIRST_CHECK_DELAY_MS = 8_000
+
 let timer: ReturnType<typeof setInterval> | null = null
 let checking = false
 
@@ -70,7 +73,11 @@ export function startWatchScheduler({ onUpdate }: WatchHooks): void {
     }
   }
 
-  void tick()
+  // Not immediately. Startup is the busiest moment the app has — Vite is
+  // building, Electron is booting, the window is being composited — and a
+  // burst of network calls competing with that is felt as lag rather than
+  // seen as data. Nothing here is time-critical to the second.
+  setTimeout(() => void tick(), FIRST_CHECK_DELAY_MS)
   timer = setInterval(() => void tick(), TICK_MS)
 
   const waiting = activeWatches().length + activeOutdoorWatches().length + priceAlerts().length

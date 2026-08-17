@@ -29,6 +29,14 @@ export default defineConfig({
         '@shared': resolve('src/shared')
       }
     },
-    plugins: [react(), tailwindcss()]
+    plugins: [react(), tailwindcss()],
+    // Pre-bundled up front rather than discovered lazily. Vite optimises a
+    // dependency the first time something imports it, and discovering one
+    // mid-session triggers a re-bundle plus a full page reload — which on a
+    // laptop already busy starting Electron is felt as a stall. Listing the
+    // heavy ones moves that work into startup, where it happens once.
+    optimizeDeps: {
+      include: ['react', 'react-dom', 'react/jsx-runtime', 'framer-motion']
+    }
   }
 })
