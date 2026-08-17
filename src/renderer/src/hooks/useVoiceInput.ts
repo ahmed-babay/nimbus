@@ -125,11 +125,38 @@ export interface UseVoiceInputOptions {
   endOfSpeechMs?: number
 }
 
+/**
+ * Everything one listening turn owns.
+ *
+ * Held together rather than in a ref each, because they were in a ref each and
+ * it was wrong. `recorder.onstop` fires asynchronously, so a turn that is
+ * finishing can run its teardown *after* the next turn has already started —
+ * and with shared refs that teardown stopped the new turn's microphone, closed
+ * its audio context and freed its VAD state. The new turn then recorded
+ * nothing, ended with no transcript, and the overlay faded out while someone
+ * was still talking to it.
+ *
+ * The same reasoning already applied to the recorded chunks, which were made
+ * session-local for exactly this reason. This finishes the job.
+ */
+interface VoiceSession {
+  id: number
+  recorder: MediaRecorder | null
+  stream: MediaStream | null
+  audioContext: AudioContext | null
+  poll: ReturnType<typeof setInterval> | null
+  maxDuration: ReturnType<typeof setTimeout> | null
+  /** Identifies this turn's VAD state in the main process, so it can be freed. */
+  vadId: string
+}
+
 export interface VoiceInputControls {
   start: () => void
   stop: () => void
   /** Stop and discard — nothing gets transcribed. */
   cancel: () => void
+  /** Whether a turn is recording right now. */
+  isRecording: () => boolean
   isSupported: boolean
 }
 
@@ -140,13 +167,7 @@ export function useVoiceInput({
   onLevel,
   endOfSpeechMs
 }: UseVoiceInputOptions): VoiceInputControls {
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
-  const streamRef = useRef<MediaStream | null>(null)
-  const audioContextRef = useRef<AudioContext | null>(null)
-  const silenceTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const stopTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  /** Identifies this turn's VAD state in the main process, so it can be freed. */
-  const vadIdRef = useRef<string | null>(null)
+  const sessionRef = useRef<VoiceSession | null>(null)
   // Incremented per start(). MediaRecorder.onstop is async, so a follow-up
   // turn can begin before the previous one finishes; this lets a stale
   // session detect that it's been superseded and bow out quietly.
@@ -157,26 +178,30 @@ export function useVoiceInput({
     typeof MediaRecorder !== 'undefined' &&
     Boolean(navigator.mediaDevices?.getUserMedia)
 
-  const cleanup = useCallback(() => {
-    if (silenceTimerRef.current) {
-      clearInterval(silenceTimerRef.current)
-      silenceTimerRef.current = null
-    }
-    if (stopTimeoutRef.current) {
-      clearTimeout(stopTimeoutRef.current)
-      stopTimeoutRef.current = null
-    }
+  /** Releases exactly this turn's resources, and nobody else's. */
+  const cleanup = useCallback((session: VoiceSession | null) => {
+    if (!session) return
+
+    if (session.poll) clearInterval(session.poll)
+    if (session.maxDuration) clearTimeout(session.maxDuration)
+    session.poll = null
+    session.maxDuration = null
+
     // The VAD is recurrent, so its state is per-turn and has to be released or
     // the tail of this utterance colours the start of the next one.
-    if (vadIdRef.current) {
-      window.nimbus.vadSession(vadIdRef.current, false)
-      vadIdRef.current = null
-    }
-    streamRef.current?.getTracks().forEach((track) => track.stop())
-    streamRef.current = null
-    void audioContextRef.current?.close().catch(() => {})
-    audioContextRef.current = null
-    mediaRecorderRef.current = null
+    window.nimbus.vadSession(session.vadId, false)
+
+    session.stream?.getTracks().forEach((track) => track.stop())
+    session.stream = null
+    // Closed explicitly, and only ever its own. A leaked context keeps its
+    // ScriptProcessor running for the life of the window, and Chromium caps
+    // how many can exist at once.
+    void session.audioContext?.close().catch(() => {})
+    session.audioContext = null
+    session.recorder = null
+
+    // Only surrender the slot if this turn still holds it.
+    if (sessionRef.current === session) sessionRef.current = null
   }, [])
 
   /**
@@ -187,19 +212,27 @@ export function useVoiceInput({
    */
   const cancel = useCallback(() => {
     sessionIdRef.current += 1
-    const recorder = mediaRecorderRef.current
-    if (recorder && recorder.state !== 'inactive') recorder.stop()
-    cleanup()
+    const session = sessionRef.current
+    if (session?.recorder && session.recorder.state !== 'inactive') session.recorder.stop()
+    cleanup(session)
   }, [cleanup])
 
   const stop = useCallback(() => {
-    const recorder = mediaRecorderRef.current
-    if (recorder && recorder.state !== 'inactive') {
-      recorder.stop()
+    const session = sessionRef.current
+    if (session?.recorder && session.recorder.state !== 'inactive') {
+      // Teardown waits for onstop, which needs the stream and the recorder
+      // still alive to flush the last chunk.
+      session.recorder.stop()
     } else {
-      cleanup()
+      cleanup(session)
     }
   }, [cleanup])
+
+  /** Whether a turn is currently recording — a wake shouldn't restart one. */
+  const isRecording = useCallback(
+    () => sessionRef.current?.recorder?.state === 'recording',
+    []
+  )
 
   const start = useCallback(() => {
     if (!isSupported) {
@@ -207,7 +240,22 @@ export function useVoiceInput({
       return
     }
 
+    // Anything still running is superseded here rather than left to tear
+    // itself down later, when it would take the new turn's microphone with it.
+    cleanup(sessionRef.current)
+
     const sessionId = ++sessionIdRef.current
+    const session: VoiceSession = {
+      id: sessionId,
+      recorder: null,
+      stream: null,
+      audioContext: null,
+      poll: null,
+      maxDuration: null,
+      vadId: `turn-${sessionId}`
+    }
+    sessionRef.current = session
+
     // Session-local, not shared refs: a new turn resetting a shared chunk
     // array wiped audio out from under the previous turn's pending onstop,
     // which uploaded a truncated blob and got "not a valid media file" back.
@@ -242,11 +290,11 @@ export function useVoiceInput({
           stream.getTracks().forEach((track) => track.stop())
           return
         }
-        streamRef.current = stream
+        session.stream = stream
 
         const mimeType = pickMimeType()
         const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
-        mediaRecorderRef.current = recorder
+        session.recorder = recorder
 
         recorder.ondataavailable = (event) => {
           if (event.data.size > 0) chunks.push(event.data)
@@ -256,7 +304,7 @@ export function useVoiceInput({
           playListenEndChime()
           const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' })
           const spoke = speech.detected
-          cleanup()
+          cleanup(session)
 
           console.log(
             `[voice] turn ended — ${chunks.length} chunks, ${blob.size} bytes, ` +
@@ -326,7 +374,7 @@ export function useVoiceInput({
         // filtering wrong. The FFT maths below reads sampleRate off the
         // context, so it follows along on its own.
         const audioContext = new AudioContext({ sampleRate: VAD_SAMPLE_RATE })
-        audioContextRef.current = audioContext
+        session.audioContext = audioContext
         const source = audioContext.createMediaStreamSource(stream)
         const analyser = audioContext.createAnalyser()
         // 1024 gives ~47Hz bins at 48kHz — enough resolution to isolate the
@@ -352,8 +400,7 @@ export function useVoiceInput({
         // --- Silero VAD tap ---
         // A second branch off the same source: the analyser answers "how
         // loud", this answers "is that a person".
-        const vadId = `turn-${sessionId}`
-        vadIdRef.current = vadId
+        const vadId = session.vadId
         window.nimbus.vadSession(vadId, true)
 
         let vadProb = 0
@@ -552,8 +599,8 @@ export function useVoiceInput({
           }
         }, POLL_MS)
 
-        silenceTimerRef.current = interval
-        stopTimeoutRef.current = setTimeout(() => {
+        session.poll = interval
+        session.maxDuration = setTimeout(() => {
           if (sessionId === sessionIdRef.current) stop()
         }, MAX_RECORDING_MS)
       })
@@ -563,5 +610,5 @@ export function useVoiceInput({
       })
   }, [isSupported, onResult, onEnd, onError, onLevel, endOfSpeechMs, cleanup, stop])
 
-  return { start, stop, cancel, isSupported }
+  return { start, stop, cancel, isRecording, isSupported }
 }

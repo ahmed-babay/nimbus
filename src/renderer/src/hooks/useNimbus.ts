@@ -785,7 +785,8 @@ export function useNimbus(): NimbusOverlayState {
   const {
     start: startVoiceInput,
     stop: stopVoiceInput,
-    cancel: cancelVoiceInput
+    cancel: cancelVoiceInput,
+    isRecording
   } = useVoiceInput({
     onResult: handleResult,
     onEnd: handleVoiceEnd,
@@ -906,11 +907,19 @@ export function useNimbus(): NimbusOverlayState {
         setResponse(null)
       }
 
-      if (micEnabledRef.current) {
+      if (!micEnabledRef.current) {
+        setState('idle')
+      } else if (isRecording()) {
+        // Already listening. A second wake — the hotkey pressed again, or the
+        // wake word heard mid-sentence — used to start a fresh turn, and the
+        // one in progress was then discarded as superseded. That threw away
+        // whatever had just been said into it, which is the worst possible
+        // response to someone asking for attention they already had.
+        console.log('[nimbus] wake while already listening — keeping the current turn')
+        setState('listening')
+      } else {
         setState('listening')
         startVoiceInput()
-      } else {
-        setState('idle')
       }
     })
 
