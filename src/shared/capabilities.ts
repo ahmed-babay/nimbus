@@ -104,6 +104,24 @@ export const CAPABILITIES: Capability[] = [
     keywords: 'watch delay delayed cancelled keep me updated notify posted track train'
   },
   {
+    group: 'Money',
+    title: 'Convert currency',
+    example: 'how much is 50 euros in dollars',
+    keywords: 'convert currency exchange rate euro dollar pound yen money'
+  },
+  {
+    group: 'Money',
+    title: 'Your stocks, with live charts',
+    example: 'how are my stocks doing',
+    keywords: 'stocks watchlist portfolio shares chart follow'
+  },
+  {
+    group: 'Money',
+    title: 'Alert me on a price',
+    example: 'tell me when Tesla drops below 300',
+    keywords: 'alert price drops below above target notify stock'
+  },
+  {
     group: 'Outside',
     title: 'Is it a good time to go out?',
     example: 'is it a good time for a run',

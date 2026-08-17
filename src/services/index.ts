@@ -37,6 +37,7 @@ import { findMusic } from './music'
 import { watchJourney, wantsWatching } from './watchers'
 import { findJourneys } from './transit'
 import { outdoorConditions, describeOutdoors } from './outdoors'
+import { convertCurrency, currencyCode, describeConversion } from './currency'
 import { watchOutdoors, wantsOutdoorWatch, outdoorWatchMode } from './outdoor-watch'
 import { getDirections, modeFromUtterance } from './maps'
 import { findStation } from './radio'
@@ -329,6 +330,16 @@ async function runIntent(
         // Not sent to the model: the verdict is already a sentence, and every
         // round trip here is quota spent to reword something deterministic.
         return { speech: describeOutdoors(data), card: { type: 'outdoors', data } }
+      }
+
+      case 'convert': {
+        const amount = Number((params.amount ?? '1').replace(/,/g, ''))
+        const from = currencyCode(params.fromCurrency, 'EUR')
+        const to = currencyCode(params.toCurrency, 'USD')
+        const data = await convertCurrency(Number.isFinite(amount) ? amount : 1, from, to)
+        // Arithmetic, not prose: a model that miscalculates a conversion is
+        // worse than no feature, so it is never asked.
+        return { speech: describeConversion(data), card: { type: 'currency', data } }
       }
 
       case 'directions': {

@@ -36,6 +36,7 @@ const VALID_INTENTS: NimbusIntent[] = [
   'transit',
   'directions',
   'outdoors',
+  'convert',
   'remember',
   'recall',
   'alarm',
@@ -126,6 +127,15 @@ the relevant parameter for it, leaving the others empty:
   answers "should I go out", and combines rain, air quality, pollen, UV and
   remaining daylight into one verdict. Anything mentioning running, jogging,
   cycling, a walk, hay fever, pollen, air quality or sunscreen belongs here.
+- "convert": converting an amount of money between currencies -- "how much is
+  50 euros in dollars", "what's 200 pounds in euros", "convert 1000 yen to
+  euros", "what's the euro dollar rate".
+  -> params.amount (just the number, e.g. "50". Use "1" when they asked for a
+     rate rather than an amount.)
+  -> params.fromCurrency (what they are converting from, as said: "euros",
+     "pounds", or a code like "EUR")
+  -> params.toCurrency (what they want it in)
+  Only for money. Converting units (miles, kilos, celsius) is "chat".
 - "search": anything needing current, real-world, or factual information you
   cannot answer reliably from memory — recent events, who currently holds a
   role, prices or facts that change, specific people/companies/products, "look
@@ -253,6 +263,9 @@ const CLASSIFY_SCHEMA: GenerationConfig = {
             format: 'enum'
           },
           alertPrice: { type: SchemaType.STRING },
+          amount: { type: SchemaType.STRING },
+          fromCurrency: { type: SchemaType.STRING },
+          toCurrency: { type: SchemaType.STRING },
           alertDirection: { type: SchemaType.STRING, enum: ['below', 'above'], format: 'enum' },
           topic: { type: SchemaType.STRING },
           fact: { type: SchemaType.STRING },

@@ -41,6 +41,7 @@ export type NimbusIntent =
   | 'transit'
   | 'directions'
   | 'outdoors'
+  | 'convert'
   | 'remember'
   | 'recall'
   | 'alarm'
@@ -111,6 +112,16 @@ export interface CryptoCardData {
 /** "How are my stocks doing" — the whole list, each with its own chart. */
 export interface WatchlistCardData {
   stocks: StockCardData[]
+}
+
+export interface CurrencyCardData {
+  amount: number
+  from: string
+  to: string
+  rate: number
+  result: number
+  /** The ECB publication date the rate came from, not today. */
+  asOf: string
 }
 
 export interface EntityCardData {
@@ -446,6 +457,7 @@ export type ResponseCardData =
   | { type: 'transit'; data: TransitCardData }
   | { type: 'outdoors'; data: OutdoorCardData }
   | { type: 'watchlist'; data: WatchlistCardData }
+  | { type: 'currency'; data: CurrencyCardData }
   | { type: 'screen'; data: ScreenCardData }
   | { type: 'paperwork'; data: PaperworkCardData }
   | { type: 'selection'; data: SelectionCardData }

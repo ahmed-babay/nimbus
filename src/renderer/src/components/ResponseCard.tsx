@@ -34,6 +34,7 @@ import type {
   StockCardData,
   TransitCardData,
   TravelMode,
+  CurrencyCardData,
   WatchlistCardData,
   WeatherCardData
 } from '@shared/types'
@@ -149,6 +150,8 @@ function CardBody({
       return <OutdoorsBody data={card.data} />
     case 'watchlist':
       return <WatchlistBody data={card.data} />
+    case 'currency':
+      return <CurrencyBody data={card.data} />
     case 'directions':
       return <DirectionsBody data={card.data} />
     case 'memory':
@@ -1374,6 +1377,45 @@ function OutdoorsBody({ data }: { data: OutdoorCardData }) {
           <span>{data.rainChance}% rain risk</span>
         </div>
       )}
+    </div>
+  )
+}
+
+function CurrencyBody({ data }: { data: CurrencyCardData }) {
+  // Small amounts need real precision; large ones look absurd with it.
+  const places = data.result >= 100 ? 2 : data.result >= 1 ? 2 : 4
+
+  return (
+    <div className={panel}>
+      <div className="flex items-baseline justify-between gap-3">
+        <div className="text-[13px] tabular-nums text-nimbus-text-dim">
+          {data.amount.toLocaleString()} {data.from}
+        </div>
+        <motion.span
+          className="text-nimbus-text-dim"
+          initial={{ x: -4, opacity: 0 }}
+          animate={{ x: 0, opacity: 1 }}
+          transition={{ duration: 0.35, ease: EASE }}
+        >
+          →
+        </motion.span>
+        <div className="text-xl font-semibold tabular-nums text-nimbus-accent-bright">
+          <CountUp value={data.result} decimals={places} suffix={` ${data.to}`} />
+        </div>
+      </div>
+      <div className="mt-1.5 flex items-baseline gap-2 border-t border-white/[0.07] pt-1.5 text-[9.5px] text-nimbus-text-dim">
+        <span className="tabular-nums">
+          1 {data.from} = {data.rate.toFixed(4)} {data.to}
+        </span>
+        {/* The ECB publishes once a working day; saying which day is the
+            difference between "a rate" and "today's rate". */}
+        {data.asOf && (
+          <>
+            <span className="opacity-50">·</span>
+            <span>ECB rate, {data.asOf}</span>
+          </>
+        )}
+      </div>
     </div>
   )
 }
