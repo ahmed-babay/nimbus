@@ -1,6 +1,7 @@
 import { activeWatches, cancelWatchById } from './watchers'
 import { upcomingEvents, removeEventById } from './events'
 import { pendingReminders, cancelReminderById } from './reminders'
+import { activeOutdoorWatches, cancelOutdoorWatchById } from './outdoor-watch'
 import type { StandingItem } from '../shared/types'
 
 /**
@@ -63,6 +64,21 @@ export function standingItems(): StandingItem[] {
     })
   }
 
+  for (const watch of activeOutdoorWatches()) {
+    items.push({
+      id: watch.id,
+      kind: 'outdoor',
+      title:
+        watch.mode === 'rain'
+          ? `Warn me if rain looks likely${watch.place ? ` in ${watch.place}` : ''}`
+          : `Tell me when it's good to go out${watch.place ? ` in ${watch.place}` : ''}`,
+      // Sorted with everything else by time, so it needs one: checking
+      // continues from now, which is what "when" means for these.
+      detail: 'checking every 10 min',
+      at: watch.createdAt
+    })
+  }
+
   for (const event of upcomingEvents()) {
     const at = eventInstant(event.startDate)
     items.push({
@@ -91,6 +107,7 @@ export function standingItems(): StandingItem[] {
 /** Routes a cancellation to whichever store owns that kind of thing. */
 export function cancelStandingItem(kind: StandingItem['kind'], id: string): boolean {
   if (kind === 'watch') return cancelWatchById(id)
+  if (kind === 'outdoor') return cancelOutdoorWatchById(id)
   if (kind === 'event') return removeEventById(id)
   return cancelReminderById(id)
 }

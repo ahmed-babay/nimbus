@@ -30,6 +30,7 @@ import { findMusic } from './music'
 import { watchJourney, wantsWatching } from './watchers'
 import { findJourneys } from './transit'
 import { outdoorConditions, describeOutdoors } from './outdoors'
+import { watchOutdoors, wantsOutdoorWatch, outdoorWatchMode } from './outdoor-watch'
 import { getDirections, modeFromUtterance } from './maps'
 import { findStation } from './radio'
 import { recordTurn } from './conversation'
@@ -235,6 +236,15 @@ async function runIntent(
       }
 
       case 'outdoors': {
+        // "Tell me when it's good" is a standing question, not a lookup — the
+        // one thing a chat assistant cannot do is still be thinking about you
+        // in an hour.
+        if (wantsOutdoorWatch(utterance)) {
+          const { speech } = await watchOutdoors(outdoorWatchMode(utterance), params.city)
+          const data = await outdoorConditions(params.city)
+          return { speech, card: { type: 'outdoors', data } }
+        }
+
         const data = await outdoorConditions(params.city)
         // Not sent to the model: the verdict is already a sentence, and every
         // round trip here is quota spent to reword something deterministic.

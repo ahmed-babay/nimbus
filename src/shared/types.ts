@@ -287,7 +287,7 @@ export interface Reminder {
  */
 export interface StandingItem {
   id: string
-  kind: 'watch' | 'event' | 'reminder'
+  kind: 'watch' | 'outdoor' | 'event' | 'reminder'
   title: string
   /** When it matters, already formatted. Empty when there is no time. */
   detail: string

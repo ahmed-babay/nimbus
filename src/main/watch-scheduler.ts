@@ -1,5 +1,10 @@
 import { Notification } from 'electron'
 import { activeWatches, checkWatches, type WatchUpdate } from '../services/watchers'
+import {
+  activeOutdoorWatches,
+  checkOutdoorWatches,
+  type OutdoorUpdate
+} from '../services/outdoor-watch'
 
 /**
  * Polls watched journeys and reports the ones that changed.
@@ -21,10 +26,10 @@ let checking = false
 
 export interface WatchHooks {
   /** Brings the overlay up and speaks the update. */
-  onUpdate: (update: WatchUpdate) => void
+  onUpdate: (update: WatchUpdate | OutdoorUpdate) => void
 }
 
-function notify(update: WatchUpdate): void {
+function notify(update: WatchUpdate | OutdoorUpdate): void {
   // The overlay alone is missable when the user is in a full-screen app,
   // which is exactly where someone is when they're about to miss a train.
   if (!Notification.isSupported()) return
@@ -38,7 +43,14 @@ export function startWatchScheduler({ onUpdate }: WatchHooks): void {
     if (checking) return
     checking = true
     try {
-      for (const update of await checkWatches()) {
+      // Both kinds on one tick. Outdoor watches rate-limit themselves to ten
+      // minutes internally, so sharing the faster transit cadence costs
+      // nothing and keeps a single timer in the process.
+      const updates: Array<WatchUpdate | OutdoorUpdate> = [
+        ...(await checkWatches()),
+        ...(await checkOutdoorWatches())
+      ]
+      for (const update of updates) {
         console.log(`[watchers] ${update.speech}`)
         notify(update)
         try {
@@ -59,8 +71,8 @@ export function startWatchScheduler({ onUpdate }: WatchHooks): void {
   void tick()
   timer = setInterval(() => void tick(), TICK_MS)
 
-  const waiting = activeWatches().length
-  if (waiting > 0) console.log(`[watchers] ${waiting} journey(s) being followed`)
+  const waiting = activeWatches().length + activeOutdoorWatches().length
+  if (waiting > 0) console.log(`[watchers] ${waiting} thing(s) being followed`)
 }
 
 export function stopWatchScheduler(): void {
