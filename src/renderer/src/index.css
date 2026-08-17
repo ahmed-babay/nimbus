@@ -12,8 +12,8 @@
    * actionable; everything else is neutral and lets the text carry the card.
    * Token names are unchanged, so every component re-themes from this block.
    */
-  --color-nimbus-bg: rgb(14 15 19 / 0.92);
-  --color-nimbus-bg-raised: rgb(255 255 255 / 0.04);
+  --color-nimbus-bg: rgb(9 11 18 / 0.94);
+  --color-nimbus-bg-raised: rgb(255 255 255 / 0.035);
   --color-nimbus-border: rgb(255 255 255 / 0.09);
 
   /* Cool indigo — present enough to lead the eye, quiet enough to live

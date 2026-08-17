@@ -146,6 +146,15 @@ export default function App() {
                 '0 24px 64px -16px rgba(0,0,0,0.7), 0 2px 8px -2px rgba(0,0,0,0.5), inset 0 1px 0 0 rgba(255,255,255,0.06)'
             }}
           >
+            {/* The panel catches a little of the orb's light rather than
+                being a flat slab behind it. */}
+            <div
+              className="pointer-events-none absolute inset-0"
+              style={{
+                background:
+                  'radial-gradient(120% 70% at 12% 0%, rgba(110,123,255,0.10), transparent 60%)'
+              }}
+            />
             {/* A single hairline of light along the top edge — enough to
                 separate the panel from whatever is behind it, and nothing
                 more. */}
