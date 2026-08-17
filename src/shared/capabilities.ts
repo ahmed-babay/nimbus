@@ -149,6 +149,18 @@ export const CAPABILITIES: Capability[] = [
   // Your day
   {
     group: 'Your day',
+    title: 'Public holidays',
+    example: 'when is the next public holiday',
+    keywords: 'holiday bank holiday feiertag shops closed day off monday'
+  },
+  {
+    group: 'Look things up',
+    title: 'What a word means',
+    example: 'what does resilient mean',
+    keywords: 'define definition dictionary word meaning vocabulary english usage'
+  },
+  {
+    group: 'Your day',
     title: 'Daily briefing',
     example: 'what does my day look like',
     keywords: 'brief catch me up morning summary today'

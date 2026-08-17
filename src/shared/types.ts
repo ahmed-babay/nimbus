@@ -42,6 +42,8 @@ export type NimbusIntent =
   | 'directions'
   | 'outdoors'
   | 'convert'
+  | 'holidays'
+  | 'define'
   | 'remember'
   | 'recall'
   | 'alarm'

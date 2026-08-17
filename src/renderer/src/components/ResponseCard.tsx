@@ -565,17 +565,27 @@ function EntityBody({ data }: { data: EntityCardData }) {
           className="h-[104px] w-[88px] shrink-0 rounded-lg object-cover shadow-lg ring-1 ring-white/15"
         />
       )}
-      <div className="min-w-0 flex-1">
-        <div className="text-[14px] font-semibold leading-tight text-nimbus-text">{data.title}</div>
+      <Stagger className="min-w-0 flex-1">
+        <StaggerItem className="text-[14px] font-semibold leading-tight text-nimbus-text">
+          {data.title}
+        </StaggerItem>
         {data.description && (
-          <div className="mt-1 text-[11px] capitalize text-nimbus-accent-bright">
+          <StaggerItem className="mt-1 text-[11px] text-nimbus-accent-bright">
             {data.description}
-          </div>
+          </StaggerItem>
         )}
-        <p className="mt-1.5 line-clamp-4 text-[11.5px] leading-relaxed text-nimbus-text-dim">
-          {data.extract}
-        </p>
-      </div>
+        {/* Split on blank lines so a dictionary entry reveals sense by sense
+            rather than as one block. Anything without them is a single item,
+            which is exactly the old behaviour. */}
+        {data.extract.split('\n\n').map((part, index) => (
+          <StaggerItem
+            key={index}
+            className="mt-1.5 whitespace-pre-line text-[11.5px] leading-relaxed text-nimbus-text-dim"
+          >
+            {part}
+          </StaggerItem>
+        ))}
+      </Stagger>
     </div>
   )
 }
@@ -1114,23 +1124,30 @@ function EventBody({ data }: { data: EventCardData }) {
   return (
     <div className={panel}>
       {created && (
-        <div className="mb-2 flex items-baseline gap-2 border-l-2 border-nimbus-accent/50 pl-2">
+        <motion.div
+          className="mb-2 flex items-baseline gap-2 border-l-2 border-nimbus-accent/50 pl-2"
+          initial={{ opacity: 0, x: -8 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.32, ease: EASE }}
+        >
           <span className="min-w-0 flex-1 text-[12.5px] text-nimbus-text">{created.title}</span>
           <span className="shrink-0 text-[10px] tabular-nums text-nimbus-accent-bright">
             {eventDates(created)}
           </span>
-        </div>
+        </motion.div>
       )}
       {rest.length > 0 && (
         <>
           <div className="text-[9.5px] uppercase tracking-wider text-nimbus-text-dim">
             {created ? 'Also coming up' : 'Coming up'}
           </div>
-          <ul className="mt-1 space-y-1">
+          <Stagger className="mt-1 space-y-1">
             {rest.slice(0, 6).map((event) => (
-              <EventRow key={event.id} event={event} />
+              <StaggerItem key={event.id}>
+                <EventRow event={event} />
+              </StaggerItem>
             ))}
-          </ul>
+          </Stagger>
         </>
       )}
       {!created && rest.length === 0 && (

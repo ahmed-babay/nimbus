@@ -38,6 +38,8 @@ import { watchJourney, wantsWatching } from './watchers'
 import { findJourneys } from './transit'
 import { outdoorConditions, describeOutdoors } from './outdoors'
 import { convertCurrency, currencyCode, describeConversion } from './currency'
+import { upcomingHolidays, describeHolidays } from './holidays'
+import { defineWord, describeDefinition } from './dictionary'
 import { watchOutdoors, wantsOutdoorWatch, outdoorWatchMode } from './outdoor-watch'
 import { getDirections, modeFromUtterance } from './maps'
 import { findStation } from './radio'
@@ -372,6 +374,23 @@ async function runIntent(
         // Arithmetic, not prose: a model that miscalculates a conversion is
         // worse than no feature, so it is never asked.
         return { speech: describeConversion(data), card: { type: 'currency', data } }
+      }
+
+      case 'holidays': {
+        const holidays = await upcomingHolidays()
+        return {
+          speech: describeHolidays(holidays),
+          // Holidays are days on a calendar, so they render through the card
+          // that already draws those rather than needing one of their own.
+          card: { type: 'event', data: { created: null, upcoming: holidays } }
+        }
+      }
+
+      case 'define': {
+        const word = params.word || params.query
+        if (!word) throw new Error("I didn't catch which word you meant.")
+        const data = await defineWord(word)
+        return { speech: describeDefinition(data), card: { type: 'entity', data } }
       }
 
       case 'directions': {

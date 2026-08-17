@@ -37,6 +37,8 @@ const VALID_INTENTS: NimbusIntent[] = [
   'directions',
   'outdoors',
   'convert',
+  'holidays',
+  'define',
   'remember',
   'recall',
   'alarm',
@@ -139,6 +141,14 @@ the relevant parameter for it, leaving the others empty:
      "pounds", or a code like "EUR")
   -> params.toCurrency (what they want it in)
   Only for money. Converting units (miles, kilos, celsius) is "chat".
+- "holidays": asking about public/bank holidays -- "is Monday a holiday",
+  "when is the next public holiday", "are the shops open on Thursday", "what
+  holidays are coming up". No params.
+- "define": asking what an ENGLISH word means or how it is used -- "what does
+  resilient mean", "define concede", "how do you use 'albeit'".
+  -> params.word (just the single word, lowercase)
+  Not for translation between languages, which is a text action, and not for
+  "what is X" about a person, place or thing, which is "search".
 - "search": anything needing current, real-world, or factual information you
   cannot answer reliably from memory — recent events, who currently holds a
   role, prices or facts that change, specific people/companies/products, "look
@@ -267,6 +277,7 @@ const CLASSIFY_SCHEMA: GenerationConfig = {
           },
           alertPrice: { type: SchemaType.STRING },
           amount: { type: SchemaType.STRING },
+          word: { type: SchemaType.STRING },
           fromCurrency: { type: SchemaType.STRING },
           toCurrency: { type: SchemaType.STRING },
           alertDirection: { type: SchemaType.STRING, enum: ['below', 'above'], format: 'enum' },
