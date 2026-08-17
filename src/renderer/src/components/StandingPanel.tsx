@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { useCallback, useEffect, useState } from 'react'
 import { EASE } from './Motion'
+import { useDragHandle } from '../hooks/useDragHandle'
 import type { StandingItem } from '@shared/types'
 
 /**
@@ -24,7 +25,14 @@ const KIND: Record<StandingItem['kind'], { icon: string; label: string; tint: st
   reminder: { icon: '⏰', label: 'Reminder', tint: 'text-nimbus-yellow' }
 }
 
-export function StandingPanel({ onClose }: { onClose: () => void }) {
+export function StandingPanel({
+  onClose,
+  onDragChange
+}: {
+  onClose: () => void
+  onDragChange: (dragging: boolean) => void
+}) {
+  const drag = useDragHandle(onDragChange)
   const [items, setItems] = useState<StandingItem[] | null>(null)
 
   const refresh = useCallback(() => {
@@ -50,14 +58,14 @@ export function StandingPanel({ onClose }: { onClose: () => void }) {
     <div className="flex min-h-0 flex-1 flex-col px-4 py-3.5">
       <div
         className="flex items-center justify-between"
-        style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
+        onPointerDown={drag.onPointerDown}
+        style={drag.style}
       >
         <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-nimbus-accent">
           Watching for you
         </span>
         <button
           onClick={onClose}
-          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
           className="-mr-1 rounded-md px-1.5 py-0.5 text-[11px] text-nimbus-text-dim transition-colors hover:bg-white/[0.07] hover:text-nimbus-text"
         >
           Close

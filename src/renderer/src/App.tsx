@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { Orb } from './components/Orb'
 import { Waveform } from './components/Waveform'
 import { ResponseCard } from './components/ResponseCard'
@@ -10,6 +10,7 @@ import { SubtitleBar } from './components/SubtitleBar'
 import { MeetingPanel } from './components/MeetingPanel'
 import { StandingPanel } from './components/StandingPanel'
 import { useNimbus } from './hooks/useNimbus'
+import { useDragHandle } from './hooks/useDragHandle'
 import { useWakeWord } from './hooks/useWakeWord'
 import { useSubtitles } from './hooks/useSubtitles'
 import { useMeeting } from './hooks/useMeeting'
@@ -81,6 +82,15 @@ export default function App() {
     suspended: isVisible || meetingOpen || subtitles.active || state === 'speaking'
   })
 
+  // Shared by the header handles so the click-through toggle above can tell
+  // a real "pointer left the card" from the window moving underneath it.
+  const draggingRef = useRef(false)
+  const onDragChange = (dragging: boolean): void => {
+    draggingRef.current = dragging
+    // Re-assert interactivity the moment a drag ends under the pointer.
+    if (!dragging) window.nimbus.setMouseIgnore(false)
+  }
+
   const stopSubtitles = (): void => {
     subtitles.stop()
     setHoldOpen(false)
@@ -115,7 +125,12 @@ export default function App() {
             // Only the card itself captures the mouse; everything around it
             // stays click-through so the overlay never blocks the screen.
             onMouseEnter={() => window.nimbus.setMouseIgnore(false)}
-            onMouseLeave={() => window.nimbus.setMouseIgnore(true)}
+            // Not while dragging: the window chases the pointer, so the
+            // pointer leaves the card constantly mid-drag, and going
+            // click-through there would drop the window out from under it.
+            onMouseLeave={() => {
+              if (!draggingRef.current) window.nimbus.setMouseIgnore(true)
+            }}
             // Capped to the window so a long answer scrolls instead of being
             // clipped off the bottom with no way to reach it.
             className="relative flex max-h-[calc(100vh-1rem)] w-[492px] flex-col overflow-hidden rounded-[20px] border border-nimbus-border bg-nimbus-bg backdrop-blur-2xl"
@@ -153,9 +168,9 @@ export default function App() {
             )}
 
             {mode === 'settings' ? (
-              <SettingsPanel config={config} onClose={dismiss} />
+              <SettingsPanel config={config} onClose={dismiss} onDragChange={onDragChange} />
             ) : mode === 'standing' ? (
-              <StandingPanel onClose={dismiss} />
+              <StandingPanel onClose={dismiss} onDragChange={onDragChange} />
             ) : (
               // Header and input stay put; only the answer between them moves.
               <div className="flex min-h-0 flex-1 flex-col px-4 py-3.5">
@@ -168,6 +183,7 @@ export default function App() {
                   onToggleTts={toggleTts}
                   onStanding={openStanding}
                   onSettings={openSettings}
+                  onDragChange={onDragChange}
                 />
 
                 {/* No items-start here: it would let the scrolling child size
@@ -320,7 +336,8 @@ function Header({
   ttsEnabled,
   onToggleTts,
   onStanding,
-  onSettings
+  onSettings,
+  onDragChange
 }: {
   state: NimbusState
   onClose: () => void
@@ -330,13 +347,16 @@ function Header({
   onToggleTts: () => void
   onStanding: () => void
   onSettings: () => void
+  onDragChange: (dragging: boolean) => void
 }) {
+  const drag = useDragHandle(onDragChange)
   return (
-    // The header is the grab handle. Buttons inside opt out with `no-drag`,
-    // otherwise a click on them would start a window move instead of firing.
+    // The header is the grab handle. Presses that land on a button are ignored
+    // by the handle, so Close still closes.
     <div
       className="flex items-center justify-between"
-      style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
+      onPointerDown={drag.onPointerDown}
+      style={drag.style}
     >
       <div className="flex items-center gap-2">
         <span
@@ -353,10 +373,7 @@ function Header({
           {STATE_LABEL[state]}
         </span>
       </div>
-      <div
-        className="flex items-center gap-1.5"
-        style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-      >
+      <div className="flex items-center gap-1.5">
         <button
           onClick={onToggleMic}
           aria-label={micEnabled ? 'Turn off voice input' : 'Turn on voice input'}
@@ -413,7 +430,16 @@ function Header({
   )
 }
 
-function SettingsPanel({ config, onClose }: { config: NimbusConfig | null; onClose: () => void }) {
+function SettingsPanel({
+  config,
+  onClose,
+  onDragChange
+}: {
+  config: NimbusConfig | null
+  onClose: () => void
+  onDragChange: (dragging: boolean) => void
+}) {
+  const drag = useDragHandle(onDragChange)
   const rows: Array<[string, string]> = config
     ? [
         ['Hotkey', config.hotkey.enabled ? config.hotkey.accelerator : 'disabled'],
@@ -436,14 +462,14 @@ function SettingsPanel({ config, onClose }: { config: NimbusConfig | null; onClo
     <div className="flex min-h-0 flex-1 flex-col px-4 py-3.5">
       <div
         className="flex items-center justify-between"
-        style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
+        onPointerDown={drag.onPointerDown}
+        style={drag.style}
       >
         <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-nimbus-accent">
           Settings
         </span>
         <button
           onClick={onClose}
-          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
           className="-mr-1 rounded-md px-1.5 py-0.5 text-[11px] text-nimbus-text-dim transition-colors hover:bg-white/[0.07] hover:text-nimbus-text"
         >
           Close

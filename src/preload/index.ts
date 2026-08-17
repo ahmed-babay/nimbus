@@ -148,6 +148,9 @@ const api = {
   copyText: (text: string): void => {
     ipcRenderer.send(IPC.COPY_TEXT, text)
   },
+  moveOverlay: (dx: number, dy: number): void => {
+    ipcRenderer.send(IPC.MOVE_OVERLAY, dx, dy)
+  },
   setMouseIgnore: (ignore: boolean): void => {
     ipcRenderer.send(IPC.SET_MOUSE_IGNORE, ignore)
   }

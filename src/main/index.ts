@@ -178,6 +178,16 @@ function registerIpcHandlers(): void {
     clipboard.writeText(text)
   })
 
+  ipcMain.on(IPC.MOVE_OVERLAY, (_event, dx: number, dy: number) => {
+    if (!overlayWindow) return
+    // Moved from the renderer rather than by -webkit-app-region, which never
+    // fires on this window: it is transparent and click-through, and
+    // setIgnoreMouseEvents makes it invisible to input at the OS level, so
+    // Chromium's own drag region is never reached.
+    const [x, y] = overlayWindow.getPosition()
+    overlayWindow.setPosition(Math.round(x + dx), Math.round(y + dy))
+  })
+
   ipcMain.on(IPC.SET_MOUSE_IGNORE, (_event, ignore: boolean) => {
     // forward:true keeps mousemove flowing to the renderer while ignoring, so
     // it can still tell when the pointer arrives over the card.
