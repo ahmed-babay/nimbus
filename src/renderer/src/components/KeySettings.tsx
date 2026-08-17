@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { CountUp, EASE, FillBar, Stagger, StaggerItem } from './Motion'
+import { Dropdown } from './Dropdown'
 import type {
   AiProvider,
   LocalModelKind,
@@ -427,23 +428,20 @@ export function KeySettings() {
         </p>
       ) : (
         <div className="mt-1.5 flex items-center gap-2">
-          <select
+          <Dropdown
             value={model}
-            onChange={(event) => chooseModel(event.target.value)}
-            className="min-w-0 flex-1 rounded-lg border border-white/[0.07] bg-nimbus-bg px-2 py-1 text-[11px] text-nimbus-text outline-none"
-          >
-            <option value="">Default for this provider</option>
-            {models.map((entry) => (
-              <option key={entry.id} value={entry.id}>
-                {entry.label}
-              </option>
-            ))}
-            {/* A previously chosen model survives even before the list loads,
-                so opening settings never silently resets it. */}
-            {model && !models.some((entry) => entry.id === model) && (
-              <option value={model}>{model}</option>
-            )}
-          </select>
+            onChange={chooseModel}
+            placeholder="Default for this provider"
+            options={[
+              { value: '', label: 'Default for this provider' },
+              ...models.map((entry) => ({ value: entry.id, label: entry.label, hint: entry.id })),
+              // A previously chosen model survives even before the list loads,
+              // so opening settings never silently resets it.
+              ...(model && !models.some((entry) => entry.id === model)
+                ? [{ value: model, label: model, hint: 'Chosen earlier' }]
+                : [])
+            ]}
+          />
           <button
             onClick={() => void loadModels(provider)}
             className="shrink-0 rounded-lg border border-nimbus-border px-2 py-1 text-[10px] text-nimbus-text-dim transition-colors hover:bg-white/[0.06] hover:text-nimbus-text"

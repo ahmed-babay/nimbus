@@ -119,7 +119,17 @@ function geminiRequest(request: LlmRequest): Record<string, unknown> {
 
 function openAiMessages(request: LlmRequest): Array<Record<string, unknown>> {
   const messages: Array<Record<string, unknown>> = []
-  if (request.system) messages.push({ role: 'system', content: request.system })
+  // OpenAI rejects `response_format: json_object` outright, with a 400, unless
+  // the word "json" appears somewhere in the messages. Nothing in Nimbus's
+  // prompts says "json" — the schema was carrying that meaning — so every
+  // structured request failed the moment the provider was switched to OpenAI.
+  // Naming the schema here also gets the fields right, which `json_object`
+  // alone does not enforce.
+  const system = request.jsonSchema
+    ? `${request.system ?? ''}\n\nReply with a single JSON object and nothing else — no prose, no code fences. It must match this schema:\n${JSON.stringify(request.jsonSchema)}`.trim()
+    : request.system
+
+  if (system) messages.push({ role: 'system', content: system })
 
   request.messages.forEach((message, index) => {
     const isLast = index === request.messages.length - 1
@@ -154,15 +164,34 @@ function openAiBody(request: LlmRequest, stream: boolean): Record<string, unknow
 
 async function openAiCall(request: LlmRequest, stream: boolean): Promise<Response> {
   const key = requireKey('OPENAI_API_KEY', 'The OpenAI API key')
-  const res = await httpFetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    label: 'OpenAI',
-    timeoutMs: 45000,
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-    body: JSON.stringify(openAiBody(request, stream))
-  })
-  if (!res.ok) throw new Error(await providerError('OpenAI', res))
-  return res
+
+  const send = (body: Record<string, unknown>): Promise<Response> =>
+    httpFetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      label: 'OpenAI',
+      timeoutMs: 45000,
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+      body: JSON.stringify(body)
+    })
+
+  const res = await send(openAiBody(request, stream))
+  if (res.ok) return res
+
+  // OpenAI's reasoning models reject any temperature but the default, and
+  // there is no way to know which model that is from here — the catalogue
+  // changes faster than a hardcoded list can track. Reading the refusal and
+  // retrying without it is the only version of this that keeps working when
+  // they ship the next one.
+  const detail = await res.clone().text().catch(() => '')
+  if (res.status === 400 && /temperature/i.test(detail)) {
+    const { temperature: _dropped, ...rest } = openAiBody(request, stream)
+    console.warn('[llm] OpenAI rejected temperature for this model; retrying without it')
+    const retry = await send(rest)
+    if (retry.ok) return retry
+    throw new Error(await providerError('OpenAI', retry))
+  }
+
+  throw new Error(await providerError('OpenAI', res))
 }
 
 // ---------------------------------------------------------------------------
