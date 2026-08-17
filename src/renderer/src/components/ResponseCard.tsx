@@ -3,6 +3,8 @@ import { useState, type RefObject } from 'react'
 import type { RadioPlayerControls } from '../hooks/useRadioPlayer'
 import { ImageCarousel } from './ImageCarousel'
 import { Sparkline } from './Sparkline'
+import { PriceChart } from './PriceChart'
+import { WeatherGlyph } from './WeatherGlyph'
 import { SpokenText } from './SpokenText'
 import type {
   BriefingCardData,
@@ -31,6 +33,7 @@ import type {
   StockCardData,
   TransitCardData,
   TravelMode,
+  WatchlistCardData,
   WeatherCardData
 } from '@shared/types'
 
@@ -143,6 +146,8 @@ function CardBody({
       return <TransitBody data={card.data} />
     case 'outdoors':
       return <OutdoorsBody data={card.data} />
+    case 'watchlist':
+      return <WatchlistBody data={card.data} />
     case 'directions':
       return <DirectionsBody data={card.data} />
     case 'memory':
@@ -183,10 +188,15 @@ function Delta({ value, suffix = '' }: { value: number; suffix?: string }) {
 function WeatherBody({ data }: { data: WeatherCardData }) {
   return (
     <div className={`${panel} flex items-center justify-between`}>
-      <div>
-        <div className="text-2xl font-semibold tabular-nums text-nimbus-text">{data.temp}°</div>
-        <div className="mt-0.5 text-[11px] capitalize text-nimbus-text-dim">
-          {data.condition} · {data.city}
+      <div className="flex items-center gap-2.5">
+        {/* Drawn and animated rather than an emoji: the overlay's CSP blocks
+            remote images, and rain that falls is read faster than the word. */}
+        <WeatherGlyph icon={data.icon} size={52} />
+        <div>
+          <div className="text-2xl font-semibold tabular-nums text-nimbus-text">{data.temp}°</div>
+          <div className="mt-0.5 text-[11px] capitalize text-nimbus-text-dim">
+            {data.condition} · {data.city}
+          </div>
         </div>
       </div>
       <div className="space-y-0.5 text-right text-[11px] text-nimbus-text-dim">
@@ -199,24 +209,59 @@ function WeatherBody({ data }: { data: WeatherCardData }) {
 }
 
 function StockBody({ data }: { data: StockCardData }) {
-  const positive = data.changePercent >= 0
   return (
-    <div className={`${panel} flex items-center gap-3`}>
-      <div className="min-w-0">
-        <div className="text-sm font-semibold tracking-wide text-nimbus-text">{data.symbol}</div>
-        <div className="mt-0.5 text-[11px] tabular-nums text-nimbus-text-dim">
-          H {data.high.toFixed(2)} · L {data.low.toFixed(2)}
-        </div>
-      </div>
-      <div className="ml-auto shrink-0">
-        <Sparkline values={data.history} positive={positive} />
-      </div>
-      <div className="shrink-0 text-right">
-        <div className="text-lg font-semibold tabular-nums text-nimbus-text">
-          ${data.price.toFixed(2)}
-        </div>
+    <div className={panel}>
+      <div className="flex items-baseline gap-2">
+        <span className="text-sm font-semibold tracking-wide text-nimbus-text">{data.symbol}</span>
+        <span className="min-w-0 flex-1 truncate text-[10px] text-nimbus-text-dim">
+          {data.name}
+        </span>
+        <span className="shrink-0 text-lg font-semibold tabular-nums text-nimbus-text">
+          {data.price.toFixed(2)}
+        </span>
         <Delta value={data.changePercent} suffix="%" />
       </div>
+      <div className="mt-1.5">
+        <PriceChart initial={data} />
+      </div>
+    </div>
+  )
+}
+
+/** "How are my stocks doing" — one row each, chart included. */
+function WatchlistBody({ data }: { data: WatchlistCardData }) {
+  if (data.stocks.length === 0) {
+    return (
+      <div className={panel}>
+        <div className="text-[11px] text-nimbus-text-dim">
+          No stocks followed yet. Say &ldquo;add Tesla to my stocks&rdquo;.
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-2">
+      {data.stocks.map((stock) => (
+        <div key={stock.symbol} className={panel}>
+          <div className="flex items-baseline gap-2">
+            <span className="text-[12px] font-semibold tracking-wide text-nimbus-text">
+              {stock.symbol}
+            </span>
+            <span className="min-w-0 flex-1 truncate text-[10px] text-nimbus-text-dim">
+              {stock.name}
+            </span>
+            <span className="shrink-0 text-[13px] font-semibold tabular-nums text-nimbus-text">
+              {stock.price.toFixed(2)}
+            </span>
+            <Delta value={stock.changePercent} suffix="%" />
+          </div>
+          <div className="mt-1">
+            {/* Compact: a list of eight full-height charts is a wall. */}
+            <PriceChart initial={stock} compact />
+          </div>
+        </div>
+      ))}
     </div>
   )
 }

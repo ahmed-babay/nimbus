@@ -7,6 +7,12 @@ import {
 } from './gemini'
 import { getWeather } from './weather'
 import { getStockQuote } from './stocks'
+import {
+  addPriceAlert,
+  addToWatchlist,
+  pricedWatchlist,
+  removeFromWatchlist
+} from './watchlist'
 import { getCryptoPrice } from './crypto'
 import { getNews } from './news'
 import { getTrendingRepos } from './github'
@@ -146,9 +152,63 @@ async function runIntent(
         if (!config.integrations.stocks) {
           throw new Error('The stocks integration is disabled in config.json.')
         }
+
+        const action = params.stockAction || 'quote'
+
+        if (action === 'list') {
+          const stocks = await pricedWatchlist()
+          if (stocks.length === 0) {
+            return {
+              speech: "You aren't following any stocks yet. Say \"add Tesla to my stocks\".",
+              card: { type: 'watchlist', data: { stocks: [] } }
+            }
+          }
+          // Deterministic rather than model-written: this is a list of numbers,
+          // and a sentence per stock would be slower and no clearer.
+          const movers = stocks
+            .map((s) => `${s.symbol} ${s.changePercent >= 0 ? 'up' : 'down'} ${Math.abs(s.changePercent).toFixed(1)}%`)
+            .join(', ')
+          return {
+            speech: `Your stocks today: ${movers}.`,
+            card: { type: 'watchlist', data: { stocks } }
+          }
+        }
+
         const symbol = params.symbol
         if (!symbol) throw new Error("I didn't catch which ticker you meant.")
-        const data = await getStockQuote(symbol)
+
+        if (action === 'add') {
+          const ticker = await addToWatchlist(symbol)
+          const stocks = await pricedWatchlist()
+          return {
+            speech: `Added ${ticker} to your stocks.`,
+            card: { type: 'watchlist', data: { stocks } }
+          }
+        }
+
+        if (action === 'remove') {
+          const removed = removeFromWatchlist(symbol)
+          const stocks = await pricedWatchlist()
+          return {
+            speech: removed
+              ? `Removed ${symbol.toUpperCase()} from your stocks.`
+              : `${symbol.toUpperCase()} wasn't in your stocks.`,
+            card: { type: 'watchlist', data: { stocks } }
+          }
+        }
+
+        if (action === 'alert') {
+          const price = Number(params.alertPrice)
+          if (!Number.isFinite(price) || price <= 0) {
+            throw new Error("I didn't catch the price to watch for.")
+          }
+          const direction = params.alertDirection === 'above' ? 'above' : 'below'
+          const { speech } = await addPriceAlert(symbol, direction, price)
+          const data = await getStockQuote(symbol, '1d')
+          return { speech, card: { type: 'stock', data } }
+        }
+
+        const data = await getStockQuote(symbol, '1d')
         const speech = await formatResponse('stocks', utterance, data, onChunk)
         return { speech, card: { type: 'stock', data } }
       }

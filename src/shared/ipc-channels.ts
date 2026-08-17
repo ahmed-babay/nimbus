@@ -48,6 +48,10 @@ export const IPC = {
   DOWNLOAD_LOCAL_MODEL: 'nimbus:download-local-model',
   /** main -> renderer: download progress for the on-device model */
   LOCAL_MODEL_PROGRESS: 'nimbus:local-model-progress',
+  /** renderer -> main (invoke): re-fetch one stock for a chart range / live tick */
+  GET_QUOTE: 'nimbus:get-quote',
+  /** renderer -> main (invoke): the user's saved stock watchlist, priced */
+  GET_WATCHLIST: 'nimbus:get-watchlist',
   /** renderer -> main (invoke): everything Nimbus is holding — watches, events, reminders */
   GET_STANDING: 'nimbus:get-standing',
   /** renderer -> main (invoke): cancel one standing item by kind + id */

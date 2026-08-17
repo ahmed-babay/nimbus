@@ -16,6 +16,8 @@ import type {
   SecretName,
   SecretStatus,
   StandingItem,
+  StockCardData,
+  StockRange,
   Subtitle,
   SynthesizedSpeech,
   TextActionKind
@@ -80,6 +82,9 @@ const api = {
     sourceHint: string
   ): Promise<Subtitle | null> =>
     ipcRenderer.invoke(IPC.SUBTITLE_FOR, pcm, offsetMs, previous, sourceHint),
+  getQuote: (symbol: string, range: StockRange): Promise<StockCardData> =>
+    ipcRenderer.invoke(IPC.GET_QUOTE, symbol, range),
+  getWatchlist: (): Promise<StockCardData[]> => ipcRenderer.invoke(IPC.GET_WATCHLIST),
   getStanding: (): Promise<StandingItem[]> => ipcRenderer.invoke(IPC.GET_STANDING),
   cancelStanding: (kind: StandingItem['kind'], id: string): Promise<boolean> =>
     ipcRenderer.invoke(IPC.CANCEL_STANDING, kind, id),

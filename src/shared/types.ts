@@ -63,15 +63,39 @@ export interface WeatherCardData {
   windSpeed: number
 }
 
+/**
+ * How much history a chart shows. The percentage always describes *this*
+ * window, which is the whole reason the default is a day: Yahoo's
+ * `chartPreviousClose` is the price at the start of the range, so asking for a
+ * month of history silently turned "Tesla is down 1%" into the monthly figure.
+ */
+export type StockRange = '1d' | '5d' | '1mo' | '6mo' | '1y'
+
+export const STOCK_RANGES: Array<{ id: StockRange; label: string }> = [
+  { id: '1d', label: '1D' },
+  { id: '5d', label: '1W' },
+  { id: '1mo', label: '1M' },
+  { id: '6mo', label: '6M' },
+  { id: '1y', label: '1Y' }
+]
+
 export interface StockCardData {
   symbol: string
+  /** Company name when Yahoo gives one, for a card that isn't just a ticker. */
+  name: string
   price: number
   change: number
   changePercent: number
   high: number
   low: number
-  /** Recent closing prices, oldest first — drives the sparkline. */
+  /** Which window `change` and `history` describe. */
+  range: StockRange
+  /** Prices across the range, oldest first — drives the chart. */
   history: number[]
+  /** Trading currency, so a London listing isn't shown in dollars. */
+  currency: string
+  /** True while the exchange is open, which is what makes live polling worth it. */
+  live: boolean
 }
 
 export interface CryptoCardData {
@@ -82,6 +106,11 @@ export interface CryptoCardData {
   marketCap: number
   /** Recent prices, oldest first — drives the sparkline. */
   history: number[]
+}
+
+/** "How are my stocks doing" — the whole list, each with its own chart. */
+export interface WatchlistCardData {
+  stocks: StockCardData[]
 }
 
 export interface EntityCardData {
@@ -287,7 +316,7 @@ export interface Reminder {
  */
 export interface StandingItem {
   id: string
-  kind: 'watch' | 'outdoor' | 'event' | 'reminder'
+  kind: 'watch' | 'outdoor' | 'price' | 'event' | 'reminder'
   title: string
   /** When it matters, already formatted. Empty when there is no time. */
   detail: string
@@ -416,6 +445,7 @@ export type ResponseCardData =
   | { type: 'radio'; data: RadioCardData }
   | { type: 'transit'; data: TransitCardData }
   | { type: 'outdoors'; data: OutdoorCardData }
+  | { type: 'watchlist'; data: WatchlistCardData }
   | { type: 'screen'; data: ScreenCardData }
   | { type: 'paperwork'; data: PaperworkCardData }
   | { type: 'selection'; data: SelectionCardData }

@@ -49,8 +49,25 @@ Given a single spoken user utterance, decide which of these intents it matches a
 the relevant parameter for it, leaving the others empty:
 
 - "weather": asking about weather/temperature/forecast somewhere -> params.city
-- "stocks": asking about a public company's stock price/quote -> params.symbol
-  (the ticker symbol, e.g. "Apple" -> AAPL, "Tesla" -> TSLA; if unsure, give the company name)
+- "stocks": asking about a public company's stock price/quote, about a saved
+  list of stocks, or asking to be told when a price moves.
+  -> params.symbol (the ticker, e.g. "Apple" -> AAPL, "Tesla" -> TSLA; if
+     unsure give the company name. Omit only for params.stockAction "list".)
+  -> params.stockAction: what they want done, one of:
+       "quote"  — just the price now. The default; omit for this.
+       "list"   — show their saved stocks: "my stocks", "my watchlist",
+                  "how are my stocks doing", "show me my portfolio".
+       "add"    — start following one: "add Tesla to my stocks",
+                  "follow Nvidia", "watch Apple for me".
+       "remove" — stop following: "remove Tesla from my stocks".
+       "alert"  — tell me when it crosses a price: "tell me when Tesla drops
+                  below 300", "let me know if Nvidia goes above 200",
+                  "alert me when Apple hits 150".
+  -> params.alertPrice (the number, for "alert" — just digits, e.g. "300")
+  -> params.alertDirection ("below" or "above", for "alert". "drops/falls/goes
+     under/hits" a lower number is "below"; "rises/goes above/tops" is "above".
+     If they say "hits", compare with the current price and pick the side it
+     would have to move to reach.)
 - "crypto": asking about a cryptocurrency's price -> params.coin (name or symbol, e.g. "bitcoin" or "btc")
 - "news": asking for news headlines, optionally about a topic -> params.query (omit for top headlines)
 - "github": asking about trending GitHub repos, optionally in a language -> params.language (omit for none)
@@ -230,6 +247,13 @@ const CLASSIFY_SCHEMA: GenerationConfig = {
           // model decodes under a grammar that must emit every property, so a
           // single-value enum would make every transit question a watch.
           watch: { type: SchemaType.STRING, enum: ['yes', 'no'], format: 'enum' },
+          stockAction: {
+            type: SchemaType.STRING,
+            enum: ['quote', 'list', 'add', 'remove', 'alert'],
+            format: 'enum'
+          },
+          alertPrice: { type: SchemaType.STRING },
+          alertDirection: { type: SchemaType.STRING, enum: ['below', 'above'], format: 'enum' },
           topic: { type: SchemaType.STRING },
           fact: { type: SchemaType.STRING },
           forget: { type: SchemaType.STRING },

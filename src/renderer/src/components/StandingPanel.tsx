@@ -17,6 +17,7 @@ import type { StandingItem } from '@shared/types'
 const KIND: Record<StandingItem['kind'], { icon: string; label: string; tint: string }> = {
   watch: { icon: '🚆', label: 'Following', tint: 'text-nimbus-cyan' },
   outdoor: { icon: '🌤', label: 'Weather watch', tint: 'text-nimbus-positive' },
+  price: { icon: '📈', label: 'Price alert', tint: 'text-nimbus-yellow' },
   event: { icon: '📅', label: 'Event', tint: 'text-nimbus-accent-bright' },
   reminder: { icon: '⏰', label: 'Reminder', tint: 'text-nimbus-yellow' }
 }

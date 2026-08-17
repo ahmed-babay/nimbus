@@ -2,6 +2,7 @@ import { activeWatches, cancelWatchById } from './watchers'
 import { upcomingEvents, removeEventById } from './events'
 import { pendingReminders, cancelReminderById } from './reminders'
 import { activeOutdoorWatches, cancelOutdoorWatchById } from './outdoor-watch'
+import { priceAlerts, cancelPriceAlertById } from './watchlist'
 import type { StandingItem } from '../shared/types'
 
 /**
@@ -79,6 +80,16 @@ export function standingItems(): StandingItem[] {
     })
   }
 
+  for (const alert of priceAlerts()) {
+    items.push({
+      id: alert.id,
+      kind: 'price',
+      title: `${alert.symbol} ${alert.direction} ${alert.price}`,
+      detail: 'checking every few minutes',
+      at: alert.createdAt
+    })
+  }
+
   for (const event of upcomingEvents()) {
     const at = eventInstant(event.startDate)
     items.push({
@@ -108,6 +119,7 @@ export function standingItems(): StandingItem[] {
 export function cancelStandingItem(kind: StandingItem['kind'], id: string): boolean {
   if (kind === 'watch') return cancelWatchById(id)
   if (kind === 'outdoor') return cancelOutdoorWatchById(id)
+  if (kind === 'price') return cancelPriceAlertById(id)
   if (kind === 'event') return removeEventById(id)
   return cancelReminderById(id)
 }

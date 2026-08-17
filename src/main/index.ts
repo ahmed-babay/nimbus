@@ -25,6 +25,8 @@ import { targetLanguage } from '../services/translate'
 import { heardWakeWord, wakeWordEnabled } from '../services/wake-word'
 import { localSttInstalled } from '../services/local-stt'
 import { readQuotas } from '../services/quota'
+import { getStockQuote } from '../services/stocks'
+import { pricedWatchlist } from '../services/watchlist'
 import { cancelReminderById } from '../services/reminders'
 import { cancelStandingItem, standingItems } from '../services/standing'
 import { downloadLocalModel, downloadOnnxModel, localModelStatus } from './model-download'
@@ -44,6 +46,8 @@ import type {
   ProviderModel,
   QuotaLine,
   StandingItem,
+  StockCardData,
+  StockRange,
   SecretName,
   SecretStatus,
   SynthesizedSpeech
@@ -257,6 +261,14 @@ function registerIpcHandlers(): void {
     }
   )
 
+  ipcMain.handle(
+    IPC.GET_QUOTE,
+    (_event, symbol: string, range: StockRange): Promise<StockCardData> =>
+      getStockQuote(symbol, range)
+  )
+
+  ipcMain.handle(IPC.GET_WATCHLIST, (): Promise<StockCardData[]> => pricedWatchlist())
+
   ipcMain.handle(IPC.GET_STANDING, (): StandingItem[] => standingItems())
 
   ipcMain.handle(
@@ -438,8 +450,10 @@ app.whenReady().then(() => {
       // Delivered down the reminder channel deliberately: a delay is the same
       // kind of event — Nimbus interrupting with something time-critical the
       // user asked to be told — and it already presents and speaks correctly.
+      // The three kinds of watch carry different payloads, and none of their
+      // ids matter here — only the sentence does.
       presentOverlay(overlayWindow, IPC.REMINDER_DUE, {
-        id: update.watch.id,
+        id: `watch-${Date.now()}`,
         at: new Date().toISOString(),
         text: update.speech,
         fired: true
