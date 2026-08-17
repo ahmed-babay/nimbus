@@ -10,25 +10,24 @@ interface OrbProps {
 }
 
 /**
- * The voice orb: a glass sphere with light moving inside it.
+ * The voice orb: a glass sphere with a living void inside it.
  *
  * Built to a reference rather than invented — a dark translucent globe, a
- * bright crescent rim where the light catches the edge, ribbons of blue
- * curling through the interior, and a soft bloom spilling onto the background.
- * The two attempts before this were a blocky equaliser and then a dot with a
- * ring around it, and both failed the same way: they looked *drawn* rather
- * than lit.
+ * bright crescent rim where the light catches the edge, luminous blue inside,
+ * and a soft bloom spilling onto the background.
  *
  * What actually sells it, in order of how much each matters:
  *
  *  1. **The rim, not the fill.** A glass ball is dark in the middle and bright
  *     only where the surface turns away from you. Lighting the centre is what
  *     makes an orb read as a button.
- *  2. **Additive blending.** The ribbons use `screen`, so where they cross
+ *  2. **Additive blending.** The interior uses `screen`, so where things cross
  *     they brighten instead of stacking opaquely, which is how light behaves
  *     and paint does not.
- *  3. **Different speeds.** Three ribbons at 1x, -0.62x and 0.38x never repeat
- *     the same arrangement, so it looks like motion rather than a loop.
+ *  3. **Deformation, not rotation.** Two earlier versions spun the interior and
+ *     slid light along fixed arcs. Rotating a soft symmetric blob is nearly
+ *     invisible, and a dash travelling a fixed curve reads as something running
+ *     on rails. What reads as alive is a shape whose *outline* changes.
  *
  * **Driven outside React.** The microphone level updates ~60 times a second;
  * routing that through state would re-render the whole card every frame, which
@@ -42,7 +41,7 @@ const VOICE_SWELL = 0.16
  * The sphere arrives rather than appearing.
  *
  * Over this window it swells past its resting size and settles back, the bloom
- * flares and fades, and the interior spins fast then slows — like something
+ * flares and fades, and the interior churns fast then slows — like something
  * being switched on. It matters because the overlay is summoned: appearing
  * fully-formed reads as a screenshot, and a beat of settling reads as a thing
  * waking up.
@@ -61,12 +60,85 @@ const PALETTE: Record<NimbusState, [string, string, string]> = {
   playing: ['#0b2418', '#166b4a', '#4ec99a']
 }
 
+/**
+ * One lobe of the void's outline: how many bumps around the circle, how deep,
+ * how fast they travel, and where they start.
+ *
+ * Summed together these give a closed curve that never repeats, because the
+ * speeds share no common factor. Three harmonics is the useful minimum — two
+ * reads as a wobbling ellipse, and above four the shape stops being readable
+ * at 52 pixels and just looks noisy.
+ */
+interface Harmonic {
+  lobes: number
+  depth: number
+  speed: number
+  phase: number
+}
+
+const VOID_HARMONICS: Harmonic[] = [
+  { lobes: 2, depth: 0.13, speed: 0.47, phase: 0 },
+  { lobes: 3, depth: 0.09, speed: -0.31, phase: 2.1 },
+  { lobes: 5, depth: 0.05, speed: 0.19, phase: 4.3 }
+]
+
+/** The halo runs its own harmonics so the two outlines never move together. */
+const HALO_HARMONICS: Harmonic[] = [
+  { lobes: 2, depth: 0.11, speed: -0.37, phase: 1.4 },
+  { lobes: 4, depth: 0.07, speed: 0.23, phase: 3.2 },
+  { lobes: 3, depth: 0.05, speed: -0.53, phase: 0.6 }
+]
+
+/** Enough segments that the curve reads as smooth at this size, and no more. */
+const OUTLINE_POINTS = 56
+
+/**
+ * A closed blob whose radius varies with angle and time.
+ *
+ * This is the whole trick: rather than moving a fixed shape, the shape itself
+ * is rebuilt every frame from a sum of travelling waves. Because each harmonic
+ * has its own speed and direction, the bumps drift around the outline at
+ * different rates and the form appears to be squashed from a different side
+ * each time.
+ */
+function blobPath(radius: number, time: number, amplitude: number, waves: Harmonic[]): string {
+  let d = ''
+  for (let i = 0; i <= OUTLINE_POINTS; i++) {
+    const angle = (i / OUTLINE_POINTS) * Math.PI * 2
+    let r = radius
+    for (const wave of waves) {
+      r += radius * wave.depth * amplitude * Math.sin(wave.lobes * angle + wave.speed * time + wave.phase)
+    }
+    const x = 50 + Math.cos(angle) * r
+    const y = 50 + Math.sin(angle) * r
+    d += `${i === 0 ? 'M' : 'L'}${x.toFixed(2)},${y.toFixed(2)}`
+  }
+  return `${d}Z`
+}
+
+/**
+ * Where each mote sits at a given moment.
+ *
+ * Lissajous figures, not orbits. A circle is the one path where motion looks
+ * mechanical, because the speed and the curvature never change — that is what
+ * made the previous interior feel like it was running on rails. Giving each
+ * mote a different ratio of horizontal to vertical frequency makes each trace
+ * a different closed figure (a lens, a figure-eight, a trefoil) while sharing
+ * the same underlying tempo, so they drift at one speed along three genuinely
+ * different paths.
+ */
+const MOTES = [
+  { fx: 2, fy: 3, phase: 0, reach: 15, radius: 11, opacity: 0.85 },
+  { fx: 3, fy: 2, phase: 1.7, reach: 17, radius: 8, opacity: 0.7 },
+  { fx: 1, fy: 2, phase: 3.4, reach: 12, radius: 13, opacity: 0.5 }
+]
+
 export function Orb({ state, levelRef, size = 52 }: OrbProps) {
   const rootRef = useRef<HTMLDivElement>(null)
   const bloomRef = useRef<HTMLDivElement>(null)
-  const ribbonsRef = useRef<SVGGElement[]>([])
-  /** The stroked arcs whose dash offset is animated to make light travel. */
-  const flowRef = useRef<SVGPathElement[]>([])
+  const voidRef = useRef<SVGPathElement>(null)
+  const haloRef = useRef<SVGPathElement>(null)
+  const moteRefs = useRef<SVGGElement[]>([])
   /**
    * Fixed at mount, not at each effect run. The effect re-runs on every state
    * change, so a local start time replayed the whole arrival on idle ->
@@ -104,9 +176,6 @@ export function Orb({ state, levelRef, size = 52 }: OrbProps) {
       // listening, and its own voice while talking, both through levelRef.
       const active = state === 'listening' || state === 'speaking'
       const swell = active ? smoothed * VOICE_SWELL : 0
-      // Thinking spins the interior up without needing a spinner; the entrance
-      // spins faster still and slows into place.
-      const rate = (state === 'thinking' ? 42 : 13) + (1 - eased) * 220
 
       if (rootRef.current) {
         rootRef.current.style.transform = `scale(${(0.72 + eased * 0.28 + arrival) * (1 + swell + breath * 0.015)})`
@@ -118,26 +187,44 @@ export function Orb({ state, levelRef, size = 52 }: OrbProps) {
         bloomRef.current.style.transform = `scale(${1.1 + swell * 1.6 + breath * 0.05 + arrival})`
       }
 
-      // Incommensurate speeds, one reversed: the three never line up twice, so
-      // the interior reads as flowing rather than as a rotating image. Each
-      // also breathes on its own cycle, so the shapes deform instead of
-      // rigidly turning — rotation alone on a soft blob is nearly invisible,
-      // which is why the earlier version looked like it only scaled.
-      const speeds = [1, -0.62, 0.38]
-      ribbonsRef.current.forEach((group, i) => {
-        if (!group) return
-        const wobble = 1 + Math.sin(seconds * (0.7 + i * 0.31) + i) * 0.1
-        group.style.transform = `rotate(${seconds * rate * speeds[i]}deg) scale(${wobble}, ${2 - wobble})`
-      })
+      // The interior's clock. Thinking churns it faster without needing a
+      // spinner, and the entrance runs fast and slows into place.
+      const churn = seconds * (state === 'thinking' ? 2.6 : 1) + (1 - eased) * 9
 
-      // Light running along each arc. A moving dash offset is the one thing
-      // that reads unambiguously as flow at this size: the shape stays put and
-      // the brightness travels through it. Louder input drives it faster.
-      const flowRate = 26 + smoothed * 90 + (state === 'thinking' ? 34 : 0)
-      flowRef.current.forEach((path, i) => {
-        if (!path) return
-        const direction = i % 2 === 0 ? -1 : 1
-        path.style.strokeDashoffset = `${seconds * flowRate * direction * (1 + i * 0.35)}`
+      // How far from round the void is allowed to get. It is never perfectly
+      // round — a still shape would look broken — but a voice pushes it much
+      // further out of shape, which is what makes it look like it is speaking
+      // rather than merely lit.
+      // Bounded so the outline stays inside the glass at full voice: the
+      // harmonics sum to 0.27, so peak radius is radius * (1 + 0.27 * this),
+      // and r=37 is the clip.
+      const distortion = 0.55 + breath * 0.2 + smoothed * 1.1
+      // It swells as it talks, so it grows into the glass and pulls back.
+      const voidRadius = 19 + smoothed * 4.5 + breath * 0.8
+
+      voidRef.current?.setAttribute('d', blobPath(voidRadius, churn, distortion, VOID_HARMONICS))
+      haloRef.current?.setAttribute(
+        'd',
+        // Slightly larger and on its own harmonics, so the glowing edge
+        // separates from the dark mass instead of tracing it. Kept deliberately
+        // rounder and tighter than the void: at full voice a wider one runs
+        // past r=37 and the glow disappears behind the rim exactly when the
+        // orb is at its liveliest.
+        blobPath(voidRadius + 4 + smoothed, churn, distortion * 0.6, HALO_HARMONICS)
+      )
+
+      moteRefs.current.forEach((mote, i) => {
+        if (!mote) return
+        const { fx, fy, phase, reach } = MOTES[i]
+        // Same `churn` for every mote — one tempo — but different frequency
+        // ratios, so each traces a different figure.
+        const x = Math.sin(fx * churn * 0.6 + phase) * reach * (1 + smoothed * 0.35)
+        const y = Math.sin(fy * churn * 0.6 + phase * 1.3) * reach * 0.8 * (1 + smoothed * 0.35)
+        // Brightest as it crosses the middle, faint at the edges, which sells
+        // it as something moving through the glass rather than across it.
+        const depth = 0.55 + 0.45 * Math.cos(fx * churn * 0.6 + phase)
+        mote.style.transform = `translate(${x.toFixed(2)}px, ${y.toFixed(2)}px) scale(${(0.75 + depth * 0.5 + smoothed * 0.3).toFixed(3)})`
+        mote.style.opacity = `${(MOTES[i].opacity * depth).toFixed(3)}`
       })
 
       frame = requestAnimationFrame(tick)
@@ -186,21 +273,29 @@ export function Orb({ state, levelRef, size = 52 }: OrbProps) {
               <stop offset="100%" stopColor={rim} stopOpacity="0.5" />
             </linearGradient>
 
-            <linearGradient id={`${id}-ribbon-a`} x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor={rim} stopOpacity="0" />
-              <stop offset="50%" stopColor="#ffffff" stopOpacity="0.85" />
-              <stop offset="100%" stopColor={rim} stopOpacity="0" />
-            </linearGradient>
-            <linearGradient id={`${id}-ribbon-b`} x1="100%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" stopColor={rim} stopOpacity="0" />
-              <stop offset="55%" stopColor={rim} stopOpacity="0.9" />
-              <stop offset="100%" stopColor={rim} stopOpacity="0" />
-            </linearGradient>
+            {/* The void itself: near-black at the centre so it reads as an
+                absence, lifting only at its own edge. */}
+            <radialGradient id={`${id}-void`} cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stopColor="#000000" stopOpacity="0.92" />
+              <stop offset="55%" stopColor={core} stopOpacity="0.8" />
+              <stop offset="100%" stopColor={mid} stopOpacity="0.35" />
+            </radialGradient>
 
-            {/* Softens the ribbons so they read as light inside glass rather
-                than as lines drawn on top of it. */}
-            <filter id={`${id}-soft`} x="-50%" y="-50%" width="200%" height="200%">
-              <feGaussianBlur stdDeviation="1.6" />
+            <radialGradient id={`${id}-mote`} cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stopColor="#ffffff" stopOpacity="0.9" />
+              <stop offset="35%" stopColor={rim} stopOpacity="0.65" />
+              <stop offset="100%" stopColor={rim} stopOpacity="0" />
+            </radialGradient>
+
+            {/* Softens the motes so they read as light inside glass rather
+                than as circles drawn on top of it. */}
+            <filter id={`${id}-soft`} x="-60%" y="-60%" width="220%" height="220%">
+              <feGaussianBlur stdDeviation="2.2" />
+            </filter>
+            {/* Gentler: enough to make the void's edge glow without losing the
+                outline that all the movement lives in. */}
+            <filter id={`${id}-edge`} x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="1.1" />
             </filter>
 
             <clipPath id={`${id}-clip`}>
@@ -212,85 +307,54 @@ export function Orb({ state, levelRef, size = 52 }: OrbProps) {
 
           {/* Interior. Blended additively so crossings brighten. */}
           <g clipPath={`url(#${id}-clip)`} style={{ mixBlendMode: 'screen' }}>
-            <g
-              ref={(node) => {
-                if (node) ribbonsRef.current[0] = node
-              }}
-              style={{ transformOrigin: '50px 50px' }}
-            >
-              <path
-                d="M14,58 C30,34 60,26 84,42 C66,54 42,68 14,58 Z"
-                fill={`url(#${id}-ribbon-a)`}
-                filter={`url(#${id}-soft)`}
-                opacity="0.75"
-              />
-            </g>
-            <g
-              ref={(node) => {
-                if (node) ribbonsRef.current[1] = node
-              }}
-              style={{ transformOrigin: '50px 50px' }}
-            >
-              <path
-                d="M18,66 C36,50 64,46 86,58 C68,74 40,80 18,66 Z"
-                fill={`url(#${id}-ribbon-b)`}
-                filter={`url(#${id}-soft)`}
-                opacity="0.6"
-              />
-            </g>
-            <g
-              ref={(node) => {
-                if (node) ribbonsRef.current[2] = node
-              }}
-              style={{ transformOrigin: '50px 50px' }}
-            >
-              <path
-                d="M22,44 C40,28 62,32 80,50"
-                fill="none"
-                stroke={`url(#${id}-ribbon-a)`}
-                strokeWidth="7"
-                strokeLinecap="round"
-                filter={`url(#${id}-soft)`}
-                opacity="0.55"
-              />
-            </g>
-
-            {/* Travelling light. Short bright dashes on long gaps, sliding
-                along fixed curves — the shape holds still and the brightness
-                moves through it, which is the only thing that reads as flow at
-                this size. Left unblurred on purpose: softening these was what
-                turned the previous interior into a fog that appeared static. */}
-            {[
-              'M6,52 C26,22 74,22 94,52',
-              'M6,58 C28,84 72,84 94,58',
-              'M50,8 C20,32 20,68 50,92'
-            ].map((d, i) => (
-              <path
-                key={d}
+            {MOTES.map((mote, i) => (
+              <g
+                key={i}
                 ref={(node) => {
-                  if (node) flowRef.current[i] = node
+                  if (node) moteRefs.current[i] = node
                 }}
-                d={d}
-                fill="none"
-                stroke={rim}
-                strokeWidth={i === 2 ? 1.4 : 2.1}
-                strokeLinecap="round"
-                strokeDasharray={i === 2 ? '5 46' : '9 38'}
-                opacity={i === 2 ? 0.5 : 0.75}
-                style={{ transition: 'stroke 500ms ease' }}
-              />
+                style={{ transformOrigin: '50px 50px', willChange: 'transform, opacity' }}
+              >
+                <circle
+                  cx="50"
+                  cy="50"
+                  r={mote.radius}
+                  fill={`url(#${id}-mote)`}
+                  filter={`url(#${id}-soft)`}
+                />
+              </g>
             ))}
+
+            {/* The halo: the void's glowing edge, on its own harmonics so it
+                breathes against the dark mass rather than with it. */}
+            <path
+              ref={haloRef}
+              fill="none"
+              stroke={rim}
+              strokeWidth="1.5"
+              strokeOpacity="0.55"
+              filter={`url(#${id}-edge)`}
+              style={{ transition: 'stroke 500ms ease' }}
+            />
+          </g>
+
+          {/* The void, drawn over the glass but under the rim. Not blended:
+              it has to actually darken what is behind it, or it is a glow
+              rather than an absence. */}
+          <g clipPath={`url(#${id}-clip)`}>
+            <path
+              ref={voidRef}
+              fill={`url(#${id}-void)`}
+              stroke={rim}
+              strokeWidth="0.9"
+              strokeOpacity="0.85"
+              filter={`url(#${id}-edge)`}
+              style={{ transition: 'stroke 500ms ease' }}
+            />
           </g>
 
           {/* Rim last, over the interior — the edge is the brightest thing. */}
-          <circle
-            cx="50"
-            cy="50"
-            r="37"
-            fill="none"
-            stroke={`url(#${id}-rim)`}
-            strokeWidth="1.6"
-          />
+          <circle cx="50" cy="50" r="37" fill="none" stroke={`url(#${id}-rim)`} strokeWidth="1.6" />
 
           {/* A short specular clip where the light source hits, which is what
               makes the surface read as glass rather than as a hole. */}
