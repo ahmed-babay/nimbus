@@ -43,9 +43,8 @@ const SPEECH_SETTLED_MS = 1500 // speech duration after which the shorter window
 
 const MIN_RECORDING_MS = 500 // never cut off before this, avoids instant truncation
 // Asked to listen and heard nothing, Nimbus should let go of the microphone
-// rather than sit there holding it open. Five seconds is long enough to gather
-// a thought and short enough that a mistaken wake word costs nothing.
-const NO_SPEECH_TIMEOUT_MS = 5000
+// rather than sit there holding it open.
+const NO_SPEECH_TIMEOUT_MS = 7000
 const MAX_RECORDING_MS = 20000 // hard safety cap once they *are* talking
 // Small margin so a trailing consonant isn't clipped. The hysteresis below
 // does most of that work, so this stays short — it's pure added latency.
@@ -105,9 +104,19 @@ function pickMimeType(): string {
   return candidates.find((type) => MediaRecorder.isTypeSupported(type)) ?? ''
 }
 
+/**
+ * Why a turn produced nothing.
+ *
+ * 'silence' means the microphone was open and no one spoke into it — the
+ * timeout. 'empty' means someone did speak and it came back unusable, which is
+ * a different situation entirely: they are clearly still there, so it must not
+ * be treated as walking away.
+ */
+export type VoiceEndReason = 'silence' | 'empty'
+
 export interface UseVoiceInputOptions {
   onResult: (transcript: string) => void
-  onEnd?: () => void
+  onEnd?: (reason: VoiceEndReason) => void
   onError?: (error: string) => void
   /** Live mic level, 0..1 — drives the waveform visualisation. */
   onLevel?: (level: number) => void
@@ -273,7 +282,10 @@ export function useVoiceInput({
                 ? `only ${metrics.voicedMs}ms of voiced audio`
                 : `only ${blob.size} bytes`
             console.log(`[voice] skipping transcription (${why})`)
-            onEnd?.()
+            // Nothing was said at all only when no speech was ever detected.
+            // A turn cut short for too little voiced audio still had a person
+            // in it, so it doesn't count as an empty room.
+            onEnd?.(spoke ? 'empty' : 'silence')
             return
           }
 
@@ -282,12 +294,12 @@ export function useVoiceInput({
             .then((transcript) => {
               if (!transcript) {
                 console.log('[voice] transcription returned empty text')
-                onEnd?.()
+                onEnd?.('empty')
                 return
               }
               if (isLikelyNoise(transcript)) {
                 console.log(`[voice] discarding noise transcript: "${transcript}"`)
-                onEnd?.()
+                onEnd?.('empty')
                 return
               }
               console.log(`[voice] transcript: "${transcript}"`)

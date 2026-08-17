@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 import type { NimbusConfig, NimbusResponse, NimbusState, TextActionKind } from '@shared/types'
-import { useVoiceInput } from './useVoiceInput'
+import { useVoiceInput, type VoiceEndReason } from './useVoiceInput'
 import { playOpenChime } from '../lib/chime'
 import { useRadioPlayer, type RadioPlayerControls } from './useRadioPlayer'
 import { isStopPhrase, isStopPlaybackPhrase } from '../lib/stop-phrases'
@@ -731,7 +731,7 @@ export function useNimbus(): NimbusOverlayState {
     }
   }, [])
 
-  const handleVoiceEnd = useCallback(() => {
+  const handleVoiceEnd = useCallback((reason: VoiceEndReason = 'empty') => {
     // Recording ended with nothing usable (silence timeout) — fade out.
     // Reads state from a ref rather than triggering the side effect inside a
     // setState updater, which React StrictMode double-invokes.
@@ -754,6 +754,16 @@ export function useNimbus(): NimbusOverlayState {
       // has to be honest about. The idle palette is warm red, so it is
       // visible at a glance that Nimbus has let go.
       setState('idle')
+
+      // The toggle is a switch, not a preference: if the mic timed out with
+      // nobody there, it is genuinely off now and must say so. Only on real
+      // silence — a turn that came back unusable had someone talking into it,
+      // and switching their mic off mid-conversation would be maddening.
+      if (reason === 'silence') {
+        micEnabledRef.current = false
+        setMicEnabled(false)
+      }
+
       scheduleAutoFade()
     }
   }, [scheduleAutoFade])
