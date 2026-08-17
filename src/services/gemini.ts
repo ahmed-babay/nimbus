@@ -35,6 +35,7 @@ const VALID_INTENTS: NimbusIntent[] = [
   'music',
   'transit',
   'directions',
+  'outdoors',
   'remember',
   'recall',
   'alarm',
@@ -99,6 +100,15 @@ the relevant parameter for it, leaving the others empty:
   one answers "how far, how long, which way". Anything phrased as "how do I get
   to X" is "directions". When in doubt prefer "directions" — its answer already
   includes the departures, so nothing is lost.
+- "outdoors": asking whether it's a good time to be outside, or about the
+  conditions for doing something outdoors — "is it a good time for a run",
+  "should I go jogging now", "can I cycle to work", "is the air bad today",
+  "how's the pollen", "do I need sunscreen", "is it nice out".
+  -> params.city (only if they named a place; omit for where they are)
+  This is not "weather". Weather answers "what is the temperature"; this
+  answers "should I go out", and combines rain, air quality, pollen, UV and
+  remaining daylight into one verdict. Anything mentioning running, jogging,
+  cycling, a walk, hay fever, pollen, air quality or sunscreen belongs here.
 - "search": anything needing current, real-world, or factual information you
   cannot answer reliably from memory — recent events, who currently holds a
   role, prices or facts that change, specific people/companies/products, "look

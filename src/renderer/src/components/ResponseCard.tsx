@@ -20,6 +20,8 @@ import type {
   NimbusResponse,
   PaperworkCardData,
   RadioCardData,
+  OutdoorCardData,
+  OutdoorFactor,
   ReminderCardData,
   RenderedMap,
   ResponseCardData,
@@ -139,6 +141,8 @@ function CardBody({
       return <RadioBody data={card.data} radio={radio} />
     case 'transit':
       return <TransitBody data={card.data} />
+    case 'outdoors':
+      return <OutdoorsBody data={card.data} />
     case 'directions':
       return <DirectionsBody data={card.data} />
     case 'memory':
@@ -1199,6 +1203,75 @@ function CancelReminder({ id, onGone }: { id: string; onGone: (id: string) => vo
     >
       ×
     </button>
+  )
+}
+
+/** Traffic-light colours: the verdict has to be readable without reading. */
+const OUTDOOR_LEVEL: Record<OutdoorFactor['level'], string> = {
+  good: 'text-nimbus-positive',
+  ok: 'text-nimbus-cyan',
+  poor: 'text-nimbus-yellow',
+  bad: 'text-nimbus-negative'
+}
+
+const OUTDOOR_VERDICT: Record<
+  OutdoorCardData['verdict'],
+  { label: string; dot: string; ring: string }
+> = {
+  great: { label: 'Great time to go', dot: 'bg-nimbus-positive', ring: 'text-nimbus-positive' },
+  fine: { label: 'Fine to head out', dot: 'bg-nimbus-cyan', ring: 'text-nimbus-cyan' },
+  caution: { label: 'Not ideal', dot: 'bg-nimbus-yellow', ring: 'text-nimbus-yellow' },
+  no: { label: 'Better to wait', dot: 'bg-nimbus-negative', ring: 'text-nimbus-negative' }
+}
+
+/** A short glyph per factor, so the row scans without reading the label. */
+const OUTDOOR_ICON: Record<OutdoorFactor['kind'], string> = {
+  feel: '🌡',
+  rain: '🌧',
+  air: '💨',
+  pollen: '🌾',
+  uv: '☀',
+  light: '🌗'
+}
+
+function OutdoorsBody({ data }: { data: OutdoorCardData }) {
+  const verdict = OUTDOOR_VERDICT[data.verdict]
+
+  return (
+    <div className={panel}>
+      <div className="flex items-center gap-2">
+        <span className={`h-2 w-2 shrink-0 rounded-full ${verdict.dot}`} />
+        <span className={`text-[12.5px] font-medium ${verdict.ring}`}>{verdict.label}</span>
+        <span className="ml-auto truncate text-[10px] text-nimbus-text-dim">{data.place}</span>
+      </div>
+
+      <ul className="mt-2 space-y-1">
+        {data.factors.map((factor) => (
+          <li key={factor.kind} className="flex items-baseline gap-2 text-[11px]">
+            <span className="w-3.5 shrink-0 text-center opacity-70">
+              {OUTDOOR_ICON[factor.kind]}
+            </span>
+            <span className={`min-w-0 flex-1 truncate ${OUTDOOR_LEVEL[factor.level]}`}>
+              {factor.text}
+            </span>
+          </li>
+        ))}
+      </ul>
+
+      {(data.temperature !== null || data.windSpeed !== null) && (
+        <div className="mt-2 flex items-center gap-2 border-t border-white/[0.07] pt-1.5 text-[10px] text-nimbus-text-dim">
+          {data.temperature !== null && <span>{Math.round(data.temperature)}°C</span>}
+          {data.windSpeed !== null && (
+            <>
+              <span className="opacity-50">·</span>
+              <span>{Math.round(data.windSpeed)} km/h wind</span>
+            </>
+          )}
+          <span className="opacity-50">·</span>
+          <span>{data.rainChance}% rain risk</span>
+        </div>
+      )}
+    </div>
   )
 }
 

@@ -40,6 +40,7 @@ export type NimbusIntent =
   | 'music'
   | 'transit'
   | 'directions'
+  | 'outdoors'
   | 'remember'
   | 'recall'
   | 'alarm'
@@ -236,6 +237,26 @@ export interface BriefingCardData {
   reminders: Reminder[]
 }
 
+/** One thing that makes going outside better or worse right now. */
+export interface OutdoorFactor {
+  kind: 'feel' | 'rain' | 'air' | 'pollen' | 'uv' | 'light'
+  level: 'good' | 'ok' | 'poor' | 'bad'
+  text: string
+}
+
+export interface OutdoorCardData {
+  place: string
+  /** Worst factor decides: one bad thing is enough to spoil going out. */
+  verdict: 'great' | 'fine' | 'caution' | 'no'
+  /** Sorted worst-first, so the reason to care is always at the top. */
+  factors: OutdoorFactor[]
+  temperature: number | null
+  windSpeed: number | null
+  /** Highest chance of rain in the next three hours, as a percentage. */
+  rainChance: number
+  rainWhen: string | null
+}
+
 export interface Reminder {
   id: string
   /** When it fires, ISO. */
@@ -375,6 +396,7 @@ export type ResponseCardData =
   | { type: 'music'; data: MusicCardData }
   | { type: 'radio'; data: RadioCardData }
   | { type: 'transit'; data: TransitCardData }
+  | { type: 'outdoors'; data: OutdoorCardData }
   | { type: 'screen'; data: ScreenCardData }
   | { type: 'paperwork'; data: PaperworkCardData }
   | { type: 'selection'; data: SelectionCardData }

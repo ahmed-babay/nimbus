@@ -29,6 +29,7 @@ import { lookupEntity } from './wikipedia'
 import { findMusic } from './music'
 import { watchJourney, wantsWatching } from './watchers'
 import { findJourneys } from './transit'
+import { outdoorConditions, describeOutdoors } from './outdoors'
 import { getDirections, modeFromUtterance } from './maps'
 import { findStation } from './radio'
 import { recordTurn } from './conversation'
@@ -231,6 +232,13 @@ async function runIntent(
         const data = await findJourneys(params.from, destination, params.when)
         const speech = await formatResponse('transit', utterance, data, onChunk)
         return { speech, card: { type: 'transit', data } }
+      }
+
+      case 'outdoors': {
+        const data = await outdoorConditions(params.city)
+        // Not sent to the model: the verdict is already a sentence, and every
+        // round trip here is quota spent to reword something deterministic.
+        return { speech: describeOutdoors(data), card: { type: 'outdoors', data } }
       }
 
       case 'directions': {

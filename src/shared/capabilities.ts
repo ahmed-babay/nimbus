@@ -99,6 +99,24 @@ export const CAPABILITIES: Capability[] = [
   },
   {
     group: 'Getting around',
+    title: 'Follow a train for delays',
+    example: 'the 17:30 to Frankfurt, keep me posted',
+    keywords: 'watch delay delayed cancelled keep me updated notify posted track train'
+  },
+  {
+    group: 'Outside',
+    title: 'Is it a good time to go out?',
+    example: 'is it a good time for a run',
+    keywords: 'run jog jogging cycle walk outside outdoors exercise sport training'
+  },
+  {
+    group: 'Outside',
+    title: 'Pollen, air quality and UV',
+    example: "how's the pollen today",
+    keywords: 'pollen hay fever allergy air quality aqi smog uv sunscreen burn'
+  },
+  {
+    group: 'Getting around',
     title: 'Distance and travel time',
     example: 'how far is the airport',
     keywords: 'map directions route drive walk cycle how long'
