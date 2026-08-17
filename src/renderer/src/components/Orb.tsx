@@ -51,7 +51,10 @@ const ENTRANCE_MS = 900
 
 /** Per-state hues, as [core, mid, rim] — dark to bright. */
 const PALETTE: Record<NimbusState, [string, string, string]> = {
-  idle: ['#101426', '#2a3355', '#6e7bff'],
+  // Warm ember rather than the cool accent: at rest the orb should read as
+  // banked rather than working. Deliberately not alarm red - a saturated red
+  // on an assistant means "recording" or "broken" to everyone who sees it.
+  idle: ['#26100e', '#5c241f', '#ff7a5c'],
   listening: ['#0d1a33', '#1e4c8a', '#7fb2ff'],
   thinking: ['#141029', '#3b2f7a', '#a5aeff'],
   speaking: ['#08202b', '#136a86', '#63d8f5'],
@@ -62,6 +65,8 @@ export function Orb({ state, levelRef, size = 52 }: OrbProps) {
   const rootRef = useRef<HTMLDivElement>(null)
   const bloomRef = useRef<HTMLDivElement>(null)
   const ribbonsRef = useRef<SVGGElement[]>([])
+  /** The stroked arcs whose dash offset is animated to make light travel. */
+  const flowRef = useRef<SVGPathElement[]>([])
   /**
    * Fixed at mount, not at each effect run. The effect re-runs on every state
    * change, so a local start time replayed the whole arrival on idle ->
@@ -114,11 +119,25 @@ export function Orb({ state, levelRef, size = 52 }: OrbProps) {
       }
 
       // Incommensurate speeds, one reversed: the three never line up twice, so
-      // the interior reads as flowing rather than as a rotating image.
+      // the interior reads as flowing rather than as a rotating image. Each
+      // also breathes on its own cycle, so the shapes deform instead of
+      // rigidly turning — rotation alone on a soft blob is nearly invisible,
+      // which is why the earlier version looked like it only scaled.
       const speeds = [1, -0.62, 0.38]
       ribbonsRef.current.forEach((group, i) => {
         if (!group) return
-        group.style.transform = `rotate(${seconds * rate * speeds[i]}deg)`
+        const wobble = 1 + Math.sin(seconds * (0.7 + i * 0.31) + i) * 0.1
+        group.style.transform = `rotate(${seconds * rate * speeds[i]}deg) scale(${wobble}, ${2 - wobble})`
+      })
+
+      // Light running along each arc. A moving dash offset is the one thing
+      // that reads unambiguously as flow at this size: the shape stays put and
+      // the brightness travels through it. Louder input drives it faster.
+      const flowRate = 26 + smoothed * 90 + (state === 'thinking' ? 34 : 0)
+      flowRef.current.forEach((path, i) => {
+        if (!path) return
+        const direction = i % 2 === 0 ? -1 : 1
+        path.style.strokeDashoffset = `${seconds * flowRate * direction * (1 + i * 0.35)}`
       })
 
       frame = requestAnimationFrame(tick)
@@ -235,6 +254,32 @@ export function Orb({ state, levelRef, size = 52 }: OrbProps) {
                 opacity="0.55"
               />
             </g>
+
+            {/* Travelling light. Short bright dashes on long gaps, sliding
+                along fixed curves — the shape holds still and the brightness
+                moves through it, which is the only thing that reads as flow at
+                this size. Left unblurred on purpose: softening these was what
+                turned the previous interior into a fog that appeared static. */}
+            {[
+              'M6,52 C26,22 74,22 94,52',
+              'M6,58 C28,84 72,84 94,58',
+              'M50,8 C20,32 20,68 50,92'
+            ].map((d, i) => (
+              <path
+                key={d}
+                ref={(node) => {
+                  if (node) flowRef.current[i] = node
+                }}
+                d={d}
+                fill="none"
+                stroke={rim}
+                strokeWidth={i === 2 ? 1.4 : 2.1}
+                strokeLinecap="round"
+                strokeDasharray={i === 2 ? '5 46' : '9 38'}
+                opacity={i === 2 ? 0.5 : 0.75}
+                style={{ transition: 'stroke 500ms ease' }}
+              />
+            ))}
           </g>
 
           {/* Rim last, over the interior — the edge is the brightest thing. */}
