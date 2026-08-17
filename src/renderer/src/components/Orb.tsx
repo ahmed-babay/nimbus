@@ -1,5 +1,6 @@
 import { useEffect, useRef, type RefObject } from 'react'
 import type { NimbusState } from '@shared/types'
+import { STATE_THEME } from '../lib/state-theme'
 
 interface OrbProps {
   state: NimbusState
@@ -48,17 +49,13 @@ const VOICE_SWELL = 0.16
  */
 const ENTRANCE_MS = 900
 
-/** Per-state hues, as [core, mid, rim] — dark to bright. */
-const PALETTE: Record<NimbusState, [string, string, string]> = {
-  // Warm ember rather than the cool accent: at rest the orb should read as
-  // banked rather than working. Deliberately not alarm red - a saturated red
-  // on an assistant means "recording" or "broken" to everyone who sees it.
-  idle: ['#26100e', '#5c241f', '#ff7a5c'],
-  listening: ['#0d1a33', '#1e4c8a', '#7fb2ff'],
-  thinking: ['#141029', '#3b2f7a', '#a5aeff'],
-  speaking: ['#08202b', '#136a86', '#63d8f5'],
-  playing: ['#0b2418', '#166b4a', '#4ec99a']
-}
+/**
+ * Per-state hues, as [core, mid, rim] — dark to bright.
+ *
+ * Shared with the panel chrome rather than kept here, so the card and the
+ * sphere cannot end up disagreeing about what state Nimbus is in.
+ */
+const PALETTE = STATE_THEME
 
 /**
  * One lobe of the void's outline: how many bumps around the circle, how deep,
@@ -234,7 +231,7 @@ export function Orb({ state, levelRef, size = 52 }: OrbProps) {
     return () => cancelAnimationFrame(frame)
   }, [levelRef, state])
 
-  const [core, mid, rim] = PALETTE[state]
+  const [core, mid, rim] = PALETTE[state].orb
   const id = `orb-${state}`
 
   return (

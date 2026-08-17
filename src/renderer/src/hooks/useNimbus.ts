@@ -214,6 +214,11 @@ export function useNimbus(): NimbusOverlayState {
       isOpenRef.current = true
       hasContentRef.current = true
       setState('idle')
+      // The recording was just cancelled, so the microphone really is off and
+      // the toggle has to say so. Leaving it lit while a settings form is open
+      // is the same lie as the orb staying blue after a timeout.
+      micEnabledRef.current = false
+      setMicEnabled(false)
       setMode(panel)
     },
     [clearFadeTimer]
