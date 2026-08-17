@@ -20,6 +20,7 @@ import { captureSelection, pasteIntoWindow, replyInWindow, type CapturedSelectio
 import { runTextAction } from '../services/text-actions'
 import type { TextActionKind } from '../shared/types'
 import { transcribeAudio } from '../services/whisper'
+import { endVadSession, resetVadSession, vadProbabilities, warmVad } from '../services/vad'
 import { subtitleFor, type Subtitle } from '../services/subtitles'
 import { targetLanguage } from '../services/translate'
 import { heardWakeWord, wakeWordEnabled } from '../services/wake-word'
@@ -293,6 +294,17 @@ function registerIpcHandlers(): void {
   )
 
   ipcMain.handle(
+    IPC.VAD_FRAMES,
+    async (_event, id: string, pcm: ArrayBuffer): Promise<number[]> =>
+      vadProbabilities(id, new Float32Array(pcm))
+  )
+
+  ipcMain.on(IPC.VAD_SESSION, (_event, id: string, active: boolean) => {
+    if (active) resetVadSession(id)
+    else endVadSession(id)
+  })
+
+  ipcMain.handle(
     IPC.GET_QUOTE,
     (_event, symbol: string, range: StockRange): Promise<StockCardData> =>
       getStockQuote(symbol, range)
@@ -468,6 +480,11 @@ app.whenReady().then(() => {
 
   overlayWindow = createOverlayWindow()
   registerIpcHandlers()
+
+  // Fetched and loaded in the background so the first thing said isn't the
+  // request that waits for it. 2.2MB, and it is deliberately not awaited —
+  // voice input falls back to the energy heuristic until it is ready.
+  void warmVad()
 
   startReminderScheduler({
     onDue: (reminder) => {

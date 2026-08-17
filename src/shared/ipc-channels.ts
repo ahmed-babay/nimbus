@@ -7,6 +7,10 @@ export const IPC = {
   TRANSCRIPT: 'nimbus:transcript',
   /** renderer -> main (invoke): recorded mic audio (ArrayBuffer + mimeType), returns the transcript string */
   TRANSCRIBE_AUDIO: 'nimbus:transcribe-audio',
+  /** renderer -> main (invoke): 16kHz mono frames, returns a speech probability per 512 samples */
+  VAD_FRAMES: 'nimbus:vad-frames',
+  /** renderer -> main: a listening turn started or ended; resets the VAD's recurrent state */
+  VAD_SESSION: 'nimbus:vad-session',
   /** renderer -> main (invoke): text to speak, returns { audio: ArrayBuffer, mimeType } to play */
   SYNTHESIZE_SPEECH: 'nimbus:synthesize-speech',
   /** renderer -> main: request the overlay hide itself (auto-fade finished, or user dismissed) */

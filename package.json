@@ -21,6 +21,7 @@
     "kokoro-js": "^1.2.1",
     "msedge-tts": "^2.0.7",
     "node-llama-cpp": "^3.20.0",
+    "onnxruntime-node": "^1.24.3",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },

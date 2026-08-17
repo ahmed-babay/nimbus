@@ -81,6 +81,17 @@ const api = {
   /** Takes 16kHz mono float samples; the renderer decodes, main transcribes. */
   transcribeAudio: (pcm: ArrayBuffer): Promise<string> =>
     ipcRenderer.invoke(IPC.TRANSCRIBE_AUDIO, pcm),
+  /**
+   * Speech probability per 512-sample frame, from Silero VAD in the main
+   * process. An empty array means the model isn't loaded and the caller should
+   * fall back to its own heuristic rather than treat the audio as silence.
+   */
+  vadFrames: (id: string, pcm: ArrayBuffer): Promise<number[]> =>
+    ipcRenderer.invoke(IPC.VAD_FRAMES, id, pcm),
+  /** Starts or ends a turn's VAD state — the model is recurrent, so turns must not bleed. */
+  vadSession: (id: string, active: boolean): void => {
+    ipcRenderer.send(IPC.VAD_SESSION, id, active)
+  },
   subtitleFor: (
     pcm: ArrayBuffer,
     offsetMs: number,

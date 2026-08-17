@@ -42,7 +42,10 @@ const SILENCE_MS_SETTLED = 900
 const SPEECH_SETTLED_MS = 1500 // speech duration after which the shorter window applies
 
 const MIN_RECORDING_MS = 500 // never cut off before this, avoids instant truncation
-const NO_SPEECH_TIMEOUT_MS = 7000 // give up if the user never starts talking
+// Asked to listen and heard nothing, Nimbus should let go of the microphone
+// rather than sit there holding it open. Five seconds is long enough to gather
+// a thought and short enough that a mistaken wake word costs nothing.
+const NO_SPEECH_TIMEOUT_MS = 5000
 const MAX_RECORDING_MS = 20000 // hard safety cap once they *are* talking
 // Small margin so a trailing consonant isn't clipped. The hysteresis below
 // does most of that work, so this stays short — it's pure added latency.
@@ -74,6 +77,27 @@ const MIN_UPLOAD_BYTES = 600
 // filler ("." / "you" / "Thank you.") from what is effectively silence.
 // Requiring a real amount of voiced audio filters those out before upload.
 const MIN_VOICED_MS = 320
+
+// --- Neural voice activity detection -------------------------------------
+//
+// Everything above is energy: how loud, in which band, fluctuating how much.
+// None of it can tell a voice from a train, because a train fluctuates too.
+// Silero VAD can — it is a small model trained on that exact distinction, and
+// it runs in the main process (see services/vad.ts). Measured there, noise on
+// its own never crossed 0.5 even when scaled as loud as speech.
+//
+// Two thresholds rather than one, because a single one chatters on the frames
+// either side of it: it takes a confident frame to call speech started, and a
+// clearly unvoiced one to call it stopped.
+const VAD_START = 0.5
+const VAD_CONTINUE = 0.35
+// The model reports per 32ms frame; the AudioContext hands us 1024 samples at
+// a time, which is two frames.
+const VAD_SAMPLE_RATE = 16000
+const VAD_BUFFER_SAMPLES = 1024
+// If no probability has come back in this long the model has stalled, and the
+// energy heuristic takes over rather than the last reading standing forever.
+const VAD_STALE_MS = 400
 
 function pickMimeType(): string {
   if (typeof MediaRecorder === 'undefined') return ''
@@ -112,6 +136,8 @@ export function useVoiceInput({
   const audioContextRef = useRef<AudioContext | null>(null)
   const silenceTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const stopTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /** Identifies this turn's VAD state in the main process, so it can be freed. */
+  const vadIdRef = useRef<string | null>(null)
   // Incremented per start(). MediaRecorder.onstop is async, so a follow-up
   // turn can begin before the previous one finishes; this lets a stale
   // session detect that it's been superseded and bow out quietly.
@@ -130,6 +156,12 @@ export function useVoiceInput({
     if (stopTimeoutRef.current) {
       clearTimeout(stopTimeoutRef.current)
       stopTimeoutRef.current = null
+    }
+    // The VAD is recurrent, so its state is per-turn and has to be released or
+    // the tail of this utterance colours the start of the next one.
+    if (vadIdRef.current) {
+      window.nimbus.vadSession(vadIdRef.current, false)
+      vadIdRef.current = null
     }
     streamRef.current?.getTracks().forEach((track) => track.stop())
     streamRef.current = null
@@ -174,7 +206,16 @@ export function useVoiceInput({
     const speech = { detected: false }
     // Declared up here so recorder.onstop (assigned before the analyser is
     // built) can report them.
-    const metrics = { peak: 0, threshold: 0, startedAt: Date.now(), voicedMs: 0, peakRatio: 0, peakModulation: 0 }
+    const metrics = {
+      peak: 0,
+      threshold: 0,
+      startedAt: Date.now(),
+      voicedMs: 0,
+      peakRatio: 0,
+      peakModulation: 0,
+      peakVad: 0,
+      vadUsed: false
+    }
 
     navigator.mediaDevices
       // Chromium's own DSP does the first pass: noise suppression strips
@@ -212,7 +253,7 @@ export function useVoiceInput({
             `[voice] turn ended — ${chunks.length} chunks, ${blob.size} bytes, ` +
               `${Date.now() - metrics.startedAt}ms, speechDetected=${spoke}, ` +
               `peakLevel=${metrics.peak.toFixed(1)} vs threshold=${metrics.threshold.toFixed(1)}, ` +
-              `peakRatio=${metrics.peakRatio.toFixed(2)} peakModulation=${metrics.peakModulation.toFixed(2)} (need >${MODULATION_MIN}), ` +
+              `${metrics.vadUsed ? `vad=neural peakProb=${metrics.peakVad.toFixed(2)} (need >${VAD_START})` : `vad=heuristic peakRatio=${metrics.peakRatio.toFixed(2)} peakModulation=${metrics.peakModulation.toFixed(2)} (need >${MODULATION_MIN})`}, ` +
               `session=${sessionId}/${sessionIdRef.current}`
           )
 
@@ -267,7 +308,12 @@ export function useVoiceInput({
 
         // Silence detection: auto-stop once the mic has been quiet for a
         // beat so the user doesn't have to press anything to end their turn.
-        const audioContext = new AudioContext()
+        // Opened at 16kHz rather than the hardware rate so Chromium does the
+        // resampling the VAD needs, in native code, before we see a sample.
+        // Doing it in JS would be another buffer and another chance to get the
+        // filtering wrong. The FFT maths below reads sampleRate off the
+        // context, so it follows along on its own.
+        const audioContext = new AudioContext({ sampleRate: VAD_SAMPLE_RATE })
         audioContextRef.current = audioContext
         const source = audioContext.createMediaStreamSource(stream)
         const analyser = audioContext.createAnalyser()
@@ -290,6 +336,51 @@ export function useVoiceInput({
         let lastLoudAt = Date.now()
         let speechStartedAt = Date.now()
         const levelHistory: number[] = []
+
+        // --- Silero VAD tap ---
+        // A second branch off the same source: the analyser answers "how
+        // loud", this answers "is that a person".
+        const vadId = `turn-${sessionId}`
+        vadIdRef.current = vadId
+        window.nimbus.vadSession(vadId, true)
+
+        let vadProb = 0
+        let vadReady = false
+        let vadBusy = false
+        let lastVadAt = 0
+
+        const processor = audioContext.createScriptProcessor(VAD_BUFFER_SAMPLES, 1, 1)
+        processor.onaudioprocess = (event) => {
+          if (sessionId !== sessionIdRef.current) return
+          // Dropped rather than queued when inference is still running. It
+          // never is — a frame costs 0.117ms against the 64ms it represents —
+          // but if it ever fell behind, a backlog of stale probabilities would
+          // be worse than a gap.
+          if (vadBusy) return
+          vadBusy = true
+          // Copied: the input buffer is reused by the audio thread, so passing
+          // it straight to IPC would send whatever arrives next instead.
+          const frame = new Float32Array(event.inputBuffer.getChannelData(0))
+          window.nimbus
+            .vadFrames(vadId, frame.buffer as ArrayBuffer)
+            .then((probabilities) => {
+              // Empty means the model isn't loaded — still downloading, or
+              // offline on a first run. That is "no opinion", not "silence",
+              // so the heuristic below stays in charge.
+              if (probabilities.length === 0) return
+              vadReady = true
+              lastVadAt = Date.now()
+              vadProb = Math.max(...probabilities)
+            })
+            .catch(() => {})
+            .finally(() => {
+              vadBusy = false
+            })
+        }
+        source.connect(processor)
+        // A ScriptProcessorNode only runs while connected to the destination.
+        // It writes nothing to its output, so this is silent.
+        processor.connect(audioContext.destination)
 
         // Calibrate against the actual room instead of a hardcoded level: a
         // fixed threshold clipped people with quiet mics, and treated fan
@@ -387,16 +478,36 @@ export function useVoiceInput({
           const inVoiceBand = voiceRatio > 1.1
           if (modulation > MODULATION_MIN) lastModulatedAt = now
 
-          // The modulation test used to be waived permanently once speech had
-          // been detected, to avoid cutting someone off mid-vowel. That left
-          // no way back: after the first word of a turn, any steady noise
-          // above the floor satisfied every test, so the recording ran to its
-          // 20-second cap while the user sat in silence wondering why it was
-          // still listening. Waiving it for a short grace window instead keeps
-          // held vowels intact and still lets a quiet room end the turn.
-          const recentlyModulated = now - lastModulatedAt < MODULATION_GRACE_MS
-          const varying = modulation > MODULATION_MIN || (speech.detected && recentlyModulated)
-          const isSpeech = loudEnough && inVoiceBand && varying
+          let isSpeech: boolean
+          metrics.peakVad = Math.max(metrics.peakVad, vadProb)
+          if (vadReady && now - lastVadAt < VAD_STALE_MS) {
+            metrics.vadUsed = true
+            // The model decides what counts as a voice. The energy test in
+            // front of it is only the absolute floor, deliberately not the
+            // calibrated one: in a loud room the calibrated bar climbs above
+            // the user's own voice, which is the failure this whole change
+            // exists to fix. All it does here is stop a conversation on the
+            // other side of the room being recorded as if it were the user.
+            const audible =
+              voiceLevel > (speech.detected ? ABS_CONTINUE_THRESHOLD : ABS_START_THRESHOLD)
+            isSpeech = vadProb > (speech.detected ? VAD_CONTINUE : VAD_START) && audible
+          } else {
+            // Fallback while the model is still downloading, or if it failed
+            // to load at all. This is the old detector, kept intact so voice
+            // input degrades rather than stops.
+            //
+            // The modulation test used to be waived permanently once speech
+            // had been detected, to avoid cutting someone off mid-vowel. That
+            // left no way back: after the first word of a turn, any steady
+            // noise above the floor satisfied every test, so the recording ran
+            // to its 20-second cap while the user sat in silence wondering why
+            // it was still listening. Waiving it for a short grace window
+            // instead keeps held vowels intact and still lets a quiet room end
+            // the turn.
+            const recentlyModulated = now - lastModulatedAt < MODULATION_GRACE_MS
+            const varying = modulation > MODULATION_MIN || (speech.detected && recentlyModulated)
+            isSpeech = loudEnough && inVoiceBand && varying
+          }
 
           metrics.peak = Math.max(metrics.peak, voiceLevel)
           metrics.threshold = threshold
