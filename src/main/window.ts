@@ -9,6 +9,21 @@ const WINDOW_WIDTH = 520
 // shadow. The window is transparent, so unused space stays invisible.
 const WINDOW_HEIGHT = 720
 
+/**
+ * Keeps the overlay on a screen that still exists.
+ *
+ * A window remembers where it was dragged, which is the point — but a laptop
+ * undocked from a second monitor would otherwise restore it to coordinates
+ * nobody can reach, and a tray app that opens off-screen looks broken.
+ */
+export function ensureOnScreen(window: BrowserWindow): void {
+  const [x, y] = window.getPosition()
+  const area = screen.getDisplayNearestPoint({ x, y }).workArea
+  const clampedX = Math.min(Math.max(x, area.x), area.x + area.width - WINDOW_WIDTH)
+  const clampedY = Math.min(Math.max(y, area.y), area.y + area.height - 80)
+  if (clampedX !== x || clampedY !== y) window.setPosition(clampedX, clampedY)
+}
+
 export function createOverlayWindow(): BrowserWindow {
   const primaryDisplay = screen.getPrimaryDisplay()
   const x = Math.round(primaryDisplay.workArea.x + (primaryDisplay.workArea.width - WINDOW_WIDTH) / 2)
@@ -23,7 +38,10 @@ export function createOverlayWindow(): BrowserWindow {
     frame: false,
     transparent: true,
     resizable: false,
-    movable: false,
+    // Draggable by its header. The window is only 520px wide and exactly wraps
+    // the card, so moving it moves what the user sees — there is no invisible
+    // region being dragged around.
+    movable: true,
     alwaysOnTop: true,
     skipTaskbar: true,
     hasShadow: false,
@@ -73,6 +91,7 @@ export function showOverlay(window: BrowserWindow, extraChannel?: string): void 
   // invisible block over the top of the screen — you couldn't select text
   // underneath it. The renderer turns this off only while the pointer is
   // genuinely over the card (see IPC.SET_MOUSE_IGNORE).
+  ensureOnScreen(window)
   window.setIgnoreMouseEvents(true, { forward: true })
   // show() + focus(), not showInactive(): an unfocused window never receives
   // keyboard events, so Escape (and any future shortcuts) silently did
@@ -91,6 +110,7 @@ export function showOverlay(window: BrowserWindow, extraChannel?: string): void 
  * shouldn't open a hot microphone).
  */
 export function presentOverlay(window: BrowserWindow, channel: string, payload?: unknown): void {
+  ensureOnScreen(window)
   window.setIgnoreMouseEvents(true, { forward: true })
   window.show()
   window.focus()

@@ -131,36 +131,76 @@ export function cancelPriceAlertById(target: string): boolean {
  *
  * A backstop for the router, which reliably picks the *action* but keeps
  * omitting the number: "tell me when Tesla drops below 300" came back with
- * stockAction "alert" and no alertPrice at all. A price and a direction are
- * exactly the kind of thing a regex gets right every time and a small model
- * gets right most of the time, so the regex wins and the model fills gaps.
+ * stockAction "alert" and no alertPrice at all.
+ *
+ * Two passes, because an earlier single pass was far too narrow and broke on
+ * the most natural phrasing there is. It matched "drops below 300" but not
+ * "goes down to $200" -- and a price alert that cannot read "down to" is a
+ * price alert nobody can use.
+ *
+ *  1. A comparison word followed by a number, which also tells us the side.
+ *  2. Failing that, any number at all, with the direction taken from whatever
+ *     directional word appears anywhere in the sentence.
+ *
+ * `direction` is null when the words genuinely do not say -- "notify me at
+ * 300" -- and the caller settles it against the current price.
  */
 export function parseAlert(
   utterance: string
-): { direction: PriceAlert['direction']; price: number } | null {
-  // Strictly ASCII. An earlier version put currency symbols in a character
-  // class and silently matched nothing: the source encoding turned them into
-  // bytes that broke the class while still *printing* correctly in an editor,
-  // which is a debugging trap worth not re-entering. The gap matcher skips any
-  // currency symbol anyway.
-  const match = utterance
-    .toLowerCase()
-    .match(
-      /(below|under|beneath|less than|above|over|beyond|more than|past|hits?|reaches|gets to)[^0-9]{0,12}([0-9][0-9,.]*)/
-    )
-  if (!match) return null
+): { direction: PriceAlert['direction'] | null; price: number } | null {
+  const text = utterance.toLowerCase()
 
-  // Thousands commas and a trailing stop both go before parsing.
-  const price = Number(match[2].replace(/,/g, '').replace(/\.$/, ''))
-  if (!Number.isFinite(price) || price <= 0) return null
+  // Strictly ASCII. A currency-symbol character class here once matched
+  // nothing at all while still printing correctly in an editor.
+  const DOWN = '(?:below|under|beneath|less than|down to|drops? to|falls? to|dips? to|sinks? to)'
+  const UP = '(?:above|over|beyond|more than|past|up to|rises? to|climbs? to|jumps? to)'
+  const NEUTRAL = '(?:hits?|reaches|gets to|touches|at)'
+  const NUMBER = '([0-9][0-9,]*(?:\.[0-9]+)?)'
+  // Up to a dozen non-digits between the word and the number covers "to $",
+  // "around", and stray punctuation.
+  const GAP = '[^0-9]{0,12}'
 
-  // "hits 300" has no direction of its own -- the caller compares with the
-  // current price to work out which side it would have to cross.
-  const word = match[1]
-  if (/^(hits?|reaches|gets to)$/.test(word)) return { direction: 'below', price }
+  const down = text.match(new RegExp(DOWN + GAP + NUMBER))
+  if (down) {
+    const price = toPrice(down[1])
+    if (price !== null) return { direction: 'below', price }
+  }
 
-  const above = /^(above|over|beyond|more than|past)$/.test(word)
-  return { direction: above ? 'above' : 'below', price }
+  const up = text.match(new RegExp(UP + GAP + NUMBER))
+  if (up) {
+    const price = toPrice(up[1])
+    if (price !== null) return { direction: 'above', price }
+  }
+
+  const neutral = text.match(new RegExp(NEUTRAL + GAP + NUMBER))
+  if (neutral) {
+    const price = toPrice(neutral[1])
+    if (price !== null) return { direction: directionFromWords(text), price }
+  }
+
+  // Last resort: a bare number somewhere in the sentence. Skips anything that
+  // looks like a year or a share count by requiring a currency symbol or a
+  // decimal, unless the sentence is clearly about a level.
+  const bare = text.match(new RegExp('[$]\s?' + NUMBER))
+  if (bare) {
+    const price = toPrice(bare[1])
+    if (price !== null) return { direction: directionFromWords(text), price }
+  }
+
+  return null
+}
+
+/** Digits only, with thousands separators and a trailing stop removed. */
+function toPrice(raw: string): number | null {
+  const price = Number(raw.replace(/,/g, '').replace(/\.$/, ''))
+  return Number.isFinite(price) && price > 0 ? price : null
+}
+
+/** Which way the sentence is pointing, when the comparison word didn't say. */
+function directionFromWords(text: string): PriceAlert['direction'] | null {
+  if (/(down|drops?|falls?|dips?|sinks?|lower|cheaper|below|under)/.test(text)) return 'below'
+  if (/(up|rises?|climbs?|jumps?|higher|above|over)/.test(text)) return 'above'
+  return null
 }
 
 export interface AlertConfirmation {

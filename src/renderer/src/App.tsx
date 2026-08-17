@@ -332,7 +332,12 @@ function Header({
   onSettings: () => void
 }) {
   return (
-    <div className="flex items-center justify-between">
+    // The header is the grab handle. Buttons inside opt out with `no-drag`,
+    // otherwise a click on them would start a window move instead of firing.
+    <div
+      className="flex items-center justify-between"
+      style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
+    >
       <div className="flex items-center gap-2">
         <span
           className="arcade-type nimbus-flicker text-[11px] font-bold text-nimbus-accent"
@@ -348,7 +353,10 @@ function Header({
           {STATE_LABEL[state]}
         </span>
       </div>
-      <div className="flex items-center gap-1.5">
+      <div
+        className="flex items-center gap-1.5"
+        style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+      >
         <button
           onClick={onToggleMic}
           aria-label={micEnabled ? 'Turn off voice input' : 'Turn on voice input'}
@@ -426,12 +434,16 @@ function SettingsPanel({ config, onClose }: { config: NimbusConfig | null; onClo
     // card's overflow-hidden — which looked exactly like "settings can't
     // scroll", because there was nothing to scroll.
     <div className="flex min-h-0 flex-1 flex-col px-4 py-3.5">
-      <div className="flex items-center justify-between">
+      <div
+        className="flex items-center justify-between"
+        style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
+      >
         <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-nimbus-accent">
           Settings
         </span>
         <button
           onClick={onClose}
+          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
           className="-mr-1 rounded-md px-1.5 py-0.5 text-[11px] text-nimbus-text-dim transition-colors hover:bg-white/[0.07] hover:text-nimbus-text"
         >
           Close

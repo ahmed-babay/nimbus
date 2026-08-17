@@ -232,32 +232,32 @@ async function runIntent(
         }
 
         if (action === 'alert') {
-          // The sentence first, the router second: the regex reads a number
-          // out of "drops below 300" every time, and the model keeps omitting
-          // it. For "hits 300" the parser has no direction, so the current
-          // price decides which side it has to cross.
+          // The sentence first, the router second: the parser reads a number
+          // out of "goes down to $200" every time, and the model keeps
+          // omitting it entirely.
           const parsed = parseAlert(utterance)
-          const modelPrice = Number(params.alertPrice)
+          const modelPrice = Number((params.alertPrice ?? '').replace(/,/g, ''))
           const price = parsed?.price ?? (Number.isFinite(modelPrice) ? modelPrice : NaN)
           if (!Number.isFinite(price) || price <= 0) {
-            throw new Error("I didn't catch the price to watch for.")
+            throw new Error(
+              "I didn't catch the price to watch for. Try \"tell me when Tesla drops below 300\"."
+            )
           }
 
-          let direction: 'below' | 'above'
-          if (params.alertDirection === 'above' || params.alertDirection === 'below') {
+          // Direction, in order of how much it can be trusted: what the words
+          // actually said, then the router, then where the price is now --
+          // "notify me at 300" with the stock at 340 can only mean below.
+          let direction = parsed?.direction ?? null
+          if (!direction && (params.alertDirection === 'above' || params.alertDirection === 'below')) {
             direction = params.alertDirection
-          } else if (parsed) {
-            direction = parsed.direction
-          } else {
-            direction = 'below'
           }
-          if (/(hits?|reaches|gets to)/i.test(utterance)) {
-            const now = await getStockQuote(symbol, '1d')
+          if (!direction) {
+            const now = await getStockQuote(symbols[0], '1d')
             direction = price > now.price ? 'above' : 'below'
           }
 
-          const { speech } = await addPriceAlert(symbol, direction, price)
-          const data = await getStockQuote(symbol, '1d')
+          const { speech } = await addPriceAlert(symbols[0], direction, price)
+          const data = await getStockQuote(symbols[0], '1d')
           return { speech, card: { type: 'stock', data } }
         }
 
