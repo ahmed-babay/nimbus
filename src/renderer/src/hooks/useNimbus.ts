@@ -53,6 +53,8 @@ export interface NimbusOverlayState {
   /** Shows the settings panel — reachable without hunting for the tray icon. */
   openSettings: () => void
   openStanding: () => void
+  /** Returns to the assistant view without hiding the overlay. */
+  closePanel: () => void
   /** Keeps the overlay from fading while a long-running mode owns it. */
   setHoldOpen: (hold: boolean) => void
   dismiss: () => void
@@ -195,23 +197,45 @@ export function useNimbus(): NimbusOverlayState {
     stopPlaybackNowRef.current = stopPlayback
   }, [stopPlayback])
 
-  /** Same treatment as settings: a list being read shouldn't fade away. */
-  const openStanding = useCallback(() => {
-    clearFadeTimer()
-    setIsOpen(true)
-    isOpenRef.current = true
-    hasContentRef.current = true
-    setMode('standing')
-  }, [clearFadeTimer])
+  /**
+   * Shared by both panels. A panel is something you read and click, so the
+   * assistant goes quiet while one is open: a half-finished recording is
+   * thrown away rather than transcribed, and anything being spoken stops.
+   * Otherwise opening settings mid-answer left a voice talking over a form,
+   * and the microphone listening to someone who is plainly typing.
+   */
+  const openPanel = useCallback(
+    (panel: 'settings' | 'standing') => {
+      clearFadeTimer()
+      cancelVoiceInputRef.current?.()
+      stopPlaybackNowRef.current?.()
+      setIsOpen(true)
+      isOpenRef.current = true
+      hasContentRef.current = true
+      setState('idle')
+      setMode(panel)
+    },
+    [clearFadeTimer]
+  )
 
-  const openSettings = useCallback(() => {
-    // Cancels the fade: settings is read-and-type, not glanced at, and having
-    // the panel vanish mid-paste of an API key would be maddening.
+  const openStanding = useCallback(() => openPanel('standing'), [openPanel])
+
+  /**
+   * Cancels the fade too: settings is read-and-type, not glanced at, and
+   * having the panel vanish mid-paste of an API key would be maddening.
+   */
+  const openSettings = useCallback(() => openPanel('settings'), [openPanel])
+
+  /**
+   * Back to the assistant without closing the overlay.
+   *
+   * Panels used to close by dismissing everything, which meant the only way
+   * back to the thing you came from was to summon Nimbus again.
+   */
+  const closePanel = useCallback(() => {
     clearFadeTimer()
-    setIsOpen(true)
-    isOpenRef.current = true
-    hasContentRef.current = true
-    setMode('settings')
+    setMode('assistant')
+    setState('idle')
   }, [clearFadeTimer])
 
   /**
@@ -879,6 +903,7 @@ export function useNimbus(): NimbusOverlayState {
     toggleTts,
     openSettings,
     openStanding,
+    closePanel,
     setHoldOpen,
     dismiss
   }

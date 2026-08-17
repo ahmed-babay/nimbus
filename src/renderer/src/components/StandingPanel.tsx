@@ -66,9 +66,10 @@ export function StandingPanel({
         </span>
         <button
           onClick={onClose}
+          title="Back to the assistant (Esc)"
           className="-mr-1 rounded-md px-1.5 py-0.5 text-[11px] text-nimbus-text-dim transition-colors hover:bg-white/[0.07] hover:text-nimbus-text"
         >
-          Close
+          ← Back
         </button>
       </div>
 

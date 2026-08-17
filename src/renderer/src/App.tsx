@@ -50,6 +50,7 @@ export default function App() {
     toggleTts,
     openSettings,
     openStanding,
+    closePanel,
     setHoldOpen,
     dismiss
   } = useNimbus()
@@ -103,6 +104,9 @@ export default function App() {
       // Escape means "end what's running", which during a film is the
       // subtitles rather than the overlay behind them.
       if (subtitles.active) stopSubtitles()
+      // A panel is a place you went into, so Escape comes back out of it
+      // rather than closing everything and losing the conversation behind it.
+      else if (mode !== 'assistant') closePanel()
       // Escape during a recording stops it rather than throwing the
       // transcript away -- twenty minutes of a meeting is not something a
       // stray keypress should be able to destroy.
@@ -168,9 +172,9 @@ export default function App() {
             )}
 
             {mode === 'settings' ? (
-              <SettingsPanel config={config} onClose={dismiss} onDragChange={onDragChange} />
+              <SettingsPanel config={config} onClose={closePanel} onDragChange={onDragChange} />
             ) : mode === 'standing' ? (
-              <StandingPanel onClose={dismiss} onDragChange={onDragChange} />
+              <StandingPanel onClose={closePanel} onDragChange={onDragChange} />
             ) : (
               // Header and input stay put; only the answer between them moves.
               <div className="flex min-h-0 flex-1 flex-col px-4 py-3.5">
@@ -470,9 +474,10 @@ function SettingsPanel({
         </span>
         <button
           onClick={onClose}
+          title="Back to the assistant (Esc)"
           className="-mr-1 rounded-md px-1.5 py-0.5 text-[11px] text-nimbus-text-dim transition-colors hover:bg-white/[0.07] hover:text-nimbus-text"
         >
-          Close
+          ← Back
         </button>
       </div>
 
