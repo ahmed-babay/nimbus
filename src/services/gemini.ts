@@ -35,6 +35,10 @@ const VALID_INTENTS: NimbusIntent[] = [
   'music',
   'transit',
   'directions',
+  'outdoors',
+  'convert',
+  'holidays',
+  'define',
   'remember',
   'recall',
   'alarm',
@@ -48,8 +52,28 @@ Given a single spoken user utterance, decide which of these intents it matches a
 the relevant parameter for it, leaving the others empty:
 
 - "weather": asking about weather/temperature/forecast somewhere -> params.city
-- "stocks": asking about a public company's stock price/quote -> params.symbol
-  (the ticker symbol, e.g. "Apple" -> AAPL, "Tesla" -> TSLA; if unsure, give the company name)
+- "stocks": asking about a public company's stock price/quote, about a saved
+  list of stocks, or asking to be told when a price moves.
+  -> params.symbol (the ticker, e.g. "Apple" -> AAPL, "Tesla" -> TSLA; if
+     unsure give the company name. Omit only for params.stockAction "list".
+     When they name SEVERAL companies -- "show me Tesla and Google", "how are
+     Apple, Nvidia and AMD doing" -- put ALL of them here separated by commas:
+     "TSLA,GOOGL". Order them as the user said them.)
+  -> params.stockAction: what they want done, one of:
+       "quote"  — just the price now. The default; omit for this.
+       "list"   — show their saved stocks: "my stocks", "my watchlist",
+                  "how are my stocks doing", "show me my portfolio".
+       "add"    — start following one: "add Tesla to my stocks",
+                  "follow Nvidia", "watch Apple for me".
+       "remove" — stop following: "remove Tesla from my stocks".
+       "alert"  — tell me when it crosses a price: "tell me when Tesla drops
+                  below 300", "let me know if Nvidia goes above 200",
+                  "alert me when Apple hits 150".
+  -> params.alertPrice (the number, for "alert" — just digits, e.g. "300")
+  -> params.alertDirection ("below" or "above", for "alert". "drops/falls/goes
+     under/hits" a lower number is "below"; "rises/goes above/tops" is "above".
+     If they say "hits", compare with the current price and pick the side it
+     would have to move to reach.)
 - "crypto": asking about a cryptocurrency's price -> params.coin (name or symbol, e.g. "bitcoin" or "btc")
 - "news": asking for news headlines, optionally about a topic -> params.query (omit for top headlines)
 - "github": asking about trending GitHub repos, optionally in a language -> params.language (omit for none)
@@ -68,6 +92,15 @@ the relevant parameter for it, leaving the others empty:
   -> params.from (starting station; omit if the user didn't say one)
   -> params.when (ISO 8601 datetime if they named a time like "at 6pm" or
      "tomorrow morning"; omit for now/next departures)
+  -> params.timeMode ("arrive" when the time they named is when they need to
+     BE somewhere, "depart" when it is when they want to set off.
+     "arrive" for: "I need to be in Frankfurt by 9", "I want to arrive at 9",
+     "get me there before the meeting at 10", "what should I take to make it
+     to the airport by 6", "I have to reach Mainz no later than noon".
+     "depart" for: "the next train at 9", "trains leaving around 9", "what
+     time is the last S-Bahn", "I want to take the 9 o'clock train".
+     The distinction matters: answering "be there by 9" with trains that
+     leave at 9 gives them something that arrives far too late.)
   -> params.watch ("yes" when they want to be kept informed about that service
      rather than simply told once, "no" when they just want the times.
      "yes" for: "keep me updated", "keep me posted", "notify me when/if there
@@ -99,6 +132,32 @@ the relevant parameter for it, leaving the others empty:
   one answers "how far, how long, which way". Anything phrased as "how do I get
   to X" is "directions". When in doubt prefer "directions" — its answer already
   includes the departures, so nothing is lost.
+- "outdoors": asking whether it's a good time to be outside, or about the
+  conditions for doing something outdoors — "is it a good time for a run",
+  "should I go jogging now", "can I cycle to work", "is the air bad today",
+  "how's the pollen", "do I need sunscreen", "is it nice out".
+  -> params.city (only if they named a place; omit for where they are)
+  This is not "weather". Weather answers "what is the temperature"; this
+  answers "should I go out", and combines rain, air quality, pollen, UV and
+  remaining daylight into one verdict. Anything mentioning running, jogging,
+  cycling, a walk, hay fever, pollen, air quality or sunscreen belongs here.
+- "convert": converting an amount of money between currencies -- "how much is
+  50 euros in dollars", "what's 200 pounds in euros", "convert 1000 yen to
+  euros", "what's the euro dollar rate".
+  -> params.amount (just the number, e.g. "50". Use "1" when they asked for a
+     rate rather than an amount.)
+  -> params.fromCurrency (what they are converting from, as said: "euros",
+     "pounds", or a code like "EUR")
+  -> params.toCurrency (what they want it in)
+  Only for money. Converting units (miles, kilos, celsius) is "chat".
+- "holidays": asking about public/bank holidays -- "is Monday a holiday",
+  "when is the next public holiday", "are the shops open on Thursday", "what
+  holidays are coming up". No params.
+- "define": asking what an ENGLISH word means or how it is used -- "what does
+  resilient mean", "define concede", "how do you use 'albeit'".
+  -> params.word (just the single word, lowercase)
+  Not for translation between languages, which is a text action, and not for
+  "what is X" about a person, place or thing, which is "search".
 - "search": anything needing current, real-world, or factual information you
   cannot answer reliably from memory — recent events, who currently holds a
   role, prices or facts that change, specific people/companies/products, "look
@@ -216,10 +275,22 @@ const CLASSIFY_SCHEMA: GenerationConfig = {
           from: { type: SchemaType.STRING },
           to: { type: SchemaType.STRING },
           when: { type: SchemaType.STRING },
+          timeMode: { type: SchemaType.STRING, enum: ['depart', 'arrive'], format: 'enum' },
           // A real two-way choice rather than an optional "yes". The local
           // model decodes under a grammar that must emit every property, so a
           // single-value enum would make every transit question a watch.
           watch: { type: SchemaType.STRING, enum: ['yes', 'no'], format: 'enum' },
+          stockAction: {
+            type: SchemaType.STRING,
+            enum: ['quote', 'list', 'add', 'remove', 'alert'],
+            format: 'enum'
+          },
+          alertPrice: { type: SchemaType.STRING },
+          amount: { type: SchemaType.STRING },
+          word: { type: SchemaType.STRING },
+          fromCurrency: { type: SchemaType.STRING },
+          toCurrency: { type: SchemaType.STRING },
+          alertDirection: { type: SchemaType.STRING, enum: ['below', 'above'], format: 'enum' },
           topic: { type: SchemaType.STRING },
           fact: { type: SchemaType.STRING },
           forget: { type: SchemaType.STRING },
@@ -235,7 +306,13 @@ const CLASSIFY_SCHEMA: GenerationConfig = {
             enum: ['driving', 'cycling', 'walking', 'transit'],
             format: 'enum'
           }
-        }
+        },
+        // Forced rather than optional. Flash Lite reliably *omits* an optional
+        // enum it isn't sure about — 'tell me when Tesla drops below 300' came
+        // back with no stockAction at all and fell through to a plain quote.
+        // Requiring it makes the model choose, and 'quote' is a safe default
+        // for every non-stock intent.
+        required: ['stockAction']
       }
     },
     required: ['intent', 'params']

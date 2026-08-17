@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
+import { CountUp, EASE, FillBar, Stagger, StaggerItem } from './Motion'
 import type {
   AiProvider,
   LocalModelKind,
@@ -104,11 +106,8 @@ function LocalModelRow({
               {total ? `${(received / 1e6).toFixed(0)} / ${(total / 1e6).toFixed(0)} MB` : '…'}
             </span>
           </div>
-          <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/10">
-            <div
-              className="h-full bg-nimbus-accent transition-[width] duration-200"
-              style={{ width: total ? `${(received / total) * 100}%` : '5%' }}
-            />
+          <div className="mt-1">
+            <FillBar fraction={total ? received / total : 0.05} />
           </div>
         </>
       ) : (
@@ -151,7 +150,7 @@ function QuotaPanel(): React.JSX.Element {
   }
 
   return (
-    <ul className="mt-1.5 space-y-1.5">
+    <Stagger className="mt-1.5 space-y-1.5">
       {lines.map((line) => {
         const measured = line.state === 'ok' && line.limit
         const fraction = measured ? Math.min(1, (line.used ?? 0) / (line.limit ?? 1)) : 0
@@ -165,7 +164,7 @@ function QuotaPanel(): React.JSX.Element {
               : 'bg-nimbus-positive'
 
         return (
-          <li
+          <StaggerItem
             key={line.service}
             className="rounded-lg border border-white/[0.07] bg-white/[0.03] px-2 py-1.5"
           >
@@ -174,7 +173,7 @@ function QuotaPanel(): React.JSX.Element {
               <span className="text-[9.5px] text-nimbus-text-dim">{line.purpose}</span>
               <span className="ml-auto text-[9.5px] tabular-nums text-nimbus-text-dim">
                 {measured
-                  ? `${line.used} / ${line.limit}`
+                  ? <><CountUp value={line.used ?? 0} /> {`/ ${line.limit}`}</>
                   : line.state === 'local'
                     ? 'on device'
                     : line.state === 'missing'
@@ -184,16 +183,72 @@ function QuotaPanel(): React.JSX.Element {
                         : 'no limit published'}
               </span>
             </div>
-            {measured && (
-              <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/10">
-                <div className={`h-full ${bar}`} style={{ width: `${fraction * 100}%` }} />
-              </div>
-            )}
+            {measured && <div className="mt-1"><FillBar fraction={fraction} className={bar} /></div>}
             <div className="mt-0.5 text-[9.5px] text-nimbus-text-dim">{line.detail}</div>
-          </li>
+          </StaggerItem>
         )
       })}
-    </ul>
+    </Stagger>
+  )
+}
+
+/**
+ * A section that starts closed.
+ *
+ * Settings grew a provider picker, three model downloads, a quota panel and
+ * eight key fields, which together are taller than the screen — and a panel
+ * you have to scroll to find anything in is a panel nobody reads. Everything
+ * except the provider choice now folds away, so the whole thing fits and you
+ * open only the part you came for.
+ */
+function Section({
+  title,
+  hint,
+  children,
+  defaultOpen = false
+}: {
+  title: string
+  hint?: string
+  children: React.ReactNode
+  defaultOpen?: boolean
+}): React.JSX.Element {
+  const [open, setOpen] = useState(defaultOpen)
+
+  return (
+    <div className="mt-2 border-t border-white/[0.07] pt-2">
+      <button
+        onClick={() => setOpen((current) => !current)}
+        className="flex w-full items-center gap-1.5 text-left"
+      >
+        <motion.span
+          className="text-[9px] text-nimbus-text-dim"
+          animate={{ rotate: open ? 90 : 0 }}
+          transition={{ duration: 0.2, ease: EASE }}
+        >
+          ▶
+        </motion.span>
+        <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-nimbus-accent">
+          {title}
+        </span>
+      </button>
+
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            // Height rather than opacity alone: the point is that the closed
+            // sections take up no room.
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.24, ease: EASE }}
+            className="overflow-hidden"
+          >
+            {hint && <p className="mt-1 text-[10px] text-nimbus-text-dim">{hint}</p>}
+            {children}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   )
 }
 
@@ -404,28 +459,22 @@ export function KeySettings() {
       {/* Its own section rather than part of the provider block: local speech
           recognition is independent of who answers, and is worth installing
           even when answers come from the cloud. */}
-      <div className="mt-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-nimbus-accent">
-        Speech
-      </div>
-      <p className="mt-1 text-[10px] text-nimbus-text-dim">
-        Installed, these replace the Groq key and the Edge voice — and keep what you say, and
-        what Nimbus says back, on this machine.
-      </p>
-      <LocalModelRow kind="stt" onMessage={setMessage} />
-      <LocalModelRow kind="tts" onMessage={setMessage} />
+      <Section
+        title="Speech"
+        hint="Installed, these replace the Groq key and the Edge voice — and keep what you say, and what Nimbus says back, on this machine."
+      >
+        <LocalModelRow kind="stt" onMessage={setMessage} />
+        <LocalModelRow kind="tts" onMessage={setMessage} />
+      </Section>
 
-      <div className="mt-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-nimbus-accent">
-        What&apos;s left this month
-      </div>
-      <QuotaPanel />
+      <Section title="What's left this month">
+        <QuotaPanel />
+      </Section>
 
-      <div className="mt-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-nimbus-accent">
-        API keys
-      </div>
-      <p className="mt-1 text-[10px] text-nimbus-text-dim">
-        Stored encrypted by Windows, and only used when the key isn&apos;t already in .env.
-      </p>
-
+      <Section
+        title="API keys"
+        hint="Stored encrypted by Windows, and only used when the key isn't already in .env."
+      >
       <ul className="mt-1.5 space-y-2">
         {secrets.map((secret) => {
           const info = KEY_INFO[secret.name]
@@ -479,6 +528,7 @@ export function KeySettings() {
           )
         })}
       </ul>
+      </Section>
 
       {message && (
         <p

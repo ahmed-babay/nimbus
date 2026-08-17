@@ -1,27 +1,38 @@
 @import 'tailwindcss';
 
 @theme {
-  /* Arcade cabinet: near-black CRT with hot neon magenta and cyan, plus
-     coin-op yellow. Token names are unchanged, so every component
-     re-themes from this block alone. */
-  --color-nimbus-bg: rgb(9 6 18 / 0.88);
-  --color-nimbus-bg-raised: rgb(255 62 165 / 0.07);
-  --color-nimbus-border: rgb(255 62 165 / 0.3);
+  /* Deep neutral graphite with a single cool accent.
+   *
+   * The arcade palette this replaces was hot magenta and cyan on near-black
+   * with CRT scanlines — characterful, and characterful is the problem. This
+   * is a panel that opens over someone's work twenty times a day, and a
+   * cabinet front reads as a toy next to the tools it sits beside.
+   *
+   * So: one accent, used sparingly and only where something is live or
+   * actionable; everything else is neutral and lets the text carry the card.
+   * Token names are unchanged, so every component re-themes from this block.
+   */
+  --color-nimbus-bg: rgb(9 11 18 / 0.94);
+  --color-nimbus-bg-raised: rgb(255 255 255 / 0.035);
+  --color-nimbus-border: rgb(255 255 255 / 0.09);
 
-  --color-nimbus-accent: #ff3ea5;
-  --color-nimbus-accent-bright: #ff8ecb;
-  --color-nimbus-accent-deep: #c81e7a;
+  /* Cool indigo — present enough to lead the eye, quiet enough to live
+     under text without competing with it. */
+  --color-nimbus-accent: #6e7bff;
+  --color-nimbus-accent-bright: #a5aeff;
+  --color-nimbus-accent-deep: #4650c8;
 
-  /* Arcade extras */
-  --color-nimbus-cyan: #22e8ff;
-  --color-nimbus-yellow: #ffd23f;
-  --color-nimbus-green: #3dff7a;
+  /* Kept as tokens because components reference them; retuned from neon to
+     muted so a badge is legible rather than loud. */
+  --color-nimbus-cyan: #56c8e8;
+  --color-nimbus-yellow: #e0b64f;
+  --color-nimbus-green: #4ec99a;
 
-  --color-nimbus-text: #f4f0ff;
-  --color-nimbus-text-dim: #9b8fb8;
+  --color-nimbus-text: #eceef4;
+  --color-nimbus-text-dim: #8b8fa3;
 
-  --color-nimbus-positive: #3dff7a;
-  --color-nimbus-negative: #ff4d6d;
+  --color-nimbus-positive: #4ec99a;
+  --color-nimbus-negative: #f2708a;
 }
 
 html,
@@ -48,9 +59,37 @@ body {
 /* Chunky monospace for labels and readouts — reads as a cabinet display
    without needing a pixel font file (the CSP blocks remote fonts). */
 .arcade-type {
-  font-family: 'Cascadia Mono', Consolas, 'Courier New', monospace;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  /* Kept as a class name so call sites don't churn, but no longer a cabinet
+     marquee: the same tabular feel without shouting in monospace caps. */
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+
+/* Slow breathing halo behind the orb — the one thing that should feel alive. */
+@keyframes nimbus-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  50% {
+    transform: scale(1.12);
+    opacity: 0.8;
+  }
+}
+
+/* An indeterminate sweep for "working", replacing the marquee chase. */
+@keyframes nimbus-progress {
+  0% {
+    transform: translateX(-60%);
+  }
+  100% {
+    transform: translateX(260%);
+  }
+}
+
+.nimbus-progress {
+  animation: nimbus-progress 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
 /* CRT scanlines drifting slowly down the panel. */
@@ -105,17 +144,13 @@ body {
 }
 
 .nimbus-scan {
-  animation: nimbus-scan 1.2s steps(24, end) infinite;
+  animation: nimbus-progress 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
 .nimbus-scanlines {
-  background-image: repeating-linear-gradient(
-    to bottom,
-    rgba(0, 0, 0, 0.32) 0px,
-    rgba(0, 0, 0, 0.32) 1px,
-    transparent 1px,
-    transparent 3px
-  );
+  /* Neutralised. The CRT scanline overlay is gone; the class stays so the
+     element it is on keeps its position in the stack without a code change. */
+  background-image: none;
   animation: nimbus-scanlines 1.4s linear infinite;
 }
 

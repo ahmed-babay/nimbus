@@ -122,6 +122,16 @@ export function activeWatches(): Watch[] {
   return load().watches
 }
 
+/** Stops following one journey, for the delete button beside it. */
+export function cancelWatchById(id: string): boolean {
+  const store = load()
+  const before = store.watches.length
+  store.watches = store.watches.filter((watch) => watch.id !== id)
+  if (store.watches.length === before) return false
+  save()
+  return true
+}
+
 export function cancelWatches(): number {
   const store = load()
   const removed = store.watches.length

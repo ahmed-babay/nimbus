@@ -177,10 +177,37 @@ export async function planLegs(
     .filter((leg) => leg.mode !== 'WALK' && leg.tripId)
 }
 
+/**
+ * Whether the time the user named is a deadline to arrive by, rather than a
+ * time to set off.
+ *
+ * These are genuinely different questions and the wrong one is useless. "I
+ * need to be in Frankfurt by nine" answered as a departure board gives trains
+ * leaving *at* nine, which arrive far too late — the exact opposite of what
+ * was asked. The router has a flag for this, but it drops optional enums often
+ * enough that a deterministic reading of the sentence has to back it up.
+ *
+ * Only phrases about the *destination* count. "leave by 9" and "set off at 9"
+ * are departure questions even though they contain "by".
+ */
+export function wantsArrival(utterance: string): boolean {
+  if (/\b(leav(e|ing)|depart(ing)?|set off|catch)\b[^.?!]{0,20}\b(by|at|before)\b/i.test(utterance)) {
+    return false
+  }
+  // "gets me there", "get me to" — the object sits between the verb and the
+  // preposition often enough that requiring them to be adjacent misses a third
+  // of the phrasings people actually use.
+  return /\b(arrives?|arriving|arrival|gets? (?:\w+ )?(?:there|to|in)|be (?:there|in|at)|reach(?:es)?|make it)\b[^.?!]{0,40}\b(?:by|before|at|no later than|in time for)\b/i.test(
+    utterance
+  )
+}
+
 export async function findJourneys(
   from: PlaceRef | undefined,
   to: PlaceRef,
-  departAfter?: string
+  /** A departure time, or an arrival deadline when `arriveBy` is set. */
+  departAfter?: string,
+  arriveBy = false
 ): Promise<TransitCardData> {
   const origin = from || config.transit?.defaultOrigin
   if (!origin) {
@@ -202,6 +229,9 @@ export async function findJourneys(
     `${BASE_URL}/plan?fromPlace=${encodeURIComponent(fromStop.id)}` +
     `&toPlace=${encodeURIComponent(toStop.id)}` +
     `&time=${encodeURIComponent(time.toISOString())}` +
+    // Same endpoint, opposite meaning for `time`: with this set it is the
+    // latest acceptable arrival and the planner works backwards from it.
+    (arriveBy ? '&arriveBy=true' : '') +
     '&numItineraries=5'
 
   const res = await httpFetch(url, { headers: HEADERS, label: 'Transitous', timeoutMs: 15000 })
@@ -238,10 +268,18 @@ export async function findJourneys(
   })
 
   const withService = journeys.filter((j) => j.legs.length > 0)
+  const usable = withService.length > 0 ? withService : journeys
+
+  // Asked to arrive by a deadline, the useful answer is the *latest* thing
+  // that still makes it — that is what "how long can I stay in bed" means.
+  // Left ascending it would lead with the earliest option, which is the one
+  // piece of information nobody needed.
+  if (arriveBy) usable.reverse()
 
   return {
     from: fromStop.name ?? placeLabel(origin),
     to: toStop.name ?? placeLabel(to),
-    journeys: withService.length > 0 ? withService : journeys
+    journeys: usable,
+    deadline: arriveBy ? clockTime(time.toISOString(), timeZone) : null
   }
 }

@@ -7,6 +7,10 @@ export const IPC = {
   TRANSCRIPT: 'nimbus:transcript',
   /** renderer -> main (invoke): recorded mic audio (ArrayBuffer + mimeType), returns the transcript string */
   TRANSCRIBE_AUDIO: 'nimbus:transcribe-audio',
+  /** renderer -> main (invoke): 16kHz mono frames, returns a speech probability per 512 samples */
+  VAD_FRAMES: 'nimbus:vad-frames',
+  /** renderer -> main: a listening turn started or ended; resets the VAD's recurrent state */
+  VAD_SESSION: 'nimbus:vad-session',
   /** renderer -> main (invoke): text to speak, returns { audio: ArrayBuffer, mimeType } to play */
   SYNTHESIZE_SPEECH: 'nimbus:synthesize-speech',
   /** renderer -> main: request the overlay hide itself (auto-fade finished, or user dismissed) */
@@ -27,6 +31,10 @@ export const IPC = {
   RUN_TEXT_ACTION: 'nimbus:run-text-action',
   /** renderer -> main (invoke): paste a result back over the original selection */
   REPLACE_SELECTION: 'nimbus:replace-selection',
+  /** renderer -> main (invoke): drop a draft into the app's message box, unsent */
+  REPLY_IN_APP: 'nimbus:reply-in-app',
+  /** renderer -> main: nudge the overlay window by a pixel delta while dragging */
+  MOVE_OVERLAY: 'nimbus:move-overlay',
   /** renderer -> main: toggle click-through as the pointer enters/leaves the card */
   SET_MOUSE_IGNORE: 'nimbus:set-mouse-ignore',
   /** renderer -> main: put an answer on the clipboard */
@@ -48,6 +56,16 @@ export const IPC = {
   DOWNLOAD_LOCAL_MODEL: 'nimbus:download-local-model',
   /** main -> renderer: download progress for the on-device model */
   LOCAL_MODEL_PROGRESS: 'nimbus:local-model-progress',
+  /** renderer -> main (invoke): re-fetch one stock for a chart range / live tick */
+  GET_QUOTE: 'nimbus:get-quote',
+  /** renderer -> main (invoke): the user's saved stock watchlist, priced */
+  GET_WATCHLIST: 'nimbus:get-watchlist',
+  /** renderer -> main (invoke): everything Nimbus is holding — watches, events, reminders */
+  GET_STANDING: 'nimbus:get-standing',
+  /** renderer -> main (invoke): cancel one standing item by kind + id */
+  CANCEL_STANDING: 'nimbus:cancel-standing',
+  /** main -> renderer: open the panel of standing commitments */
+  SHOW_STANDING: 'nimbus:show-standing',
   /** renderer -> main (invoke): drop one reminder by id */
   CANCEL_REMINDER: 'nimbus:cancel-reminder',
   /** renderer -> main (invoke): how much of each free tier is left */

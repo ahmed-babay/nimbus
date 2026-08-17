@@ -28,8 +28,8 @@ function note({
   hz,
   startOffsetMs,
   durationMs,
-  type = 'square',
-  gain = 0.09,
+  type = 'sine',
+  gain = 0.05,
   glideToHz
 }: NoteOptions): void {
   const ctx = getCtx()
@@ -46,9 +46,11 @@ function note({
   const envelope = ctx.createGain()
   // Near-instant attack and an abrupt tail — 8-bit hardware had no room for
   // gentle curves, and the snap is most of the character.
+  // Slow in, slow out. The arcade version snapped on in 6ms and cut off,
+  // which is what made it read as a coin-op blip; an attack you cannot hear
+  // start and a long tail is what makes a chime sound expensive instead.
   envelope.gain.setValueAtTime(0.0001, start)
-  envelope.gain.linearRampToValueAtTime(gain, start + 0.006)
-  envelope.gain.setValueAtTime(gain, start + duration * 0.7)
+  envelope.gain.linearRampToValueAtTime(gain, start + 0.045)
   envelope.gain.exponentialRampToValueAtTime(0.0001, start + duration)
 
   osc.connect(envelope)
@@ -58,20 +60,57 @@ function note({
 }
 
 /**
- * Rising arpeggio — the classic power-up / "insert coin" flourish.
- * C5-E5-G5-C6 on a square wave, one step every 55ms.
+ * Nimbus opening: a low root blooming into a fifth and an octave.
+ *
+ * Deliberately the slowest of the three. This one plays when the overlay is
+ * summoned and nothing is expected of you yet, so it can take its time — the
+ * notes arrive a third of a second apart and ring for well over a second,
+ * which is what makes it read as a room lighting up rather than an alert.
+ *
+ * G3-D4-G4: root, fifth, octave. The same intervals the other two chimes use,
+ * an octave lower, so all three are recognisably one instrument.
  */
-export function playListenStartChime(): void {
-  const steps = [523.25, 659.25, 783.99, 1046.5]
-  steps.forEach((hz, i) => {
-    note({ hz, startOffsetMs: i * 55, durationMs: 70, gain: 0.085 })
-  })
-  // Triangle doubling an octave up adds sparkle without extra loudness.
-  note({ hz: 2093, startOffsetMs: 165, durationMs: 90, type: 'triangle', gain: 0.045 })
+export function playOpenChime(): void {
+  note({ hz: 196.0, startOffsetMs: 0, durationMs: 1400, gain: 0.045 })
+  note({ hz: 293.66, startOffsetMs: 300, durationMs: 1250, gain: 0.038 })
+  note({ hz: 392.0, startOffsetMs: 600, durationMs: 1100, gain: 0.03 })
+  // Barely audible shimmer on top; you notice its absence, not its presence.
+  note({ hz: 783.99, startOffsetMs: 620, durationMs: 900, type: 'triangle', gain: 0.01 })
 }
 
-/** Descending two-step blip — turn taken, cabinet acknowledging input. */
+/**
+ * Listening: two sine tones a fifth apart, unhurried.
+ *
+ * A perfect fifth (D5 over G4) is the most consonant interval there is after
+ * the octave, which is why it reads as neutral and considered rather than
+ * cheerful. They overlap by design — a sequence of separate notes is a jingle,
+ * two notes blooming together is a chime.
+ *
+ * The spacing was widened after the first pass still felt hurried: 70ms
+ * between the notes is close enough to hear as one event, and at that speed
+ * a chime reads as a notification. At 200ms you hear the second note arrive,
+ * which is the difference between being pinged and being greeted.
+ *
+ * The quiet octave above is the part you don't consciously hear: it adds the
+ * shimmer that separates a real instrument from a test tone, at a level low
+ * enough that removing it sounds dull rather than different.
+ */
+export function playListenStartChime(): void {
+  note({ hz: 392.0, startOffsetMs: 0, durationMs: 1000, gain: 0.048 })
+  note({ hz: 587.33, startOffsetMs: 200, durationMs: 950, gain: 0.04 })
+  note({ hz: 1174.66, startOffsetMs: 210, durationMs: 700, type: 'triangle', gain: 0.011 })
+}
+
+/**
+ * Done listening: the same fifth, inverted and quieter.
+ *
+ * Deliberately the same two pitches as the start rather than a new motif, so
+ * the pair sounds like one instrument opening and closing rather than two
+ * unrelated alerts. Softer, because acknowledging the end of a turn should be
+ * felt more than heard — but no shorter, since a clipped ending is exactly
+ * what made the arcade version sound like a buzzer.
+ */
 export function playListenEndChime(): void {
-  note({ hz: 659.25, startOffsetMs: 0, durationMs: 65, gain: 0.075 })
-  note({ hz: 392, startOffsetMs: 60, durationMs: 110, gain: 0.075, glideToHz: 294 })
+  note({ hz: 587.33, startOffsetMs: 0, durationMs: 780, gain: 0.034 })
+  note({ hz: 392.0, startOffsetMs: 180, durationMs: 900, gain: 0.028 })
 }

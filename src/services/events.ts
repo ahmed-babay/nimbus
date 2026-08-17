@@ -141,6 +141,20 @@ export function eventsToday(): CalendarEvent[] {
   return load().events.filter((event) => event.startDate <= now && lastDay(event) >= now)
 }
 
+/**
+ * Drops one event by id, for a delete button rather than a spoken phrase.
+ * `removeEvents` matches on the title, which would take both of two similarly
+ * named days at once.
+ */
+export function removeEventById(id: string): boolean {
+  const store = load()
+  const before = store.events.length
+  store.events = store.events.filter((event) => event.id !== id)
+  if (store.events.length === before) return false
+  save()
+  return true
+}
+
 export function removeEvents(phrase: string): CalendarEvent[] {
   const needle = phrase.trim().toLowerCase()
   const store = load()

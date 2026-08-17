@@ -705,6 +705,68 @@ that announced "still on time" every few minutes would be switched off within th
 and then it wouldn't be there for the delay that mattered. Watches are dropped ten minutes
 after the train leaves.
 
+## Standing things: what Nimbus is holding for you
+
+Ask "the 17:30 to Frankfurt, keep me posted", "tell me when it's a good time for a run",
+"remind me to call the landlord at 6" or "I have a dentist appointment on the 24th", and
+Nimbus is now holding four different kinds of promise on your behalf.
+
+Until recently none of them were visible until they fired. That is a bad property for an
+app whose whole promise is *"I'll tell you later"* — you cannot trust a promise you cannot
+see. **Tray → Watching for you**, or the `Watching` button in the header, lists all of
+them:
+
+```
+🚆 RE60 to Frankfurt Hbf                    [8 min late]
+   Following · 17:32 from Darmstadt Hbf · today
+🌤 Tell me when it's good to go out
+   Weather watch · checking every 10 min
+⏰ Call the landlord
+   Reminder · 18:00 · today
+📅 Dentist
+   Event · Mon 24 Aug
+```
+
+Sorted by when each comes up rather than grouped by type, because time is the ordering
+that matters — a train in twenty minutes belongs above a birthday next week regardless of
+which store it came from. Each row cancels with the `×`. A delayed train wears its delay
+as a badge, so the panel answers "is anything going wrong" without being read.
+
+## Is it worth going outside?
+
+"Is it a good time for a run", "how's the pollen", "do I need sunscreen", "can I cycle to
+work" — these route to `src/services/outdoors.ts`, which is deliberately *not* the weather
+integration. Weather answers "what is the temperature". This answers "should I go out",
+which is a different question with a different set of inputs:
+
+| | why it's in there |
+|---|---|
+| Apparent temperature | wind and humidity are what make 8°C fine or miserable |
+| Rain in the next 3h | the peak, not the average — that's what decides a jacket |
+| European AQI | published band, not a guess |
+| Pollen, by plant | naming grass vs birch is what makes it useful to a sufferer |
+| UV index | WHO bands: 3+ wants sunscreen, 8+ burns fast |
+| Daylight left | under an hour is a safety matter, not a comfort one |
+
+The **worst** factor decides the verdict and the reasons are sorted worst-first, so the
+thing you need to know is the first line. Verified live across three climates: Darmstadt
+came back *fine*, Reykjavík *great*, Cairo *no* on a 34°C apparent temperature.
+
+All of it is **[Open-Meteo](https://open-meteo.com/)** — free, no key, no account. That
+matters more than it sounds: pollen sitting behind a paid tier is why most weather apps
+never tell a hay-fever sufferer the one number they actually care about.
+
+### Waiting, rather than being asked twice
+
+"**Tell me when** it's a good time for a run" is a different request from "is it a good
+time for a run", and Nimbus now treats it as one. The first sets a watch that polls every
+ten minutes and speaks up once, then removes itself; the second answers now.
+
+This is the thing a chat assistant structurally cannot do — it has no way to still be
+thinking about you in ninety minutes — and it's why the phrase test in
+`src/services/outdoor-watch.ts` is deliberately narrow. Only an explicit "tell me when" or
+"let me know when" turns a question about *now* into a standing watch.
+
 ## Clickable results
 
 News headlines, search results, GitHub repos and music cards all open in your default

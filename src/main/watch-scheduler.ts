@@ -1,5 +1,11 @@
 import { Notification } from 'electron'
 import { activeWatches, checkWatches, type WatchUpdate } from '../services/watchers'
+import {
+  activeOutdoorWatches,
+  checkOutdoorWatches,
+  type OutdoorUpdate
+} from '../services/outdoor-watch'
+import { checkPriceAlerts, priceAlerts, type PriceUpdate } from '../services/watchlist'
 
 /**
  * Polls watched journeys and reports the ones that changed.
@@ -16,15 +22,18 @@ import { activeWatches, checkWatches, type WatchUpdate } from '../services/watch
 
 const TICK_MS = 150_000
 
+/** Long enough for the app to finish appearing before it starts fetching. */
+const FIRST_CHECK_DELAY_MS = 8_000
+
 let timer: ReturnType<typeof setInterval> | null = null
 let checking = false
 
 export interface WatchHooks {
   /** Brings the overlay up and speaks the update. */
-  onUpdate: (update: WatchUpdate) => void
+  onUpdate: (update: WatchUpdate | OutdoorUpdate | PriceUpdate) => void
 }
 
-function notify(update: WatchUpdate): void {
+function notify(update: WatchUpdate | OutdoorUpdate | PriceUpdate): void {
   // The overlay alone is missable when the user is in a full-screen app,
   // which is exactly where someone is when they're about to miss a train.
   if (!Notification.isSupported()) return
@@ -38,7 +47,15 @@ export function startWatchScheduler({ onUpdate }: WatchHooks): void {
     if (checking) return
     checking = true
     try {
-      for (const update of await checkWatches()) {
+      // Both kinds on one tick. Outdoor watches rate-limit themselves to ten
+      // minutes internally, so sharing the faster transit cadence costs
+      // nothing and keeps a single timer in the process.
+      const updates: Array<WatchUpdate | OutdoorUpdate | PriceUpdate> = [
+        ...(await checkWatches()),
+        ...(await checkOutdoorWatches()),
+        ...(await checkPriceAlerts())
+      ]
+      for (const update of updates) {
         console.log(`[watchers] ${update.speech}`)
         notify(update)
         try {
@@ -56,11 +73,15 @@ export function startWatchScheduler({ onUpdate }: WatchHooks): void {
     }
   }
 
-  void tick()
+  // Not immediately. Startup is the busiest moment the app has — Vite is
+  // building, Electron is booting, the window is being composited — and a
+  // burst of network calls competing with that is felt as lag rather than
+  // seen as data. Nothing here is time-critical to the second.
+  setTimeout(() => void tick(), FIRST_CHECK_DELAY_MS)
   timer = setInterval(() => void tick(), TICK_MS)
 
-  const waiting = activeWatches().length
-  if (waiting > 0) console.log(`[watchers] ${waiting} journey(s) being followed`)
+  const waiting = activeWatches().length + activeOutdoorWatches().length + priceAlerts().length
+  if (waiting > 0) console.log(`[watchers] ${waiting} thing(s) being followed`)
 }
 
 export function stopWatchScheduler(): void {

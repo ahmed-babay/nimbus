@@ -99,6 +99,42 @@ export const CAPABILITIES: Capability[] = [
   },
   {
     group: 'Getting around',
+    title: 'Follow a train for delays',
+    example: 'the 17:30 to Frankfurt, keep me posted',
+    keywords: 'watch delay delayed cancelled keep me updated notify posted track train'
+  },
+  {
+    group: 'Money',
+    title: 'Convert currency',
+    example: 'how much is 50 euros in dollars',
+    keywords: 'convert currency exchange rate euro dollar pound yen money'
+  },
+  {
+    group: 'Money',
+    title: 'Your stocks, with live charts',
+    example: 'how are my stocks doing',
+    keywords: 'stocks watchlist portfolio shares chart follow'
+  },
+  {
+    group: 'Money',
+    title: 'Alert me on a price',
+    example: 'tell me when Tesla drops below 300',
+    keywords: 'alert price drops below above target notify stock'
+  },
+  {
+    group: 'Outside',
+    title: 'Is it a good time to go out?',
+    example: 'is it a good time for a run',
+    keywords: 'run jog jogging cycle walk outside outdoors exercise sport training'
+  },
+  {
+    group: 'Outside',
+    title: 'Pollen, air quality and UV',
+    example: "how's the pollen today",
+    keywords: 'pollen hay fever allergy air quality aqi smog uv sunscreen burn'
+  },
+  {
+    group: 'Getting around',
     title: 'Distance and travel time',
     example: 'how far is the airport',
     keywords: 'map directions route drive walk cycle how long'
@@ -111,6 +147,18 @@ export const CAPABILITIES: Capability[] = [
   },
 
   // Your day
+  {
+    group: 'Your day',
+    title: 'Public holidays',
+    example: 'when is the next public holiday',
+    keywords: 'holiday bank holiday feiertag shops closed day off monday'
+  },
+  {
+    group: 'Look things up',
+    title: 'What a word means',
+    example: 'what does resilient mean',
+    keywords: 'define definition dictionary word meaning vocabulary english usage'
+  },
   {
     group: 'Your day',
     title: 'Daily briefing',

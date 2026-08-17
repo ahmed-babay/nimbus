@@ -7,6 +7,13 @@ import {
 } from './gemini'
 import { getWeather } from './weather'
 import { getStockQuote } from './stocks'
+import {
+  addPriceAlert,
+  addToWatchlist,
+  parseAlert,
+  pricedWatchlist,
+  removeFromWatchlist
+} from './watchlist'
 import { getCryptoPrice } from './crypto'
 import { getNews } from './news'
 import { getTrendingRepos } from './github'
@@ -28,7 +35,12 @@ import {
 import { lookupEntity } from './wikipedia'
 import { findMusic } from './music'
 import { watchJourney, wantsWatching } from './watchers'
-import { findJourneys } from './transit'
+import { findJourneys, wantsArrival } from './transit'
+import { outdoorConditions, describeOutdoors } from './outdoors'
+import { convertCurrency, currencyCode, describeConversion } from './currency'
+import { upcomingHolidays, describeHolidays } from './holidays'
+import { defineWord, describeDefinition } from './dictionary'
+import { watchOutdoors, wantsOutdoorWatch, outdoorWatchMode } from './outdoor-watch'
 import { getDirections, modeFromUtterance } from './maps'
 import { findStation } from './radio'
 import { recordTurn } from './conversation'
@@ -144,9 +156,114 @@ async function runIntent(
         if (!config.integrations.stocks) {
           throw new Error('The stocks integration is disabled in config.json.')
         }
+
+        const action = params.stockAction || 'quote'
+
+        if (action === 'list') {
+          const stocks = await pricedWatchlist()
+          if (stocks.length === 0) {
+            return {
+              speech: "You aren't following any stocks yet. Say \"add Tesla to my stocks\".",
+              card: { type: 'watchlist', data: { stocks: [] } }
+            }
+          }
+          // Deterministic rather than model-written: this is a list of numbers,
+          // and a sentence per stock would be slower and no clearer.
+          const movers = stocks
+            .map((s) => `${s.symbol} ${s.changePercent >= 0 ? 'up' : 'down'} ${Math.abs(s.changePercent).toFixed(1)}%`)
+            .join(', ')
+          return {
+            speech: `Your stocks today: ${movers}.`,
+            card: { type: 'watchlist', data: { stocks } }
+          }
+        }
+
         const symbol = params.symbol
         if (!symbol) throw new Error("I didn't catch which ticker you meant.")
-        const data = await getStockQuote(symbol)
+
+        // "Show me Tesla and Google" is one question about two companies. The
+        // router returns them comma-separated; anything with more than one
+        // gets the list card rather than silently answering about the first.
+        const symbols = symbol
+          .split(',')
+          .map((entry) => entry.trim())
+          .filter(Boolean)
+
+        if (action === 'quote' && symbols.length > 1) {
+          const quotes = await Promise.all(
+            symbols.slice(0, 6).map((entry) => getStockQuote(entry, '1d').catch(() => null))
+          )
+          const stocks = quotes.filter((quote): quote is NonNullable<typeof quote> => quote !== null)
+          if (stocks.length === 0) throw new Error("I couldn't find those stocks.")
+          const movers = stocks
+            .map(
+              (s) =>
+                `${s.symbol} ${s.changePercent >= 0 ? 'up' : 'down'} ${Math.abs(s.changePercent).toFixed(1)}%`
+            )
+            .join(', ')
+          return { speech: `${movers}.`, card: { type: 'watchlist', data: { stocks } } }
+        }
+
+        if (action === 'add') {
+          const added: string[] = []
+          for (const entry of symbols.slice(0, 6)) {
+            // One bad name shouldn't lose the others in "add Tesla and Googl".
+            try {
+              added.push(await addToWatchlist(entry))
+            } catch (err) {
+              console.warn(`[stocks] could not add ${entry}:`, err)
+            }
+          }
+          if (added.length === 0) throw new Error(`I couldn't find "${symbol}".`)
+          const stocks = await pricedWatchlist()
+          return {
+            speech: `Added ${added.join(' and ')} to your stocks.`,
+            card: { type: 'watchlist', data: { stocks } }
+          }
+        }
+
+        if (action === 'remove') {
+          const gone = symbols.filter((entry) => removeFromWatchlist(entry))
+          const stocks = await pricedWatchlist()
+          return {
+            speech: gone.length
+              ? `Removed ${gone.join(' and ').toUpperCase()} from your stocks.`
+              : `${symbol.toUpperCase()} wasn't in your stocks.`,
+            card: { type: 'watchlist', data: { stocks } }
+          }
+        }
+
+        if (action === 'alert') {
+          // The sentence first, the router second: the parser reads a number
+          // out of "goes down to $200" every time, and the model keeps
+          // omitting it entirely.
+          const parsed = parseAlert(utterance)
+          const modelPrice = Number((params.alertPrice ?? '').replace(/,/g, ''))
+          const price = parsed?.price ?? (Number.isFinite(modelPrice) ? modelPrice : NaN)
+          if (!Number.isFinite(price) || price <= 0) {
+            throw new Error(
+              "I didn't catch the price to watch for. Try \"tell me when Tesla drops below 300\"."
+            )
+          }
+
+          // Direction, in order of how much it can be trusted: what the words
+          // actually said, then the router, then where the price is now --
+          // "notify me at 300" with the stock at 340 can only mean below.
+          let direction = parsed?.direction ?? null
+          if (!direction && (params.alertDirection === 'above' || params.alertDirection === 'below')) {
+            direction = params.alertDirection
+          }
+          if (!direction) {
+            const now = await getStockQuote(symbols[0], '1d')
+            direction = price > now.price ? 'above' : 'below'
+          }
+
+          const { speech } = await addPriceAlert(symbols[0], direction, price)
+          const data = await getStockQuote(symbols[0], '1d')
+          return { speech, card: { type: 'stock', data } }
+        }
+
+        const data = await getStockQuote(symbols[0], '1d')
         const speech = await formatResponse('stocks', utterance, data, onChunk)
         return { speech, card: { type: 'stock', data } }
       }
@@ -228,9 +345,56 @@ async function runIntent(
           return { speech, card: { type: 'transit', data } }
         }
 
-        const data = await findJourneys(params.from, destination, params.when)
+        // "Be there by nine" is a deadline, not a departure. Same belt and
+        // braces as the watch flag above: the router's own answer first, the
+        // sentence itself as the backstop when it omits the enum.
+        const arriveBy = params.timeMode === 'arrive' || wantsArrival(utterance)
+        const data = await findJourneys(params.from, destination, params.when, arriveBy)
         const speech = await formatResponse('transit', utterance, data, onChunk)
         return { speech, card: { type: 'transit', data } }
+      }
+
+      case 'outdoors': {
+        // "Tell me when it's good" is a standing question, not a lookup — the
+        // one thing a chat assistant cannot do is still be thinking about you
+        // in an hour.
+        if (wantsOutdoorWatch(utterance)) {
+          const { speech } = await watchOutdoors(outdoorWatchMode(utterance), params.city)
+          const data = await outdoorConditions(params.city)
+          return { speech, card: { type: 'outdoors', data } }
+        }
+
+        const data = await outdoorConditions(params.city)
+        // Not sent to the model: the verdict is already a sentence, and every
+        // round trip here is quota spent to reword something deterministic.
+        return { speech: describeOutdoors(data), card: { type: 'outdoors', data } }
+      }
+
+      case 'convert': {
+        const amount = Number((params.amount ?? '1').replace(/,/g, ''))
+        const from = currencyCode(params.fromCurrency, 'EUR')
+        const to = currencyCode(params.toCurrency, 'USD')
+        const data = await convertCurrency(Number.isFinite(amount) ? amount : 1, from, to)
+        // Arithmetic, not prose: a model that miscalculates a conversion is
+        // worse than no feature, so it is never asked.
+        return { speech: describeConversion(data), card: { type: 'currency', data } }
+      }
+
+      case 'holidays': {
+        const holidays = await upcomingHolidays()
+        return {
+          speech: describeHolidays(holidays),
+          // Holidays are days on a calendar, so they render through the card
+          // that already draws those rather than needing one of their own.
+          card: { type: 'event', data: { created: null, upcoming: holidays } }
+        }
+      }
+
+      case 'define': {
+        const word = params.word || params.query
+        if (!word) throw new Error("I didn't catch which word you meant.")
+        const data = await defineWord(word)
+        return { speech: describeDefinition(data), card: { type: 'entity', data } }
       }
 
       case 'directions': {

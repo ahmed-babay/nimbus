@@ -40,6 +40,10 @@ export type NimbusIntent =
   | 'music'
   | 'transit'
   | 'directions'
+  | 'outdoors'
+  | 'convert'
+  | 'holidays'
+  | 'define'
   | 'remember'
   | 'recall'
   | 'alarm'
@@ -62,15 +66,39 @@ export interface WeatherCardData {
   windSpeed: number
 }
 
+/**
+ * How much history a chart shows. The percentage always describes *this*
+ * window, which is the whole reason the default is a day: Yahoo's
+ * `chartPreviousClose` is the price at the start of the range, so asking for a
+ * month of history silently turned "Tesla is down 1%" into the monthly figure.
+ */
+export type StockRange = '1d' | '5d' | '1mo' | '6mo' | '1y'
+
+export const STOCK_RANGES: Array<{ id: StockRange; label: string }> = [
+  { id: '1d', label: '1D' },
+  { id: '5d', label: '1W' },
+  { id: '1mo', label: '1M' },
+  { id: '6mo', label: '6M' },
+  { id: '1y', label: '1Y' }
+]
+
 export interface StockCardData {
   symbol: string
+  /** Company name when Yahoo gives one, for a card that isn't just a ticker. */
+  name: string
   price: number
   change: number
   changePercent: number
   high: number
   low: number
-  /** Recent closing prices, oldest first — drives the sparkline. */
+  /** Which window `change` and `history` describe. */
+  range: StockRange
+  /** Prices across the range, oldest first — drives the chart. */
   history: number[]
+  /** Trading currency, so a London listing isn't shown in dollars. */
+  currency: string
+  /** True while the exchange is open, which is what makes live polling worth it. */
+  live: boolean
 }
 
 export interface CryptoCardData {
@@ -81,6 +109,21 @@ export interface CryptoCardData {
   marketCap: number
   /** Recent prices, oldest first — drives the sparkline. */
   history: number[]
+}
+
+/** "How are my stocks doing" — the whole list, each with its own chart. */
+export interface WatchlistCardData {
+  stocks: StockCardData[]
+}
+
+export interface CurrencyCardData {
+  amount: number
+  from: string
+  to: string
+  rate: number
+  result: number
+  /** The ECB publication date the rate came from, not today. */
+  asOf: string
 }
 
 export interface EntityCardData {
@@ -205,6 +248,13 @@ export interface TransitCardData {
   from: string
   to: string
   journeys: TransitJourney[]
+  /**
+   * Set when the user asked to *arrive* by a time rather than leave at one, as
+   * a clock time. The card says so, because "trains to Frankfurt" and "trains
+   * that get you to Frankfurt by nine" are different answers and the user has
+   * to be able to see which one they got.
+   */
+  deadline?: string | null
 }
 
 /** Something happening on a given day (or range), as told to Nimbus. */
@@ -236,6 +286,26 @@ export interface BriefingCardData {
   reminders: Reminder[]
 }
 
+/** One thing that makes going outside better or worse right now. */
+export interface OutdoorFactor {
+  kind: 'feel' | 'rain' | 'air' | 'pollen' | 'uv' | 'light'
+  level: 'good' | 'ok' | 'poor' | 'bad'
+  text: string
+}
+
+export interface OutdoorCardData {
+  place: string
+  /** Worst factor decides: one bad thing is enough to spoil going out. */
+  verdict: 'great' | 'fine' | 'caution' | 'no'
+  /** Sorted worst-first, so the reason to care is always at the top. */
+  factors: OutdoorFactor[]
+  temperature: number | null
+  windSpeed: number | null
+  /** Highest chance of rain in the next three hours, as a percentage. */
+  rainChance: number
+  rainWhen: string | null
+}
+
 export interface Reminder {
   id: string
   /** When it fires, ISO. */
@@ -255,6 +325,25 @@ export interface Reminder {
     travelMinutes: number
   }
   fired: boolean
+}
+
+/**
+ * Everything Nimbus is currently holding on the user's behalf.
+ *
+ * Grouped into one payload because the point of the panel is the *total* —
+ * "what has this thing promised to do for me" — and three separate fetches
+ * would let the answer arrive in pieces.
+ */
+export interface StandingItem {
+  id: string
+  kind: 'watch' | 'outdoor' | 'price' | 'event' | 'reminder'
+  title: string
+  /** When it matters, already formatted. Empty when there is no time. */
+  detail: string
+  /** ISO, for sorting the whole list by when it comes up. */
+  at: string
+  /** Set when the thing is already going wrong, e.g. a delayed train. */
+  warning?: string
 }
 
 export interface ReminderCardData {
@@ -375,6 +464,9 @@ export type ResponseCardData =
   | { type: 'music'; data: MusicCardData }
   | { type: 'radio'; data: RadioCardData }
   | { type: 'transit'; data: TransitCardData }
+  | { type: 'outdoors'; data: OutdoorCardData }
+  | { type: 'watchlist'; data: WatchlistCardData }
+  | { type: 'currency'; data: CurrencyCardData }
   | { type: 'screen'; data: ScreenCardData }
   | { type: 'paperwork'; data: PaperworkCardData }
   | { type: 'selection'; data: SelectionCardData }

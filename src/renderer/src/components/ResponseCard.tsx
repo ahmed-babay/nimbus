@@ -3,6 +3,9 @@ import { useState, type RefObject } from 'react'
 import type { RadioPlayerControls } from '../hooks/useRadioPlayer'
 import { ImageCarousel } from './ImageCarousel'
 import { Sparkline } from './Sparkline'
+import { PriceChart } from './PriceChart'
+import { WeatherGlyph } from './WeatherGlyph'
+import { CountUp, Countdown, FillBar, Stagger, StaggerItem, EASE } from './Motion'
 import { SpokenText } from './SpokenText'
 import type {
   BriefingCardData,
@@ -20,6 +23,8 @@ import type {
   NimbusResponse,
   PaperworkCardData,
   RadioCardData,
+  OutdoorCardData,
+  OutdoorFactor,
   ReminderCardData,
   RenderedMap,
   ResponseCardData,
@@ -29,6 +34,8 @@ import type {
   StockCardData,
   TransitCardData,
   TravelMode,
+  CurrencyCardData,
+  WatchlistCardData,
   WeatherCardData
 } from '@shared/types'
 
@@ -139,6 +146,12 @@ function CardBody({
       return <RadioBody data={card.data} radio={radio} />
     case 'transit':
       return <TransitBody data={card.data} />
+    case 'outdoors':
+      return <OutdoorsBody data={card.data} />
+    case 'watchlist':
+      return <WatchlistBody data={card.data} />
+    case 'currency':
+      return <CurrencyBody data={card.data} />
     case 'directions':
       return <DirectionsBody data={card.data} />
     case 'memory':
@@ -166,12 +179,21 @@ function Delta({ value, suffix = '' }: { value: number; suffix?: string }) {
   const positive = value >= 0
   return (
     <span
-      className={`text-[11px] font-medium tabular-nums ${
+      className={`flex shrink-0 items-baseline gap-0.5 text-[11px] font-medium tabular-nums ${
         positive ? 'text-nimbus-positive' : 'text-nimbus-negative'
       }`}
     >
-      {positive ? '▲' : '▼'} {Math.abs(value).toFixed(2)}
-      {suffix}
+      {/* The arrow nudges the way the price moved — a half-second cue that
+          lands before the number is read. */}
+      <motion.span
+        key={positive ? 'up' : 'down'}
+        initial={{ y: positive ? 4 : -4, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ duration: 0.4, ease: EASE }}
+      >
+        {positive ? '▲' : '▼'}
+      </motion.span>
+      <CountUp value={Math.abs(value)} decimals={2} suffix={suffix} />
     </span>
   )
 }
@@ -179,40 +201,56 @@ function Delta({ value, suffix = '' }: { value: number; suffix?: string }) {
 function WeatherBody({ data }: { data: WeatherCardData }) {
   return (
     <div className={`${panel} flex items-center justify-between`}>
-      <div>
-        <div className="text-2xl font-semibold tabular-nums text-nimbus-text">{data.temp}°</div>
-        <div className="mt-0.5 text-[11px] capitalize text-nimbus-text-dim">
-          {data.condition} · {data.city}
+      <div className="flex items-center gap-2.5">
+        {/* Drawn and animated rather than an emoji: the overlay's CSP blocks
+            remote images, and rain that falls is read faster than the word. */}
+        <WeatherGlyph icon={data.icon} size={52} />
+        <div>
+          <div className="text-2xl font-semibold tabular-nums text-nimbus-text">
+            <CountUp value={data.temp} suffix="°" />
+          </div>
+          <div className="mt-0.5 text-[11px] capitalize text-nimbus-text-dim">
+            {data.condition} · {data.city}
+          </div>
         </div>
       </div>
-      <div className="space-y-0.5 text-right text-[11px] text-nimbus-text-dim">
-        <div>Feels {data.feelsLike}°</div>
-        <div>{data.humidity}% humidity</div>
-        <div>{Math.round(data.windSpeed)} m/s wind</div>
-      </div>
+      <Stagger className="space-y-0.5 text-right text-[11px] text-nimbus-text-dim">
+        <StaggerItem>Feels {data.feelsLike}°</StaggerItem>
+        <StaggerItem>{data.humidity}% humidity</StaggerItem>
+        <StaggerItem>{Math.round(data.windSpeed)} m/s wind</StaggerItem>
+      </Stagger>
     </div>
   )
 }
 
 function StockBody({ data }: { data: StockCardData }) {
-  const positive = data.changePercent >= 0
   return (
-    <div className={`${panel} flex items-center gap-3`}>
-      <div className="min-w-0">
-        <div className="text-sm font-semibold tracking-wide text-nimbus-text">{data.symbol}</div>
-        <div className="mt-0.5 text-[11px] tabular-nums text-nimbus-text-dim">
-          H {data.high.toFixed(2)} · L {data.low.toFixed(2)}
+    <div className={panel}>
+      <PriceChart initial={data} />
+    </div>
+  )
+}
+
+/** "How are my stocks doing" — one row each, chart included. */
+function WatchlistBody({ data }: { data: WatchlistCardData }) {
+  if (data.stocks.length === 0) {
+    return (
+      <div className={panel}>
+        <div className="text-[11px] text-nimbus-text-dim">
+          No stocks followed yet. Say &ldquo;add Tesla to my stocks&rdquo;.
         </div>
       </div>
-      <div className="ml-auto shrink-0">
-        <Sparkline values={data.history} positive={positive} />
-      </div>
-      <div className="shrink-0 text-right">
-        <div className="text-lg font-semibold tabular-nums text-nimbus-text">
-          ${data.price.toFixed(2)}
+    )
+  }
+
+  return (
+    <div className="space-y-2">
+      {data.stocks.map((stock) => (
+        <div key={stock.symbol} className={panel}>
+          {/* Compact: a list of eight full-height charts is a wall. */}
+          <PriceChart initial={stock} compact />
         </div>
-        <Delta value={data.changePercent} suffix="%" />
-      </div>
+      ))}
     </div>
   )
 }
@@ -220,19 +258,21 @@ function StockBody({ data }: { data: StockCardData }) {
 function CryptoBody({ data }: { data: CryptoCardData }) {
   const positive = data.change24h >= 0
   return (
-    <div className={`${panel} flex items-center gap-3`}>
-      <div className="min-w-0">
-        <div className="text-sm font-semibold tracking-wide text-nimbus-text">{data.symbol}</div>
-        <div className="mt-0.5 truncate text-[11px] text-nimbus-text-dim">{data.name}</div>
-      </div>
-      <div className="ml-auto shrink-0">
-        <Sparkline values={data.history} positive={positive} />
-      </div>
-      <div className="shrink-0 text-right">
-        <div className="text-lg font-semibold tabular-nums text-nimbus-text">
-          ${data.price.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-        </div>
+    <div className={panel}>
+      <div className="flex items-baseline gap-2">
+        <span className="text-sm font-semibold tracking-wide text-nimbus-text">{data.symbol}</span>
+        <span className="min-w-0 flex-1 truncate text-[10px] text-nimbus-text-dim">
+          {data.name}
+        </span>
+        <span className="shrink-0 text-lg font-semibold tabular-nums text-nimbus-text">
+          <CountUp value={data.price} decimals={data.price < 10 ? 4 : 2} prefix="$" />
+        </span>
         <Delta value={data.change24h} suffix="% 24h" />
+      </div>
+      {/* Full-width curve rather than a thumbnail sparkline: the shape of the
+          last week is the reason anyone asked. */}
+      <div className="mt-1.5">
+        <Sparkline values={data.history} positive={positive} width={300} height={56} animate />
       </div>
     </div>
   )
@@ -300,14 +340,27 @@ function SelectionBody({
         {data.result}
       </p>
 
-      <div className="mt-2.5 flex gap-1.5 border-t border-white/[0.06] pt-2.5">
-        {data.canReplace && (
+      <div className="mt-2.5 flex flex-wrap gap-1.5 border-t border-white/[0.06] pt-2.5">
+        {/* A reply belongs in the message box, not over the message being
+            replied to — so this is the primary action when drafting one, and
+            "Replace" is hidden entirely because it would delete their text. */}
+        {data.action === 'reply' ? (
           <button
-            onClick={() => onReplace(data.result)}
+            onClick={() => void window.nimbus.replyInApp(data.result)}
+            title="Copies the draft and brings the chat forward. Pastes it for you where the app allows; otherwise press Ctrl+V. Never sends."
             className="rounded-lg bg-nimbus-accent/20 px-2.5 py-1 text-[11px] font-medium text-nimbus-accent-bright transition-colors hover:bg-nimbus-accent/30"
           >
-            Replace selection
+            Reply in chat
           </button>
+        ) : (
+          data.canReplace && (
+            <button
+              onClick={() => onReplace(data.result)}
+              className="rounded-lg bg-nimbus-accent/20 px-2.5 py-1 text-[11px] font-medium text-nimbus-accent-bright transition-colors hover:bg-nimbus-accent/30"
+            >
+              Replace selection
+            </button>
+          )
         )}
         <button
           onClick={() => window.nimbus.copyText(data.result)}
@@ -512,17 +565,27 @@ function EntityBody({ data }: { data: EntityCardData }) {
           className="h-[104px] w-[88px] shrink-0 rounded-lg object-cover shadow-lg ring-1 ring-white/15"
         />
       )}
-      <div className="min-w-0 flex-1">
-        <div className="text-[14px] font-semibold leading-tight text-nimbus-text">{data.title}</div>
+      <Stagger className="min-w-0 flex-1">
+        <StaggerItem className="text-[14px] font-semibold leading-tight text-nimbus-text">
+          {data.title}
+        </StaggerItem>
         {data.description && (
-          <div className="mt-1 text-[11px] capitalize text-nimbus-accent-bright">
+          <StaggerItem className="mt-1 text-[11px] text-nimbus-accent-bright">
             {data.description}
-          </div>
+          </StaggerItem>
         )}
-        <p className="mt-1.5 line-clamp-4 text-[11.5px] leading-relaxed text-nimbus-text-dim">
-          {data.extract}
-        </p>
-      </div>
+        {/* Split on blank lines so a dictionary entry reveals sense by sense
+            rather than as one block. Anything without them is a single item,
+            which is exactly the old behaviour. */}
+        {data.extract.split('\n\n').map((part, index) => (
+          <StaggerItem
+            key={index}
+            className="mt-1.5 whitespace-pre-line text-[11.5px] leading-relaxed text-nimbus-text-dim"
+          >
+            {part}
+          </StaggerItem>
+        ))}
+      </Stagger>
     </div>
   )
 }
@@ -644,15 +707,40 @@ function NewsBody({ data }: { data: NewsCardData }) {
 }
 
 function GithubBody({ data }: { data: GithubCardData }) {
+  const most = Math.max(1, ...data.repos.slice(0, 3).map((repo) => repo.stars))
   return (
     <ul className={`${panel} space-y-2`}>
-      {data.repos.slice(0, 3).map((repo) => (
-        <ListRow
+      {data.repos.slice(0, 3).map((repo, index) => (
+        <motion.li
           key={repo.url}
-          primary={repo.fullName}
-          secondary={`★ ${repo.stars.toLocaleString()}`}
-          url={repo.url}
-        />
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.32, ease: EASE, delay: index * 0.06 }}
+        >
+          <button
+            onClick={() => openLink(repo.url)}
+            title={repo.url}
+            className="w-full text-left"
+          >
+            <div className="flex items-baseline gap-2">
+              <span className="min-w-0 flex-1 truncate text-[11.5px] text-nimbus-text">
+                {repo.fullName}
+              </span>
+              <span className="shrink-0 text-[10.5px] tabular-nums text-nimbus-yellow">
+                ★ <CountUp value={repo.stars} />
+              </span>
+            </div>
+            {/* Relative to the most-starred in the list, so the gap between
+                first and third is visible rather than arithmetic. */}
+            <div className="mt-1">
+              <FillBar
+                fraction={repo.stars / most}
+                className="bg-nimbus-yellow/70"
+                delay={index * 0.06}
+              />
+            </div>
+          </button>
+        </motion.li>
       ))}
       {data.repos.length === 0 && (
         <li className="text-[11px] text-nimbus-text-dim">No trending repos found.</li>
@@ -674,16 +762,6 @@ function lineTone(line: string): string {
   return 'bg-white/10 text-nimbus-text ring-white/20'
 }
 
-/** "in 6 min" / "in 1 h 20" — the number you actually act on when leaving. */
-function countdown(iso: string): string {
-  if (!iso) return ''
-  const minutes = Math.round((new Date(iso).getTime() - Date.now()) / 60000)
-  if (Number.isNaN(minutes) || minutes < 0) return 'now'
-  if (minutes === 0) return 'now'
-  if (minutes < 60) return `in ${minutes} min`
-  return `in ${Math.floor(minutes / 60)} h ${minutes % 60}`
-}
-
 /** `bare` drops the panel chrome when this is nested inside another card. */
 function TransitBody({ data, bare = false }: { data: TransitCardData; bare?: boolean }) {
   return (
@@ -692,24 +770,38 @@ function TransitBody({ data, bare = false }: { data: TransitCardData; bare?: boo
         <span className="truncate">{data.from}</span>
         <span className="shrink-0 text-nimbus-accent">→</span>
         <span className="truncate">{data.to}</span>
+        {/* Which question was answered. Without this, a board of 08:xx
+            departures in response to "by nine" looks like it misheard. */}
+        {data.deadline && (
+          <span className="ml-auto shrink-0 rounded bg-nimbus-accent/15 px-1.5 py-0.5 text-[9.5px] font-medium normal-case tracking-normal text-nimbus-accent-bright">
+            arrive by {data.deadline}
+          </span>
+        )}
       </div>
 
       <ul className="mt-2 divide-y divide-white/[0.06]">
         {data.journeys.slice(0, 4).map((journey, index) => {
-          const soon = countdown(journey.departsAt)
           const first = journey.legs[0]
           const platform = first?.platform
           return (
-            <li
+            <motion.li
               key={`${journey.departsAt}-${index}`}
               className="flex items-center gap-3 py-2 first:pt-0.5 last:pb-0.5"
+              initial={{ opacity: 0, x: -6 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.3, ease: EASE, delay: index * 0.07 }}
             >
               {/* Departure reads like a platform board: big, monospaced, lit. */}
               <div className="w-[52px] shrink-0">
                 <div className="font-mono text-[15px] font-semibold leading-none tabular-nums text-nimbus-yellow">
                   {journey.departs}
                 </div>
-                {soon && <div className="mt-1 text-[9.5px] text-nimbus-text-dim">{soon}</div>}
+                {/* Ticks every second: a departure card is only as useful as
+                    how fresh "in 6 min" is, and it was frozen at open. */}
+                <Countdown
+                  to={journey.departsAt}
+                  className="mt-1 block text-[9.5px] text-nimbus-text-dim"
+                />
               </div>
 
               <div className="min-w-0 flex-1">
@@ -744,7 +836,7 @@ function TransitBody({ data, bare = false }: { data: TransitCardData; bare?: boo
                   {journey.changes > 0 && ` · ${journey.changes}×`}
                 </div>
               </div>
-            </li>
+            </motion.li>
           )
         })}
         {data.journeys.length === 0 && (
@@ -1039,23 +1131,30 @@ function EventBody({ data }: { data: EventCardData }) {
   return (
     <div className={panel}>
       {created && (
-        <div className="mb-2 flex items-baseline gap-2 border-l-2 border-nimbus-accent/50 pl-2">
+        <motion.div
+          className="mb-2 flex items-baseline gap-2 border-l-2 border-nimbus-accent/50 pl-2"
+          initial={{ opacity: 0, x: -8 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.32, ease: EASE }}
+        >
           <span className="min-w-0 flex-1 text-[12.5px] text-nimbus-text">{created.title}</span>
           <span className="shrink-0 text-[10px] tabular-nums text-nimbus-accent-bright">
             {eventDates(created)}
           </span>
-        </div>
+        </motion.div>
       )}
       {rest.length > 0 && (
         <>
           <div className="text-[9.5px] uppercase tracking-wider text-nimbus-text-dim">
             {created ? 'Also coming up' : 'Coming up'}
           </div>
-          <ul className="mt-1 space-y-1">
+          <Stagger className="mt-1 space-y-1">
             {rest.slice(0, 6).map((event) => (
-              <EventRow key={event.id} event={event} />
+              <StaggerItem key={event.id}>
+                <EventRow event={event} />
+              </StaggerItem>
             ))}
-          </ul>
+          </Stagger>
         </>
       )}
       {!created && rest.length === 0 && (
@@ -1199,6 +1298,136 @@ function CancelReminder({ id, onGone }: { id: string; onGone: (id: string) => vo
     >
       ×
     </button>
+  )
+}
+
+/** Traffic-light colours: the verdict has to be readable without reading. */
+const OUTDOOR_LEVEL: Record<OutdoorFactor['level'], string> = {
+  good: 'text-nimbus-positive',
+  ok: 'text-nimbus-cyan',
+  poor: 'text-nimbus-yellow',
+  bad: 'text-nimbus-negative'
+}
+
+const OUTDOOR_VERDICT: Record<
+  OutdoorCardData['verdict'],
+  { label: string; dot: string; ring: string }
+> = {
+  great: { label: 'Great time to go', dot: 'bg-nimbus-positive', ring: 'text-nimbus-positive' },
+  fine: { label: 'Fine to head out', dot: 'bg-nimbus-cyan', ring: 'text-nimbus-cyan' },
+  caution: { label: 'Not ideal', dot: 'bg-nimbus-yellow', ring: 'text-nimbus-yellow' },
+  no: { label: 'Better to wait', dot: 'bg-nimbus-negative', ring: 'text-nimbus-negative' }
+}
+
+/** How many ticks to fill: worse conditions light more of them. */
+const OUTDOOR_RANK: Record<OutdoorFactor['level'], number> = { good: 0, ok: 1, poor: 2, bad: 3 }
+
+/** A short glyph per factor, so the row scans without reading the label. */
+const OUTDOOR_ICON: Record<OutdoorFactor['kind'], string> = {
+  feel: '🌡',
+  rain: '🌧',
+  air: '💨',
+  pollen: '🌾',
+  uv: '☀',
+  light: '🌗'
+}
+
+function OutdoorsBody({ data }: { data: OutdoorCardData }) {
+  const verdict = OUTDOOR_VERDICT[data.verdict]
+
+  return (
+    <div className={panel}>
+      <div className="flex items-center gap-2">
+        <span className={`h-2 w-2 shrink-0 rounded-full ${verdict.dot}`} />
+        <span className={`text-[12.5px] font-medium ${verdict.ring}`}>{verdict.label}</span>
+        <span className="ml-auto truncate text-[10px] text-nimbus-text-dim">{data.place}</span>
+      </div>
+
+      <Stagger className="mt-2 space-y-1">
+        {data.factors.map((factor) => (
+          <StaggerItem key={factor.kind}>
+            <div className="flex items-baseline gap-2 text-[11px]">
+              <span className="w-3.5 shrink-0 text-center opacity-70">
+                {OUTDOOR_ICON[factor.kind]}
+              </span>
+              <span className={`min-w-0 flex-1 truncate ${OUTDOOR_LEVEL[factor.level]}`}>
+                {factor.text}
+              </span>
+              {/* Four ticks, filled to the level — "poor" is visible as a
+                  quantity before the sentence is read. */}
+              <span className="flex shrink-0 gap-0.5">
+                {[0, 1, 2, 3].map((step) => (
+                  <motion.span
+                    key={step}
+                    className={`h-1 w-1.5 rounded-full ${
+                      step <= OUTDOOR_RANK[factor.level]
+                        ? OUTDOOR_LEVEL[factor.level].replace('text-', 'bg-')
+                        : 'bg-white/10'
+                    }`}
+                    initial={{ scaleX: 0 }}
+                    animate={{ scaleX: 1 }}
+                    transition={{ duration: 0.25, delay: 0.1 + step * 0.04, ease: EASE }}
+                  />
+                ))}
+              </span>
+            </div>
+          </StaggerItem>
+        ))}
+      </Stagger>
+
+      {(data.temperature !== null || data.windSpeed !== null) && (
+        <div className="mt-2 flex items-center gap-2 border-t border-white/[0.07] pt-1.5 text-[10px] text-nimbus-text-dim">
+          {data.temperature !== null && <span>{Math.round(data.temperature)}°C</span>}
+          {data.windSpeed !== null && (
+            <>
+              <span className="opacity-50">·</span>
+              <span>{Math.round(data.windSpeed)} km/h wind</span>
+            </>
+          )}
+          <span className="opacity-50">·</span>
+          <span>{data.rainChance}% rain risk</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function CurrencyBody({ data }: { data: CurrencyCardData }) {
+  // Small amounts need real precision; large ones look absurd with it.
+  const places = data.result >= 100 ? 2 : data.result >= 1 ? 2 : 4
+
+  return (
+    <div className={panel}>
+      <div className="flex items-baseline justify-between gap-3">
+        <div className="text-[13px] tabular-nums text-nimbus-text-dim">
+          {data.amount.toLocaleString()} {data.from}
+        </div>
+        <motion.span
+          className="text-nimbus-text-dim"
+          initial={{ x: -4, opacity: 0 }}
+          animate={{ x: 0, opacity: 1 }}
+          transition={{ duration: 0.35, ease: EASE }}
+        >
+          →
+        </motion.span>
+        <div className="text-xl font-semibold tabular-nums text-nimbus-accent-bright">
+          <CountUp value={data.result} decimals={places} suffix={` ${data.to}`} />
+        </div>
+      </div>
+      <div className="mt-1.5 flex items-baseline gap-2 border-t border-white/[0.07] pt-1.5 text-[9.5px] text-nimbus-text-dim">
+        <span className="tabular-nums">
+          1 {data.from} = {data.rate.toFixed(4)} {data.to}
+        </span>
+        {/* The ECB publishes once a working day; saying which day is the
+            difference between "a rate" and "today's rate". */}
+        {data.asOf && (
+          <>
+            <span className="opacity-50">·</span>
+            <span>ECB rate, {data.asOf}</span>
+          </>
+        )}
+      </div>
+    </div>
   )
 }
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 import type { NimbusConfig, NimbusResponse, NimbusState, TextActionKind } from '@shared/types'
-import { useVoiceInput } from './useVoiceInput'
+import { useVoiceInput, type VoiceEndReason } from './useVoiceInput'
+import { playOpenChime } from '../lib/chime'
 import { useRadioPlayer, type RadioPlayerControls } from './useRadioPlayer'
 import { isStopPhrase, isStopPlaybackPhrase } from '../lib/stop-phrases'
 
@@ -14,7 +15,7 @@ const MAX_EMPTY_TURNS = 2
 
 export interface NimbusOverlayState {
   state: NimbusState
-  mode: 'assistant' | 'settings'
+  mode: 'assistant' | 'settings' | 'standing'
   response: NimbusResponse | null
   error: string | null
   transcript: string | null
@@ -52,6 +53,9 @@ export interface NimbusOverlayState {
   toggleTts: () => void
   /** Shows the settings panel — reachable without hunting for the tray icon. */
   openSettings: () => void
+  openStanding: () => void
+  /** Returns to the assistant view without hiding the overlay. */
+  closePanel: () => void
   /** Keeps the overlay from fading while a long-running mode owns it. */
   setHoldOpen: (hold: boolean) => void
   dismiss: () => void
@@ -59,7 +63,7 @@ export interface NimbusOverlayState {
 
 export function useNimbus(): NimbusOverlayState {
   const [state, setState] = useState<NimbusState>('idle')
-  const [mode, setMode] = useState<'assistant' | 'settings'>('assistant')
+  const [mode, setMode] = useState<'assistant' | 'settings' | 'standing'>('assistant')
   const [response, setResponse] = useState<NimbusResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [transcript, setTranscript] = useState<string | null>(null)
@@ -194,14 +198,45 @@ export function useNimbus(): NimbusOverlayState {
     stopPlaybackNowRef.current = stopPlayback
   }, [stopPlayback])
 
-  const openSettings = useCallback(() => {
-    // Cancels the fade: settings is read-and-type, not glanced at, and having
-    // the panel vanish mid-paste of an API key would be maddening.
+  /**
+   * Shared by both panels. A panel is something you read and click, so the
+   * assistant goes quiet while one is open: a half-finished recording is
+   * thrown away rather than transcribed, and anything being spoken stops.
+   * Otherwise opening settings mid-answer left a voice talking over a form,
+   * and the microphone listening to someone who is plainly typing.
+   */
+  const openPanel = useCallback(
+    (panel: 'settings' | 'standing') => {
+      clearFadeTimer()
+      cancelVoiceInputRef.current?.()
+      stopPlaybackNowRef.current?.()
+      setIsOpen(true)
+      isOpenRef.current = true
+      hasContentRef.current = true
+      setState('idle')
+      setMode(panel)
+    },
+    [clearFadeTimer]
+  )
+
+  const openStanding = useCallback(() => openPanel('standing'), [openPanel])
+
+  /**
+   * Cancels the fade too: settings is read-and-type, not glanced at, and
+   * having the panel vanish mid-paste of an API key would be maddening.
+   */
+  const openSettings = useCallback(() => openPanel('settings'), [openPanel])
+
+  /**
+   * Back to the assistant without closing the overlay.
+   *
+   * Panels used to close by dismissing everything, which meant the only way
+   * back to the thing you came from was to summon Nimbus again.
+   */
+  const closePanel = useCallback(() => {
     clearFadeTimer()
-    setIsOpen(true)
-    isOpenRef.current = true
-    hasContentRef.current = true
-    setMode('settings')
+    setMode('assistant')
+    setState('idle')
   }, [clearFadeTimer])
 
   /**
@@ -366,8 +401,39 @@ export function useNimbus(): NimbusOverlayState {
           stopPlayback()
           const source = ctx.createBufferSource()
           source.buffer = buffer
-          source.connect(ctx.destination)
+
+          // The orb reacts to Nimbus's own voice as well as to yours. Without
+          // this it sat perfectly still while speaking, which made the thing
+          // look like it had stopped working at the exact moment it was most
+          // obviously alive. Same levelRef the microphone writes to, so the
+          // sphere has one input and does not care where the sound came from.
+          const analyser = ctx.createAnalyser()
+          analyser.fftSize = 256
+          analyser.smoothingTimeConstant = 0.75
+          source.connect(analyser)
+          analyser.connect(ctx.destination)
+
+          const samples = new Uint8Array(analyser.frequencyBinCount)
+          let meter = 0
+          const readLevel = (): void => {
+            if (currentSourceRef.current !== source) return
+            analyser.getByteTimeDomainData(samples)
+            let sum = 0
+            for (let i = 0; i < samples.length; i++) {
+              const centred = (samples[i] - 128) / 128
+              sum += centred * centred
+            }
+            // RMS, lifted a little: speech rarely peaks, and a meter that only
+            // moves on plosives reads as broken.
+            const rms = Math.sqrt(sum / samples.length)
+            levelRef.current = Math.min(1, rms * 2.6)
+            meter = requestAnimationFrame(readLevel)
+          }
+          meter = requestAnimationFrame(readLevel)
+
           source.onended = () => {
+            cancelAnimationFrame(meter)
+            levelRef.current = 0
             currentSourceRef.current = null
             speechProgressRef.current = 1
             startPendingRadioRef.current?.()
@@ -665,7 +731,7 @@ export function useNimbus(): NimbusOverlayState {
     }
   }, [])
 
-  const handleVoiceEnd = useCallback(() => {
+  const handleVoiceEnd = useCallback((reason: VoiceEndReason = 'empty') => {
     // Recording ended with nothing usable (silence timeout) — fade out.
     // Reads state from a ref rather than triggering the side effect inside a
     // setState updater, which React StrictMode double-invokes.
@@ -681,6 +747,23 @@ export function useNimbus(): NimbusOverlayState {
     }
 
     if (stateRef.current === 'listening') {
+      // Drop out of 'listening' the moment the microphone is released, rather
+      // than staying blue until the overlay happens to fade. Nothing is being
+      // heard any more, and an orb that still looks like it is listening is a
+      // lie about a microphone — the one thing an assistant on screen all day
+      // has to be honest about. The idle palette is warm red, so it is
+      // visible at a glance that Nimbus has let go.
+      setState('idle')
+
+      // The toggle is a switch, not a preference: if the mic timed out with
+      // nobody there, it is genuinely off now and must say so. Only on real
+      // silence — a turn that came back unusable had someone talking into it,
+      // and switching their mic off mid-conversation would be maddening.
+      if (reason === 'silence') {
+        micEnabledRef.current = false
+        setMicEnabled(false)
+      }
+
       scheduleAutoFade()
     }
   }, [scheduleAutoFade])
@@ -795,6 +878,10 @@ export function useNimbus(): NimbusOverlayState {
   useEffect(() => {
     const unsubscribeWake = window.nimbus.onWake(() => {
       clearFadeTimer()
+      // Only when it was actually closed. Waking an already-open overlay for a
+      // follow-up would otherwise stack the opening chime on top of the
+      // listening one, which is two sounds for one event.
+      if (!isOpenRef.current) playOpenChime()
       setIsOpen(true)
       emptyTurnsRef.current = 0
       setMode('assistant')
@@ -829,9 +916,17 @@ export function useNimbus(): NimbusOverlayState {
       setState('idle')
     })
 
+    const unsubscribeStanding = window.nimbus.onShowStanding(() => {
+      clearFadeTimer()
+      setIsOpen(true)
+      setMode('standing')
+      setState('idle')
+    })
+
     return () => {
       unsubscribeWake()
       unsubscribeSettings()
+      unsubscribeStanding()
     }
   }, [clearFadeTimer, startVoiceInput])
 
@@ -860,6 +955,8 @@ export function useNimbus(): NimbusOverlayState {
     ttsEnabled,
     toggleTts,
     openSettings,
+    openStanding,
+    closePanel,
     setHoldOpen,
     dismiss
   }

@@ -15,6 +15,9 @@ import type {
   MeetingSummary,
   SecretName,
   SecretStatus,
+  StandingItem,
+  StockCardData,
+  StockRange,
   Subtitle,
   SynthesizedSpeech,
   TextActionKind
@@ -62,6 +65,12 @@ const api = {
     ipcRenderer.invoke(IPC.RUN_TEXT_ACTION, kind, customInstruction),
   replaceSelection: (text: string): Promise<void> =>
     ipcRenderer.invoke(IPC.REPLACE_SELECTION, text),
+  /**
+   * Puts a draft in the app's message box, never sending it. Resolves false
+   * when the app wouldn't take the paste — the draft is on the clipboard
+   * regardless.
+   */
+  replyInApp: (text: string): Promise<boolean> => ipcRenderer.invoke(IPC.REPLY_IN_APP, text),
   onShowSettings: (callback: () => void): (() => void) => {
     const listener = (): void => callback()
     ipcRenderer.on(IPC.SHOW_SETTINGS, listener)
@@ -72,6 +81,17 @@ const api = {
   /** Takes 16kHz mono float samples; the renderer decodes, main transcribes. */
   transcribeAudio: (pcm: ArrayBuffer): Promise<string> =>
     ipcRenderer.invoke(IPC.TRANSCRIBE_AUDIO, pcm),
+  /**
+   * Speech probability per 512-sample frame, from Silero VAD in the main
+   * process. An empty array means the model isn't loaded and the caller should
+   * fall back to its own heuristic rather than treat the audio as silence.
+   */
+  vadFrames: (id: string, pcm: ArrayBuffer): Promise<number[]> =>
+    ipcRenderer.invoke(IPC.VAD_FRAMES, id, pcm),
+  /** Starts or ends a turn's VAD state — the model is recurrent, so turns must not bleed. */
+  vadSession: (id: string, active: boolean): void => {
+    ipcRenderer.send(IPC.VAD_SESSION, id, active)
+  },
   subtitleFor: (
     pcm: ArrayBuffer,
     offsetMs: number,
@@ -79,6 +99,17 @@ const api = {
     sourceHint: string
   ): Promise<Subtitle | null> =>
     ipcRenderer.invoke(IPC.SUBTITLE_FOR, pcm, offsetMs, previous, sourceHint),
+  getQuote: (symbol: string, range: StockRange): Promise<StockCardData> =>
+    ipcRenderer.invoke(IPC.GET_QUOTE, symbol, range),
+  getWatchlist: (): Promise<StockCardData[]> => ipcRenderer.invoke(IPC.GET_WATCHLIST),
+  getStanding: (): Promise<StandingItem[]> => ipcRenderer.invoke(IPC.GET_STANDING),
+  cancelStanding: (kind: StandingItem['kind'], id: string): Promise<boolean> =>
+    ipcRenderer.invoke(IPC.CANCEL_STANDING, kind, id),
+  onShowStanding: (callback: () => void): (() => void) => {
+    const listener = (): void => callback()
+    ipcRenderer.on(IPC.SHOW_STANDING, listener)
+    return () => ipcRenderer.removeListener(IPC.SHOW_STANDING, listener)
+  },
   cancelReminder: (id: string): Promise<boolean> =>
     ipcRenderer.invoke(IPC.CANCEL_REMINDER, id),
   getQuotas: (): Promise<QuotaLine[]> => ipcRenderer.invoke(IPC.GET_QUOTAS),
@@ -127,6 +158,9 @@ const api = {
   },
   copyText: (text: string): void => {
     ipcRenderer.send(IPC.COPY_TEXT, text)
+  },
+  moveOverlay: (dx: number, dy: number): void => {
+    ipcRenderer.send(IPC.MOVE_OVERLAY, dx, dy)
   },
   setMouseIgnore: (ignore: boolean): void => {
     ipcRenderer.send(IPC.SET_MOUSE_IGNORE, ignore)

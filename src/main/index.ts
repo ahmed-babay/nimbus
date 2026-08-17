@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, session, shell } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Notification, session, shell } from 'electron'
 import { electronApp, optimizer } from '@electron-toolkit/utils'
 import dotenv from 'dotenv'
 import { createTray } from './tray'
@@ -16,16 +16,20 @@ import { askAboutScreen } from '../services/vision'
 import { looksLikePaperwork, readDocument } from '../services/paperwork'
 import { captureDisplayImage, encodeCapture, type ScreenCapture } from './screen'
 import { pickRegion, type RegionChoice } from './region-picker'
-import { captureSelection, pasteIntoWindow, type CapturedSelection } from './selection'
+import { captureSelection, pasteIntoWindow, replyInWindow, type CapturedSelection } from './selection'
 import { runTextAction } from '../services/text-actions'
 import type { TextActionKind } from '../shared/types'
 import { transcribeAudio } from '../services/whisper'
+import { endVadSession, resetVadSession, vadProbabilities, warmVad } from '../services/vad'
 import { subtitleFor, type Subtitle } from '../services/subtitles'
 import { targetLanguage } from '../services/translate'
 import { heardWakeWord, wakeWordEnabled } from '../services/wake-word'
 import { localSttInstalled } from '../services/local-stt'
 import { readQuotas } from '../services/quota'
+import { getStockQuote } from '../services/stocks'
+import { pricedWatchlist } from '../services/watchlist'
 import { cancelReminderById } from '../services/reminders'
+import { cancelStandingItem, standingItems } from '../services/standing'
 import { downloadLocalModel, downloadOnnxModel, localModelStatus } from './model-download'
 import type { LocalModelKind, LocalModelStatus } from '../shared/types'
 import { formatTranscript, summarizeMeeting, transcribePiece } from '../services/meeting'
@@ -42,6 +46,9 @@ import type {
   NimbusResponse,
   ProviderModel,
   QuotaLine,
+  StandingItem,
+  StockCardData,
+  StockRange,
   SecretName,
   SecretStatus,
   SynthesizedSpeech
@@ -172,6 +179,16 @@ function registerIpcHandlers(): void {
     clipboard.writeText(text)
   })
 
+  ipcMain.on(IPC.MOVE_OVERLAY, (_event, dx: number, dy: number) => {
+    if (!overlayWindow) return
+    // Moved from the renderer rather than by -webkit-app-region, which never
+    // fires on this window: it is transparent and click-through, and
+    // setIgnoreMouseEvents makes it invisible to input at the OS level, so
+    // Chromium's own drag region is never reached.
+    const [x, y] = overlayWindow.getPosition()
+    overlayWindow.setPosition(Math.round(x + dx), Math.round(y + dy))
+  })
+
   ipcMain.on(IPC.SET_MOUSE_IGNORE, (_event, ignore: boolean) => {
     // forward:true keeps mousemove flowing to the renderer while ignoring, so
     // it can still tell when the pointer arrives over the card.
@@ -233,6 +250,27 @@ function registerIpcHandlers(): void {
     }
   )
 
+  ipcMain.handle(IPC.REPLY_IN_APP, async (_event, text: string): Promise<boolean> => {
+    if (!pendingSelection) throw new Error('There is no conversation to reply to.')
+    const { windowHandle } = pendingSelection
+    // Hide first so focus can return to the chat app before the paste.
+    if (overlayWindow) hideOverlay(overlayWindow)
+    const pasted = await replyInWindow(windowHandle, text)
+    pendingSelection = null
+
+    // Some composers - Instagram's among them - only accept a paste when the
+    // caret is already in them, and no keystroke from outside can put it
+    // there. Rather than fail silently, say where the draft went: it is on the
+    // clipboard either way, so the user is always one Ctrl+V from done.
+    if (!pasted && Notification.isSupported()) {
+      new Notification({
+        title: 'Nimbus — reply copied',
+        body: 'Click the message box and press Ctrl+V to paste your draft.'
+      }).show()
+    }
+    return pasted
+  })
+
   ipcMain.handle(IPC.REPLACE_SELECTION, async (_event, text: string): Promise<void> => {
     if (!pendingSelection) throw new Error('There is no selection to replace.')
     const { windowHandle } = pendingSelection
@@ -253,6 +291,32 @@ function registerIpcHandlers(): void {
       // and the language the user thinks in is the one they ask questions in.
       return transcribeAudio(new Float32Array(pcm), { language: targetLanguage() })
     }
+  )
+
+  ipcMain.handle(
+    IPC.VAD_FRAMES,
+    async (_event, id: string, pcm: ArrayBuffer): Promise<number[]> =>
+      vadProbabilities(id, new Float32Array(pcm))
+  )
+
+  ipcMain.on(IPC.VAD_SESSION, (_event, id: string, active: boolean) => {
+    if (active) resetVadSession(id)
+    else endVadSession(id)
+  })
+
+  ipcMain.handle(
+    IPC.GET_QUOTE,
+    (_event, symbol: string, range: StockRange): Promise<StockCardData> =>
+      getStockQuote(symbol, range)
+  )
+
+  ipcMain.handle(IPC.GET_WATCHLIST, (): Promise<StockCardData[]> => pricedWatchlist())
+
+  ipcMain.handle(IPC.GET_STANDING, (): StandingItem[] => standingItems())
+
+  ipcMain.handle(
+    IPC.CANCEL_STANDING,
+    (_event, kind: StandingItem['kind'], id: string): boolean => cancelStandingItem(kind, id)
   )
 
   ipcMain.handle(IPC.CANCEL_REMINDER, (_event, id: string): boolean => cancelReminderById(id))
@@ -417,6 +481,11 @@ app.whenReady().then(() => {
   overlayWindow = createOverlayWindow()
   registerIpcHandlers()
 
+  // Fetched and loaded in the background so the first thing said isn't the
+  // request that waits for it. 2.2MB, and it is deliberately not awaited —
+  // voice input falls back to the energy heuristic until it is ready.
+  void warmVad()
+
   startReminderScheduler({
     onDue: (reminder) => {
       if (overlayWindow) presentOverlay(overlayWindow, IPC.REMINDER_DUE, reminder)
@@ -429,8 +498,10 @@ app.whenReady().then(() => {
       // Delivered down the reminder channel deliberately: a delay is the same
       // kind of event — Nimbus interrupting with something time-critical the
       // user asked to be told — and it already presents and speaks correctly.
+      // The three kinds of watch carry different payloads, and none of their
+      // ids matter here — only the sentence does.
       presentOverlay(overlayWindow, IPC.REMINDER_DUE, {
-        id: update.watch.id,
+        id: `watch-${Date.now()}`,
         at: new Date().toISOString(),
         text: update.speech,
         fired: true
@@ -441,6 +512,11 @@ app.whenReady().then(() => {
   createTray({
     onShow: () => {
       if (overlayWindow) showOverlay(overlayWindow)
+    },
+    onStanding: () => {
+      // presentOverlay, not showOverlay: opening a list to read should not
+      // also open a hot microphone.
+      if (overlayWindow) presentOverlay(overlayWindow, IPC.SHOW_STANDING)
     },
     onSettings: () => {
       if (overlayWindow) showOverlay(overlayWindow, IPC.SHOW_SETTINGS)
