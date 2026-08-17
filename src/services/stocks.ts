@@ -135,7 +135,8 @@ export async function getStockQuote(
 
   return {
     symbol: meta.symbol,
-    name: meta.shortName || meta.longName || meta.symbol,
+    // Yahoo pads some names to a fixed width — "SAP SE            I".
+    name: (meta.shortName || meta.longName || meta.symbol).replace(/\s+/g, ' ').trim(),
     price: meta.regularMarketPrice,
     change,
     changePercent,

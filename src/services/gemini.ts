@@ -269,7 +269,13 @@ const CLASSIFY_SCHEMA: GenerationConfig = {
             enum: ['driving', 'cycling', 'walking', 'transit'],
             format: 'enum'
           }
-        }
+        },
+        // Forced rather than optional. Flash Lite reliably *omits* an optional
+        // enum it isn't sure about — 'tell me when Tesla drops below 300' came
+        // back with no stockAction at all and fell through to a plain quote.
+        // Requiring it makes the model choose, and 'quote' is a safe default
+        // for every non-stock intent.
+        required: ['stockAction']
       }
     },
     required: ['intent', 'params']

@@ -126,6 +126,43 @@ export function cancelPriceAlertById(target: string): boolean {
   return true
 }
 
+/**
+ * Pulls the threshold out of the sentence.
+ *
+ * A backstop for the router, which reliably picks the *action* but keeps
+ * omitting the number: "tell me when Tesla drops below 300" came back with
+ * stockAction "alert" and no alertPrice at all. A price and a direction are
+ * exactly the kind of thing a regex gets right every time and a small model
+ * gets right most of the time, so the regex wins and the model fills gaps.
+ */
+export function parseAlert(
+  utterance: string
+): { direction: PriceAlert['direction']; price: number } | null {
+  // Strictly ASCII. An earlier version put currency symbols in a character
+  // class and silently matched nothing: the source encoding turned them into
+  // bytes that broke the class while still *printing* correctly in an editor,
+  // which is a debugging trap worth not re-entering. The gap matcher skips any
+  // currency symbol anyway.
+  const match = utterance
+    .toLowerCase()
+    .match(
+      /(below|under|beneath|less than|above|over|beyond|more than|past|hits?|reaches|gets to)[^0-9]{0,12}([0-9][0-9,.]*)/
+    )
+  if (!match) return null
+
+  // Thousands commas and a trailing stop both go before parsing.
+  const price = Number(match[2].replace(/,/g, '').replace(/\.$/, ''))
+  if (!Number.isFinite(price) || price <= 0) return null
+
+  // "hits 300" has no direction of its own -- the caller compares with the
+  // current price to work out which side it would have to cross.
+  const word = match[1]
+  if (/^(hits?|reaches|gets to)$/.test(word)) return { direction: 'below', price }
+
+  const above = /^(above|over|beyond|more than|past)$/.test(word)
+  return { direction: above ? 'above' : 'below', price }
+}
+
 export interface AlertConfirmation {
   alert: PriceAlert
   speech: string

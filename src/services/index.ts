@@ -10,6 +10,7 @@ import { getStockQuote } from './stocks'
 import {
   addPriceAlert,
   addToWatchlist,
+  parseAlert,
   pricedWatchlist,
   removeFromWatchlist
 } from './watchlist'
@@ -198,11 +199,30 @@ async function runIntent(
         }
 
         if (action === 'alert') {
-          const price = Number(params.alertPrice)
+          // The sentence first, the router second: the regex reads a number
+          // out of "drops below 300" every time, and the model keeps omitting
+          // it. For "hits 300" the parser has no direction, so the current
+          // price decides which side it has to cross.
+          const parsed = parseAlert(utterance)
+          const modelPrice = Number(params.alertPrice)
+          const price = parsed?.price ?? (Number.isFinite(modelPrice) ? modelPrice : NaN)
           if (!Number.isFinite(price) || price <= 0) {
             throw new Error("I didn't catch the price to watch for.")
           }
-          const direction = params.alertDirection === 'above' ? 'above' : 'below'
+
+          let direction: 'below' | 'above'
+          if (params.alertDirection === 'above' || params.alertDirection === 'below') {
+            direction = params.alertDirection
+          } else if (parsed) {
+            direction = parsed.direction
+          } else {
+            direction = 'below'
+          }
+          if (/(hits?|reaches|gets to)/i.test(utterance)) {
+            const now = await getStockQuote(symbol, '1d')
+            direction = price > now.price ? 'above' : 'below'
+          }
+
           const { speech } = await addPriceAlert(symbol, direction, price)
           const data = await getStockQuote(symbol, '1d')
           return { speech, card: { type: 'stock', data } }
