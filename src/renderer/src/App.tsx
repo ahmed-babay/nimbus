@@ -137,36 +137,35 @@ export default function App() {
             }}
             // Capped to the window so a long answer scrolls instead of being
             // clipped off the bottom with no way to reach it.
-            className="relative flex max-h-[calc(100vh-1rem)] w-[492px] flex-col overflow-hidden rounded-[20px] border border-nimbus-border bg-nimbus-bg backdrop-blur-2xl"
+            className="relative flex max-h-[calc(100vh-1rem)] w-[492px] flex-col overflow-hidden rounded-[18px] border border-nimbus-border bg-nimbus-bg backdrop-blur-2xl"
+            // Depth from shadow and a hairline edge rather than a neon ring.
+            // A glowing outline is the single strongest "toy" signal a panel
+            // can send, and this one sits next to real work all day.
             style={{
               boxShadow:
-                '0 18px 50px -12px rgba(0,0,0,0.85), 0 0 0 2px rgba(255,62,165,0.35), 0 0 26px -4px rgba(255,62,165,0.45), 0 0 46px -10px rgba(34,232,255,0.3)'
+                '0 24px 64px -16px rgba(0,0,0,0.7), 0 2px 8px -2px rgba(0,0,0,0.5), inset 0 1px 0 0 rgba(255,255,255,0.06)'
             }}
           >
-            {/* CRT scanlines over the whole panel */}
-            <div className="nimbus-scanlines pointer-events-none absolute inset-0 opacity-70" />
-            {/* Tube vignette — darker toward the corners, like curved glass */}
+            {/* A single hairline of light along the top edge — enough to
+                separate the panel from whatever is behind it, and nothing
+                more. */}
             <div
-              className="pointer-events-none absolute inset-0"
+              className="pointer-events-none absolute inset-x-0 top-0 h-px"
               style={{
                 background:
-                  'radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.55) 100%)'
+                  'linear-gradient(90deg, transparent, rgba(255,255,255,0.18) 30%, rgba(255,255,255,0.18) 70%, transparent)'
               }}
             />
-            {/* Neon marquee edge */}
-            <div
-              className="pointer-events-none absolute inset-x-0 top-0 h-[2px]"
-              style={{
-                background:
-                  'linear-gradient(90deg, var(--color-nimbus-cyan), var(--color-nimbus-accent), var(--color-nimbus-yellow), var(--color-nimbus-accent), var(--color-nimbus-cyan))'
-              }}
-            />
-            {/* Marquee chase while thinking */}
+            {/* Indeterminate progress while working, in the accent rather than
+                a white strobe. */}
             {state === 'thinking' && (
               <div className="pointer-events-none absolute inset-x-0 top-0 h-[2px] overflow-hidden">
                 <div
-                  className="nimbus-scan h-full w-1/4"
-                  style={{ background: 'rgba(255,255,255,0.95)' }}
+                  className="nimbus-progress h-full w-1/3 rounded-full"
+                  style={{
+                    background:
+                      'linear-gradient(90deg, transparent, var(--color-nimbus-accent), transparent)'
+                  }}
                 />
               </div>
             )}
@@ -229,7 +228,7 @@ export default function App() {
                             />
                           </p>
                         ) : (
-                          <p className="arcade-type mt-1 text-[10px] text-nimbus-yellow">Thinking…</p>
+                          <p className="mt-1 text-[10px] text-nimbus-text-dim">Thinking…</p>
                         )}
                       </div>
                     ) : pendingSelection ? (
@@ -261,7 +260,7 @@ export default function App() {
                     ) : state === 'listening' ? (
                       <div className="flex h-14 flex-col justify-center gap-1">
                         <Waveform levelRef={levelRef} />
-                        <p className="arcade-type text-[9px] text-nimbus-cyan">
+                        <p className="text-[9.5px] text-nimbus-text-dim">
                           &gt; Listening — say &ldquo;stop&rdquo; when done
                         </p>
                       </div>
@@ -269,7 +268,7 @@ export default function App() {
                       // Mic is closed (typing, or a finished typed turn) — say
                       // so rather than showing a dead "listening" waveform.
                       <div className="flex h-14 flex-col justify-center">
-                        <p className="arcade-type text-[9px] text-nimbus-text-dim">
+                        <p className="text-[9.5px] text-nimbus-text-dim">
                           &gt; {micEnabled ? 'Type below, or speak' : 'Voice off — type below'}
                         </p>
                       </div>
@@ -363,29 +362,21 @@ function Header({
       style={drag.style}
     >
       <div className="flex items-center gap-2">
-        <span
-          className="arcade-type nimbus-flicker text-[11px] font-bold text-nimbus-accent"
-          style={{ textShadow: '0 0 8px rgba(255,62,165,0.9), 0 0 16px rgba(255,62,165,0.5)' }}
-        >
-          Nimbus
-        </span>
-        <span className="h-3 w-px bg-nimbus-accent/30" />
-        <span
-          className="arcade-type text-[10px] text-nimbus-cyan"
-          style={{ textShadow: '0 0 8px rgba(34,232,255,0.7)' }}
-        >
-          {STATE_LABEL[state]}
-        </span>
+        {/* Set in the interface face rather than a marquee mono, and lit by
+            weight and colour instead of a text-shadow glow. */}
+        <span className="text-[12px] font-semibold tracking-[0.01em] text-nimbus-text">Nimbus</span>
+        <span className="h-3 w-px bg-white/10" />
+        <span className="text-[10.5px] text-nimbus-text-dim">{STATE_LABEL[state]}</span>
       </div>
       <div className="flex items-center gap-1.5">
         <button
           onClick={onToggleMic}
           aria-label={micEnabled ? 'Turn off voice input' : 'Turn on voice input'}
           title={micEnabled ? 'Voice on — click to mute' : 'Voice off — click to enable'}
-          className={`arcade-type rounded border px-1.5 py-0.5 text-[9px] transition-colors ${
+          className={`rounded-md px-2 py-[3px] text-[10px] transition-colors ${
             micEnabled
-              ? 'border-nimbus-cyan/50 text-nimbus-cyan hover:bg-nimbus-cyan/15'
-              : 'border-nimbus-border text-nimbus-text-dim hover:bg-white/[0.06]'
+              ? 'bg-nimbus-accent/15 text-nimbus-accent-bright'
+              : 'text-nimbus-text-dim hover:bg-white/[0.06]'
           }`}
         >
           {micEnabled ? 'Mic on' : 'Mic off'}
@@ -398,10 +389,10 @@ function Header({
               ? 'Answers are spoken — click to mute'
               : 'Answers are silent — click to unmute'
           }
-          className={`arcade-type rounded border px-1.5 py-0.5 text-[9px] transition-colors ${
+          className={`rounded-md px-2 py-[3px] text-[10px] transition-colors ${
             ttsEnabled
-              ? 'border-nimbus-yellow/50 text-nimbus-yellow hover:bg-nimbus-yellow/15'
-              : 'border-nimbus-border text-nimbus-text-dim hover:bg-white/[0.06]'
+              ? 'bg-nimbus-accent/15 text-nimbus-accent-bright'
+              : 'text-nimbus-text-dim hover:bg-white/[0.06]'
           }`}
         >
           {ttsEnabled ? 'Sound on' : 'Sound off'}
@@ -410,7 +401,7 @@ function Header({
           onClick={onStanding}
           aria-label="Things Nimbus is watching for you"
           title="Watching — trains, events and reminders Nimbus is holding"
-          className="arcade-type rounded border border-nimbus-border px-1.5 py-0.5 text-[9px] text-nimbus-text-dim transition-colors hover:bg-nimbus-accent/20 hover:text-nimbus-text"
+          className="rounded-md px-2 py-[3px] text-[10px] text-nimbus-text-dim transition-colors hover:bg-white/[0.06] hover:text-nimbus-text"
         >
           Watching
         </button>
@@ -418,14 +409,14 @@ function Header({
           onClick={onSettings}
           aria-label="Settings and API keys"
           title="Settings — API keys and model"
-          className="arcade-type rounded border border-nimbus-border px-1.5 py-0.5 text-[9px] text-nimbus-text-dim transition-colors hover:bg-nimbus-accent/20 hover:text-nimbus-text"
+          className="rounded-md px-2 py-[3px] text-[10px] text-nimbus-text-dim transition-colors hover:bg-white/[0.06] hover:text-nimbus-text"
         >
           Setup
         </button>
         <button
           onClick={onClose}
           aria-label="Close Nimbus"
-          className="arcade-type -mr-1 rounded border border-nimbus-border px-1.5 py-0.5 text-[9px] text-nimbus-text-dim transition-colors hover:bg-nimbus-accent/20 hover:text-nimbus-text"
+          className="-mr-1 rounded-md px-2 py-[3px] text-[10px] text-nimbus-text-dim transition-colors hover:bg-white/[0.06] hover:text-nimbus-text"
         >
           Esc
         </button>

@@ -28,8 +28,8 @@ function note({
   hz,
   startOffsetMs,
   durationMs,
-  type = 'square',
-  gain = 0.09,
+  type = 'sine',
+  gain = 0.05,
   glideToHz
 }: NoteOptions): void {
   const ctx = getCtx()
@@ -46,9 +46,11 @@ function note({
   const envelope = ctx.createGain()
   // Near-instant attack and an abrupt tail — 8-bit hardware had no room for
   // gentle curves, and the snap is most of the character.
+  // Slow in, slow out. The arcade version snapped on in 6ms and cut off,
+  // which is what made it read as a coin-op blip; an attack you cannot hear
+  // start and a long tail is what makes a chime sound expensive instead.
   envelope.gain.setValueAtTime(0.0001, start)
-  envelope.gain.linearRampToValueAtTime(gain, start + 0.006)
-  envelope.gain.setValueAtTime(gain, start + duration * 0.7)
+  envelope.gain.linearRampToValueAtTime(gain, start + 0.028)
   envelope.gain.exponentialRampToValueAtTime(0.0001, start + duration)
 
   osc.connect(envelope)
@@ -58,20 +60,32 @@ function note({
 }
 
 /**
- * Rising arpeggio — the classic power-up / "insert coin" flourish.
- * C5-E5-G5-C6 on a square wave, one step every 55ms.
+ * Listening: two sine tones a fifth apart, overlapping rather than stepped.
+ *
+ * A perfect fifth (D5 over G4) is the most consonant interval there is after
+ * the octave, which is exactly why it reads as neutral and considered rather
+ * than cheerful. They overlap by design — a sequence of separate notes is a
+ * jingle, two notes blooming together is a chime.
+ *
+ * The quiet octave above is the part you don't consciously hear: it adds the
+ * shimmer that separates a real instrument from a test tone, at a level low
+ * enough that removing it sounds dull rather than different.
  */
 export function playListenStartChime(): void {
-  const steps = [523.25, 659.25, 783.99, 1046.5]
-  steps.forEach((hz, i) => {
-    note({ hz, startOffsetMs: i * 55, durationMs: 70, gain: 0.085 })
-  })
-  // Triangle doubling an octave up adds sparkle without extra loudness.
-  note({ hz: 2093, startOffsetMs: 165, durationMs: 90, type: 'triangle', gain: 0.045 })
+  note({ hz: 392.0, startOffsetMs: 0, durationMs: 620, gain: 0.05 })
+  note({ hz: 587.33, startOffsetMs: 70, durationMs: 620, gain: 0.042 })
+  note({ hz: 1174.66, startOffsetMs: 70, durationMs: 480, type: 'triangle', gain: 0.012 })
 }
 
-/** Descending two-step blip — turn taken, cabinet acknowledging input. */
+/**
+ * Done listening: the same fifth, inverted and quieter.
+ *
+ * Deliberately the same two pitches as the start rather than a new motif, so
+ * the pair sounds like one instrument opening and closing rather than two
+ * unrelated alerts. Shorter and softer because acknowledging the end of a turn
+ * should be felt more than heard.
+ */
 export function playListenEndChime(): void {
-  note({ hz: 659.25, startOffsetMs: 0, durationMs: 65, gain: 0.075 })
-  note({ hz: 392, startOffsetMs: 60, durationMs: 110, gain: 0.075, glideToHz: 294 })
+  note({ hz: 587.33, startOffsetMs: 0, durationMs: 380, gain: 0.038 })
+  note({ hz: 392.0, startOffsetMs: 55, durationMs: 460, gain: 0.032 })
 }

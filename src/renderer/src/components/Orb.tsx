@@ -3,91 +3,77 @@ import type { NimbusState } from '@shared/types'
 
 interface OrbProps {
   state: NimbusState
+  /** Live microphone level, 0..1, updated outside React. */
   levelRef: RefObject<number>
 }
 
-const BLOCK_COUNT = 12
-const RING_RADIUS = 24
-const BLOCK = 5
-
-/** Positions for the pixel blocks arranged around the ring. */
-const BLOCKS = Array.from({ length: BLOCK_COUNT }, (_, i) => {
-  const angle = (i / BLOCK_COUNT) * Math.PI * 2 - Math.PI / 2
-  return {
-    x: 32 + Math.cos(angle) * RING_RADIUS - BLOCK / 2,
-    y: 32 + Math.sin(angle) * RING_RADIUS - BLOCK / 2
-  }
-})
-
 /**
- * Arcade-cabinet indicator: a ring of pixel blocks with a light chasing round
- * it, and a chunky core that pulses. Everything is driven by direct style
- * writes on an animation frame — the chase and the mic-reactive core would
- * otherwise re-render React 60 times a second.
+ * The voice orb — the one thing on screen that should feel alive.
+ *
+ * It replaces a blocky equaliser of stacked rectangles, which read as a
+ * cassette deck. This is the element people look at while talking, so it is
+ * the element that decides whether the app feels like a tool or a toy.
+ *
+ * Three layers, each doing one job:
+ *
+ *  1. A soft halo that breathes slowly at rest and swells with your voice.
+ *  2. A ring that traces the orb and rotates while thinking — the only motion
+ *     that says "working" without a spinner.
+ *  3. A core whose brightness follows the microphone.
+ *
+ * **Driven outside React.** The level updates ~60 times a second; routing that
+ * through state would re-render the whole card on every frame. The animation
+ * writes to the DOM directly, which is also why the level arrives as a ref.
  */
+
+const IDLE_SCALE = 1
+/** How far the halo swells at full voice. Restraint on purpose — a pulse that
+ *  doubles in size reads as a game, not an input meter. */
+const VOICE_SWELL = 0.28
+
+const STATE_COLOR: Record<NimbusState, string> = {
+  idle: 'var(--color-nimbus-text-dim)',
+  listening: 'var(--color-nimbus-accent)',
+  thinking: 'var(--color-nimbus-accent-bright)',
+  speaking: 'var(--color-nimbus-cyan)',
+  playing: 'var(--color-nimbus-positive)'
+}
+
 export function Orb({ state, levelRef }: OrbProps) {
-  const blocksRef = useRef<SVGRectElement[]>([])
-  const coreRef = useRef<SVGRectElement>(null)
-  const glowRef = useRef<HTMLDivElement>(null)
+  const haloRef = useRef<HTMLDivElement>(null)
+  const coreRef = useRef<HTMLDivElement>(null)
+  const ringRef = useRef<SVGSVGElement>(null)
 
   useEffect(() => {
-    const blocks = blocksRef.current.filter(Boolean)
-    if (blocks.length === 0) return
-
     let frame = 0
+    // Smoothed rather than raw: microphone level is jittery frame to frame,
+    // and following it exactly makes the orb vibrate instead of breathe.
     let smoothed = 0
     const startedAt = performance.now()
 
-    // Steps rather than a smooth sweep — the chase should tick like a cabinet
-    // light, not glide.
-    const speedMs = state === 'thinking' ? 55 : state === 'listening' ? 95 : 150
-
     const tick = (now: number): void => {
-      const elapsed = now - startedAt
-      smoothed += (levelRef.current - smoothed) * 0.2
+      const level = Math.max(0, Math.min(1, levelRef.current ?? 0))
+      smoothed += (level - smoothed) * 0.18
 
-      if (state === 'idle') {
-        blocks.forEach((b) => {
-          b.style.opacity = '0.22'
-          b.setAttribute('fill', 'var(--color-nimbus-accent-deep)')
-        })
-      } else {
-        const head = Math.floor(elapsed / speedMs) % BLOCK_COUNT
-        blocks.forEach((b, i) => {
-          // Distance behind the chase head, wrapped.
-          const behind = (head - i + BLOCK_COUNT) % BLOCK_COUNT
-          if (behind === 0) {
-            b.style.opacity = '1'
-            b.setAttribute('fill', 'var(--color-nimbus-cyan)')
-          } else if (behind <= 3) {
-            b.style.opacity = String(0.75 - behind * 0.18)
-            b.setAttribute('fill', 'var(--color-nimbus-accent)')
-          } else {
-            b.style.opacity = '0.2'
-            b.setAttribute('fill', 'var(--color-nimbus-accent-deep)')
-          }
-        })
+      const seconds = (now - startedAt) / 1000
+      // A slow sine keeps it alive when nothing is being said, so the orb
+      // never looks frozen or broken.
+      const breath = 0.5 + 0.5 * Math.sin(seconds * 1.1)
+      const active = state === 'listening' || state === 'speaking'
+      const swell = active ? smoothed * VOICE_SWELL : 0
+
+      if (haloRef.current) {
+        haloRef.current.style.transform = `scale(${IDLE_SCALE + swell + breath * 0.06})`
+        haloRef.current.style.opacity = `${0.28 + breath * 0.12 + smoothed * 0.4}`
       }
-
-      // Core reacts to the mic while listening, otherwise beats steadily.
-      const beat =
-        state === 'listening'
-          ? 1 + smoothed * 0.55
-          : state === 'speaking'
-            ? 1 + Math.abs(Math.sin(elapsed / 130)) * 0.22
-            : state === 'thinking'
-              ? 1 + Math.abs(Math.sin(elapsed / 220)) * 0.12
-              : 1
-
       if (coreRef.current) {
-        const size = 14 * beat
-        coreRef.current.setAttribute('x', String(32 - size / 2))
-        coreRef.current.setAttribute('y', String(32 - size / 2))
-        coreRef.current.setAttribute('width', String(size))
-        coreRef.current.setAttribute('height', String(size))
+        coreRef.current.style.transform = `scale(${1 + swell * 0.5})`
+        coreRef.current.style.opacity = `${0.75 + smoothed * 0.25}`
       }
-      if (glowRef.current) {
-        glowRef.current.style.opacity = String(0.35 + (beat - 1) * 1.2)
+      if (ringRef.current && state === 'thinking') {
+        ringRef.current.style.transform = `rotate(${seconds * 120}deg)`
+      } else if (ringRef.current) {
+        ringRef.current.style.transform = 'rotate(0deg)'
       }
 
       frame = requestAnimationFrame(tick)
@@ -95,50 +81,55 @@ export function Orb({ state, levelRef }: OrbProps) {
 
     frame = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(frame)
-  }, [state, levelRef])
+  }, [levelRef, state])
+
+  const color = STATE_COLOR[state]
 
   return (
-    <div className="relative flex h-16 w-16 shrink-0 self-start items-center justify-center">
-      {/* Neon bloom behind the core */}
+    <div className="relative h-12 w-12 shrink-0 self-start" aria-hidden="true">
+      {/* Halo */}
       <div
-        ref={glowRef}
-        className="pointer-events-none absolute h-9 w-9 blur-md"
+        ref={haloRef}
+        className="absolute inset-0 rounded-full blur-md will-change-transform"
         style={{
-          background:
-            'radial-gradient(circle, rgba(34,232,255,0.9), rgba(255,62,165,0.45) 55%, transparent 75%)',
-          opacity: 0.35
+          background: `radial-gradient(circle at 50% 50%, ${color} 0%, transparent 70%)`,
+          transition: 'background 400ms ease'
         }}
       />
 
-      <svg viewBox="0 0 64 64" className="absolute inset-0 h-full w-full">
-        {BLOCKS.map((b, i) => (
-          <rect
-            key={i}
-            ref={(el) => {
-              if (el) blocksRef.current[i] = el
-            }}
-            x={b.x}
-            y={b.y}
-            width={BLOCK}
-            height={BLOCK}
-            fill="var(--color-nimbus-accent-deep)"
-            opacity={0.22}
-          />
-        ))}
-
-        {/* Chunky square core — deliberately not a circle */}
-        <rect
-          ref={coreRef}
-          x={25}
-          y={25}
-          width={14}
-          height={14}
-          fill="var(--color-nimbus-accent)"
-          style={{ filter: 'drop-shadow(0 0 5px rgba(255,62,165,0.9))' }}
+      {/* Ring: a gap in the stroke is what makes rotation visible at all. */}
+      <svg
+        ref={ringRef}
+        viewBox="0 0 48 48"
+        className="absolute inset-0 h-full w-full will-change-transform"
+        style={{ transition: 'transform 200ms linear' }}
+      >
+        <circle
+          cx="24"
+          cy="24"
+          r="19"
+          fill="none"
+          stroke={color}
+          strokeWidth="1.25"
+          strokeLinecap="round"
+          strokeDasharray={state === 'thinking' ? '54 66' : '120 0'}
+          opacity={state === 'idle' ? 0.35 : 0.75}
+          style={{ transition: 'stroke-dasharray 300ms ease, opacity 300ms ease' }}
         />
-        {/* Highlight pixel, like a specular block on a sprite */}
-        <rect x={27} y={27} width={3} height={3} fill="var(--color-nimbus-accent-bright)" />
       </svg>
+
+      {/* Core */}
+      <div className="absolute inset-0 grid place-items-center">
+        <div
+          ref={coreRef}
+          className="h-4 w-4 rounded-full will-change-transform"
+          style={{
+            background: `radial-gradient(circle at 35% 30%, #ffffff 0%, ${color} 55%, ${color} 100%)`,
+            boxShadow: `0 0 12px -2px ${color}`,
+            transition: 'background 400ms ease, box-shadow 400ms ease'
+          }}
+        />
+      </div>
     </div>
   )
 }
