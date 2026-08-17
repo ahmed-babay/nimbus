@@ -35,7 +35,7 @@ import {
 import { lookupEntity } from './wikipedia'
 import { findMusic } from './music'
 import { watchJourney, wantsWatching } from './watchers'
-import { findJourneys } from './transit'
+import { findJourneys, wantsArrival } from './transit'
 import { outdoorConditions, describeOutdoors } from './outdoors'
 import { convertCurrency, currencyCode, describeConversion } from './currency'
 import { upcomingHolidays, describeHolidays } from './holidays'
@@ -345,7 +345,11 @@ async function runIntent(
           return { speech, card: { type: 'transit', data } }
         }
 
-        const data = await findJourneys(params.from, destination, params.when)
+        // "Be there by nine" is a deadline, not a departure. Same belt and
+        // braces as the watch flag above: the router's own answer first, the
+        // sentence itself as the backstop when it omits the enum.
+        const arriveBy = params.timeMode === 'arrive' || wantsArrival(utterance)
+        const data = await findJourneys(params.from, destination, params.when, arriveBy)
         const speech = await formatResponse('transit', utterance, data, onChunk)
         return { speech, card: { type: 'transit', data } }
       }

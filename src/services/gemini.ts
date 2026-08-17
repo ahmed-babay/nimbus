@@ -92,6 +92,15 @@ the relevant parameter for it, leaving the others empty:
   -> params.from (starting station; omit if the user didn't say one)
   -> params.when (ISO 8601 datetime if they named a time like "at 6pm" or
      "tomorrow morning"; omit for now/next departures)
+  -> params.timeMode ("arrive" when the time they named is when they need to
+     BE somewhere, "depart" when it is when they want to set off.
+     "arrive" for: "I need to be in Frankfurt by 9", "I want to arrive at 9",
+     "get me there before the meeting at 10", "what should I take to make it
+     to the airport by 6", "I have to reach Mainz no later than noon".
+     "depart" for: "the next train at 9", "trains leaving around 9", "what
+     time is the last S-Bahn", "I want to take the 9 o'clock train".
+     The distinction matters: answering "be there by 9" with trains that
+     leave at 9 gives them something that arrives far too late.)
   -> params.watch ("yes" when they want to be kept informed about that service
      rather than simply told once, "no" when they just want the times.
      "yes" for: "keep me updated", "keep me posted", "notify me when/if there
@@ -266,6 +275,7 @@ const CLASSIFY_SCHEMA: GenerationConfig = {
           from: { type: SchemaType.STRING },
           to: { type: SchemaType.STRING },
           when: { type: SchemaType.STRING },
+          timeMode: { type: SchemaType.STRING, enum: ['depart', 'arrive'], format: 'enum' },
           // A real two-way choice rather than an optional "yes". The local
           // model decodes under a grammar that must emit every property, so a
           // single-value enum would make every transit question a watch.

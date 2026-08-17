@@ -770,6 +770,13 @@ function TransitBody({ data, bare = false }: { data: TransitCardData; bare?: boo
         <span className="truncate">{data.from}</span>
         <span className="shrink-0 text-nimbus-accent">→</span>
         <span className="truncate">{data.to}</span>
+        {/* Which question was answered. Without this, a board of 08:xx
+            departures in response to "by nine" looks like it misheard. */}
+        {data.deadline && (
+          <span className="ml-auto shrink-0 rounded bg-nimbus-accent/15 px-1.5 py-0.5 text-[9.5px] font-medium normal-case tracking-normal text-nimbus-accent-bright">
+            arrive by {data.deadline}
+          </span>
+        )}
       </div>
 
       <ul className="mt-2 divide-y divide-white/[0.06]">

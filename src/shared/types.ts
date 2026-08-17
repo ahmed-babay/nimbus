@@ -248,6 +248,13 @@ export interface TransitCardData {
   from: string
   to: string
   journeys: TransitJourney[]
+  /**
+   * Set when the user asked to *arrive* by a time rather than leave at one, as
+   * a clock time. The card says so, because "trains to Frankfurt" and "trains
+   * that get you to Frankfurt by nine" are different answers and the user has
+   * to be able to see which one they got.
+   */
+  deadline?: string | null
 }
 
 /** Something happening on a given day (or range), as told to Nimbus. */
