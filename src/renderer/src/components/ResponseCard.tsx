@@ -347,10 +347,10 @@ function SelectionBody({
         {data.action === 'reply' ? (
           <button
             onClick={() => void window.nimbus.replyInApp(data.result)}
-            title="Puts the draft in the message box. Does not send it."
+            title="Copies the draft and brings the chat forward. Pastes it for you where the app allows; otherwise press Ctrl+V. Never sends."
             className="rounded-lg bg-nimbus-accent/20 px-2.5 py-1 text-[11px] font-medium text-nimbus-accent-bright transition-colors hover:bg-nimbus-accent/30"
           >
-            Put in message box
+            Reply in chat
           </button>
         ) : (
           data.canReplace && (

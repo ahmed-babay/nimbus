@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, session, shell } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Notification, session, shell } from 'electron'
 import { electronApp, optimizer } from '@electron-toolkit/utils'
 import dotenv from 'dotenv'
 import { createTray } from './tray'
@@ -239,13 +239,25 @@ function registerIpcHandlers(): void {
     }
   )
 
-  ipcMain.handle(IPC.REPLY_IN_APP, async (_event, text: string): Promise<void> => {
+  ipcMain.handle(IPC.REPLY_IN_APP, async (_event, text: string): Promise<boolean> => {
     if (!pendingSelection) throw new Error('There is no conversation to reply to.')
     const { windowHandle } = pendingSelection
     // Hide first so focus can return to the chat app before the paste.
     if (overlayWindow) hideOverlay(overlayWindow)
-    await replyInWindow(windowHandle, text)
+    const pasted = await replyInWindow(windowHandle, text)
     pendingSelection = null
+
+    // Some composers - Instagram's among them - only accept a paste when the
+    // caret is already in them, and no keystroke from outside can put it
+    // there. Rather than fail silently, say where the draft went: it is on the
+    // clipboard either way, so the user is always one Ctrl+V from done.
+    if (!pasted && Notification.isSupported()) {
+      new Notification({
+        title: 'Nimbus — reply copied',
+        body: 'Click the message box and press Ctrl+V to paste your draft.'
+      }).show()
+    }
+    return pasted
   })
 
   ipcMain.handle(IPC.REPLACE_SELECTION, async (_event, text: string): Promise<void> => {
