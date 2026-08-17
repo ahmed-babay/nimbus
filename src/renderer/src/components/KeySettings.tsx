@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { CountUp, FillBar, Stagger, StaggerItem } from './Motion'
+import { AnimatePresence, motion } from 'framer-motion'
+import { CountUp, EASE, FillBar, Stagger, StaggerItem } from './Motion'
 import type {
   AiProvider,
   LocalModelKind,
@@ -188,6 +189,66 @@ function QuotaPanel(): React.JSX.Element {
         )
       })}
     </Stagger>
+  )
+}
+
+/**
+ * A section that starts closed.
+ *
+ * Settings grew a provider picker, three model downloads, a quota panel and
+ * eight key fields, which together are taller than the screen — and a panel
+ * you have to scroll to find anything in is a panel nobody reads. Everything
+ * except the provider choice now folds away, so the whole thing fits and you
+ * open only the part you came for.
+ */
+function Section({
+  title,
+  hint,
+  children,
+  defaultOpen = false
+}: {
+  title: string
+  hint?: string
+  children: React.ReactNode
+  defaultOpen?: boolean
+}): React.JSX.Element {
+  const [open, setOpen] = useState(defaultOpen)
+
+  return (
+    <div className="mt-2 border-t border-white/[0.07] pt-2">
+      <button
+        onClick={() => setOpen((current) => !current)}
+        className="flex w-full items-center gap-1.5 text-left"
+      >
+        <motion.span
+          className="text-[9px] text-nimbus-text-dim"
+          animate={{ rotate: open ? 90 : 0 }}
+          transition={{ duration: 0.2, ease: EASE }}
+        >
+          ▶
+        </motion.span>
+        <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-nimbus-accent">
+          {title}
+        </span>
+      </button>
+
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            // Height rather than opacity alone: the point is that the closed
+            // sections take up no room.
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.24, ease: EASE }}
+            className="overflow-hidden"
+          >
+            {hint && <p className="mt-1 text-[10px] text-nimbus-text-dim">{hint}</p>}
+            {children}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   )
 }
 
@@ -398,28 +459,22 @@ export function KeySettings() {
       {/* Its own section rather than part of the provider block: local speech
           recognition is independent of who answers, and is worth installing
           even when answers come from the cloud. */}
-      <div className="mt-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-nimbus-accent">
-        Speech
-      </div>
-      <p className="mt-1 text-[10px] text-nimbus-text-dim">
-        Installed, these replace the Groq key and the Edge voice — and keep what you say, and
-        what Nimbus says back, on this machine.
-      </p>
-      <LocalModelRow kind="stt" onMessage={setMessage} />
-      <LocalModelRow kind="tts" onMessage={setMessage} />
+      <Section
+        title="Speech"
+        hint="Installed, these replace the Groq key and the Edge voice — and keep what you say, and what Nimbus says back, on this machine."
+      >
+        <LocalModelRow kind="stt" onMessage={setMessage} />
+        <LocalModelRow kind="tts" onMessage={setMessage} />
+      </Section>
 
-      <div className="mt-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-nimbus-accent">
-        What&apos;s left this month
-      </div>
-      <QuotaPanel />
+      <Section title="What's left this month">
+        <QuotaPanel />
+      </Section>
 
-      <div className="mt-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-nimbus-accent">
-        API keys
-      </div>
-      <p className="mt-1 text-[10px] text-nimbus-text-dim">
-        Stored encrypted by Windows, and only used when the key isn&apos;t already in .env.
-      </p>
-
+      <Section
+        title="API keys"
+        hint="Stored encrypted by Windows, and only used when the key isn't already in .env."
+      >
       <ul className="mt-1.5 space-y-2">
         {secrets.map((secret) => {
           const info = KEY_INFO[secret.name]
@@ -473,6 +528,7 @@ export function KeySettings() {
           )
         })}
       </ul>
+      </Section>
 
       {message && (
         <p
