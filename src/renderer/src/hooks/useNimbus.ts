@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 import type { NimbusConfig, NimbusResponse, NimbusState, TextActionKind } from '@shared/types'
 import { useVoiceInput } from './useVoiceInput'
+import { playOpenChime } from '../lib/chime'
 import { useRadioPlayer, type RadioPlayerControls } from './useRadioPlayer'
 import { isStopPhrase, isStopPlaybackPhrase } from '../lib/stop-phrases'
 
@@ -860,6 +861,10 @@ export function useNimbus(): NimbusOverlayState {
   useEffect(() => {
     const unsubscribeWake = window.nimbus.onWake(() => {
       clearFadeTimer()
+      // Only when it was actually closed. Waking an already-open overlay for a
+      // follow-up would otherwise stack the opening chime on top of the
+      // listening one, which is two sounds for one event.
+      if (!isOpenRef.current) playOpenChime()
       setIsOpen(true)
       emptyTurnsRef.current = 0
       setMode('assistant')
