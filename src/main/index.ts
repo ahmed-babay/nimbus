@@ -32,7 +32,12 @@ import { cancelReminderById } from '../services/reminders'
 import { cancelStandingItem, standingItems } from '../services/standing'
 import { downloadLocalModel, downloadOnnxModel, localModelStatus } from './model-download'
 import type { LocalModelKind, LocalModelStatus } from '../shared/types'
-import { formatTranscript, summarizeMeeting, transcribePiece } from '../services/meeting'
+import {
+  exportMeeting,
+  summarizeMeeting,
+  transcribePiece,
+  type ExportFormat
+} from '../services/meeting'
 import type { MeetingLine, MeetingSummary } from '../shared/types'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -402,13 +407,14 @@ function registerIpcHandlers(): void {
     async (
       _event,
       pcm: ArrayBuffer,
-      previous: string
+      previous: string,
+      language: string
     ): Promise<string | null> => {
       // As with subtitles, one failed piece must not end the recording —
       // losing a sentence of a meeting is recoverable, losing the meeting is
       // not.
       try {
-        return await transcribePiece(new Float32Array(pcm), previous)
+        return await transcribePiece(new Float32Array(pcm), previous, language)
       } catch (error) {
         console.warn('[meeting] piece failed:', error)
         return null
@@ -421,20 +427,31 @@ function registerIpcHandlers(): void {
     async (
       _event,
       lines: MeetingLine[],
-      startedAt: number
+      startedAt: number,
+      format: ExportFormat,
+      summary: MeetingSummary | null
     ): Promise<{ ok: boolean; path?: string; error?: string }> => {
       const when = new Date(startedAt)
       const stamp = `${when.getFullYear()}-${String(when.getMonth() + 1).padStart(2, '0')}-${String(when.getDate()).padStart(2, '0')}`
 
+      let built: ReturnType<typeof exportMeeting>
+      try {
+        // Built before the dialog opens, so a format that can't be produced
+        // says why instead of asking where to put a file it can't write.
+        built = exportMeeting(format, lines, startedAt, summary)
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : 'Could not build it.' }
+      }
+
       const result = await dialog.showSaveDialog({
-        title: 'Save meeting transcript',
-        defaultPath: join(app.getPath('documents'), `meeting-${stamp}.txt`),
-        filters: [{ name: 'Text', extensions: ['txt'] }]
+        title: format === 'transcript' ? 'Save meeting transcript' : 'Save meeting summary',
+        defaultPath: join(app.getPath('documents'), `meeting-${stamp}.${built.extension}`),
+        filters: [{ name: built.filterName, extensions: [built.extension] }]
       })
       if (result.canceled || !result.filePath) return { ok: false }
 
       try {
-        await writeFile(result.filePath, formatTranscript(lines, startedAt), 'utf8')
+        await writeFile(result.filePath, built.data)
         return { ok: true, path: result.filePath }
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Could not write the file.'

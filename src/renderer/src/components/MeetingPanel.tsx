@@ -1,5 +1,45 @@
 import { useEffect, useRef, useState } from 'react'
+import { Dropdown } from './Dropdown'
 import type { MeetingControls } from '../hooks/useMeeting'
+import type { MeetingExportFormat } from '@shared/types'
+
+/**
+ * The languages worth offering, not every language Whisper knows.
+ *
+ * A list of ninety is a list nobody reads. These are the ones a meeting in
+ * this part of the world is actually held in, with automatic detection kept
+ * as the default for anyone whose meeting is in none of them.
+ */
+const MEETING_LANGUAGES = [
+  { value: '', label: 'Detect automatically', hint: 'Fine for English; unreliable otherwise' },
+  { value: 'de', label: 'German', hint: 'Deutsch' },
+  { value: 'en', label: 'English' },
+  { value: 'fr', label: 'French', hint: 'Français' },
+  { value: 'es', label: 'Spanish', hint: 'Español' },
+  { value: 'it', label: 'Italian', hint: 'Italiano' },
+  { value: 'nl', label: 'Dutch', hint: 'Nederlands' },
+  { value: 'pl', label: 'Polish', hint: 'Polski' },
+  { value: 'pt', label: 'Portuguese', hint: 'Português' },
+  { value: 'tr', label: 'Turkish', hint: 'Türkçe' },
+  { value: 'ar', label: 'Arabic', hint: 'العربية' },
+  { value: 'ru', label: 'Russian', hint: 'Русский' }
+]
+
+/** The ways a meeting can leave, in the order they are likely to be wanted. */
+const EXPORTS: Array<{ format: MeetingExportFormat; label: string; hint: string }> = [
+  {
+    format: 'docx',
+    label: 'Word',
+    hint: 'Summary and full transcript as a .docx you can send on'
+  },
+  { format: 'pptx', label: 'PowerPoint', hint: 'One slide per section, ready to present' },
+  { format: 'markdown', label: 'Notion / OneNote', hint: 'Markdown, which both import' },
+  {
+    format: 'transcript',
+    label: 'Transcript (.txt)',
+    hint: 'Everything said, plain — to hand to a larger model yourself'
+  }
+]
 
 /**
  * The meeting view: what has been said so far, and what to do with it.
@@ -76,6 +116,20 @@ export function MeetingPanel({ meeting }: { meeting: MeetingControls }) {
         </p>
       )}
 
+      {/* Chosen before or during the recording, and it applies from the next
+          piece on. Whisper decides the language per piece of audio, and a few
+          seconds is too little to decide it well — left to guess, a German
+          meeting comes back as a mixture of German and broken English. */}
+      <div className="mt-1.5 flex items-center gap-2">
+        <span className="shrink-0 text-[10px] text-nimbus-text-dim">Spoken language</span>
+        <Dropdown
+          value={meeting.language}
+          onChange={meeting.setLanguage}
+          options={MEETING_LANGUAGES}
+          placeholder="Detect automatically"
+        />
+      </div>
+
       {meeting.lines.length > 0 && (
         <button
           onClick={() => setExpanded((open) => !open)}
@@ -136,13 +190,24 @@ export function MeetingPanel({ meeting }: { meeting: MeetingControls }) {
             >
               {meeting.summarizing ? 'Summarising…' : 'Summarise'}
             </button>
-            <button
-              onClick={() => void meeting.save()}
-              disabled={meeting.lines.length === 0}
-              className="rounded-lg border border-nimbus-border px-2.5 py-1 text-[10.5px] text-nimbus-text-dim transition-colors hover:bg-white/[0.06] hover:text-nimbus-text disabled:opacity-40"
-            >
-              Save to a file
-            </button>
+            {EXPORTS.map((option) => {
+              // Everything but the raw transcript is built from the summary,
+              // so those stay out of reach until there is one — clearer than
+              // offering a button that can only fail.
+              const needsSummary = option.format !== 'transcript'
+              const blocked = meeting.lines.length === 0 || (needsSummary && !meeting.summary)
+              return (
+                <button
+                  key={option.format}
+                  onClick={() => void meeting.save(option.format)}
+                  disabled={blocked}
+                  title={needsSummary && !meeting.summary ? 'Summarise first' : option.hint}
+                  className="rounded-lg border border-nimbus-border px-2.5 py-1 text-[10.5px] text-nimbus-text-dim transition-colors hover:bg-white/[0.06] hover:text-nimbus-text disabled:opacity-40"
+                >
+                  {option.label}
+                </button>
+              )
+            })}
             <button
               onClick={meeting.reset}
               className="rounded-lg border border-nimbus-border px-2.5 py-1 text-[10.5px] text-nimbus-text-dim transition-colors hover:bg-white/[0.06] hover:text-nimbus-text"

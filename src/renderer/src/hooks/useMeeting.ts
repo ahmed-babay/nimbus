@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react'
 import { useAudioCapture, type CapturedPiece } from './useAudioCapture'
-import type { MeetingLine, MeetingSummary } from '@shared/types'
+import type { MeetingExportFormat, MeetingLine, MeetingSummary } from '@shared/types'
 
 /**
  * Records a meeting without taking part in it.
@@ -29,7 +29,10 @@ export interface MeetingControls {
   error: string
   start: () => Promise<void>
   stop: () => void
-  save: () => Promise<void>
+  save: (format: MeetingExportFormat) => Promise<void>
+  /** Whisper language for this meeting; empty lets it guess. */
+  language: string
+  setLanguage: (code: string) => void
   summarize: () => Promise<void>
   reset: () => void
 }
@@ -43,11 +46,17 @@ export function useMeeting(): MeetingControls {
   const [summarizing, setSummarizing] = useState(false)
   const [savedPath, setSavedPath] = useState('')
   const [error, setError] = useState('')
+  const [language, setLanguageState] = useState('')
 
   // Continuation context per speaker. Keeping them apart matters: feeding
   // your own last sentence as context for their audio would push the
   // transcription towards words that were never said on that side.
   const previousRef = useRef<Record<string, string>>({ you: '', them: '' })
+
+  // Read from a ref inside the piece handler rather than closed over: the
+  // handler is created once and a language chosen after the recording started
+  // would otherwise never reach it.
+  const languageRef = useRef('')
 
   const handlePiece = useCallback((piece: CapturedPiece) => {
     const speaker: MeetingLine['speaker'] = piece.source === 'microphone' ? 'you' : 'them'
@@ -55,7 +64,7 @@ export function useMeeting(): MeetingControls {
 
     setPending((count) => count + 1)
     void window.nimbus
-      .meetingPiece(piece.pcm.buffer as ArrayBuffer, previous)
+      .meetingPiece(piece.pcm.buffer as ArrayBuffer, previous, languageRef.current)
       .then((text) => {
         if (!text) return
         previousRef.current[speaker] = text
@@ -80,6 +89,11 @@ export function useMeeting(): MeetingControls {
     }
   })
 
+  const setLanguage = useCallback((code: string) => {
+    languageRef.current = code
+    setLanguageState(code)
+  }, [])
+
   const start = useCallback(async () => {
     setError('')
     setLines([])
@@ -98,12 +112,16 @@ export function useMeeting(): MeetingControls {
     setPhase('stopped')
   }, [capture])
 
-  const save = useCallback(async () => {
-    setError('')
-    const result = await window.nimbus.saveMeeting(lines, startedAt)
-    if (result.ok && result.path) setSavedPath(result.path)
-    else if (result.error) setError(result.error)
-  }, [lines, startedAt])
+  const save = useCallback(
+    async (format: MeetingExportFormat) => {
+      setError('')
+      setSavedPath('')
+      const result = await window.nimbus.saveMeeting(lines, startedAt, format, summary)
+      if (result.ok && result.path) setSavedPath(result.path)
+      else if (result.error) setError(result.error)
+    },
+    [lines, startedAt, summary]
+  )
 
   const summarize = useCallback(async () => {
     setError('')
@@ -138,6 +156,8 @@ export function useMeeting(): MeetingControls {
     start,
     stop,
     save,
+    language,
+    setLanguage,
     summarize,
     reset
   }

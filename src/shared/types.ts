@@ -602,6 +602,17 @@ export interface MeetingSummary {
   openQuestions: string[]
 }
 
+/**
+ * What a meeting can leave as.
+ *
+ * `transcript` is the raw text and stays plain on purpose: it has to open
+ * anywhere and paste into anything, including a larger model than the one that
+ * wrote the summary. The rest are the shapes a summary actually gets used in —
+ * a document to circulate, a deck to present from, and Markdown, which is what
+ * both Notion and OneNote import.
+ */
+export type MeetingExportFormat = 'transcript' | 'docx' | 'pptx' | 'markdown'
+
 /** Whether the on-device model is present, and how big it is. */
 /**
  * Which on-device model. They download separately because they are useful
