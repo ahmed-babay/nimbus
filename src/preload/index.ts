@@ -65,6 +65,8 @@ const api = {
     ipcRenderer.invoke(IPC.RUN_TEXT_ACTION, kind, customInstruction),
   replaceSelection: (text: string): Promise<void> =>
     ipcRenderer.invoke(IPC.REPLACE_SELECTION, text),
+  /** Puts a draft in the app's message box. Never sends it. */
+  replyInApp: (text: string): Promise<void> => ipcRenderer.invoke(IPC.REPLY_IN_APP, text),
   onShowSettings: (callback: () => void): (() => void) => {
     const listener = (): void => callback()
     ipcRenderer.on(IPC.SHOW_SETTINGS, listener)

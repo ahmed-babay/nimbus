@@ -340,14 +340,27 @@ function SelectionBody({
         {data.result}
       </p>
 
-      <div className="mt-2.5 flex gap-1.5 border-t border-white/[0.06] pt-2.5">
-        {data.canReplace && (
+      <div className="mt-2.5 flex flex-wrap gap-1.5 border-t border-white/[0.06] pt-2.5">
+        {/* A reply belongs in the message box, not over the message being
+            replied to — so this is the primary action when drafting one, and
+            "Replace" is hidden entirely because it would delete their text. */}
+        {data.action === 'reply' ? (
           <button
-            onClick={() => onReplace(data.result)}
+            onClick={() => void window.nimbus.replyInApp(data.result)}
+            title="Puts the draft in the message box. Does not send it."
             className="rounded-lg bg-nimbus-accent/20 px-2.5 py-1 text-[11px] font-medium text-nimbus-accent-bright transition-colors hover:bg-nimbus-accent/30"
           >
-            Replace selection
+            Put in message box
           </button>
+        ) : (
+          data.canReplace && (
+            <button
+              onClick={() => onReplace(data.result)}
+              className="rounded-lg bg-nimbus-accent/20 px-2.5 py-1 text-[11px] font-medium text-nimbus-accent-bright transition-colors hover:bg-nimbus-accent/30"
+            >
+              Replace selection
+            </button>
+          )
         )}
         <button
           onClick={() => window.nimbus.copyText(data.result)}

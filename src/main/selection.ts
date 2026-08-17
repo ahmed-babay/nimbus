@@ -81,6 +81,35 @@ Write-Output $hwnd
 }
 
 /**
+ * Drops `text` into the message box of the window the selection came from,
+ * without sending it.
+ *
+ * Different from `pasteIntoWindow` in one decisive way: replacing would
+ * overwrite the message being replied *to*, which is the opposite of what a
+ * reply means. Escape is pressed first because in every chat client worth
+ * naming — WhatsApp Web, Discord, Slack, Teams, Telegram — it clears the
+ * selection and returns focus to the composer, which is exactly where the
+ * draft should land.
+ *
+ * It deliberately stops there. Nothing is sent: the whole point is that you
+ * read it, edit it if you want, and press Enter yourself. An assistant that
+ * sends messages on your behalf is a different and much riskier product.
+ */
+export async function replyInWindow(windowHandle: string, text: string): Promise<void> {
+  clipboard.writeText(text)
+
+  await powershell(`
+${WIN32_TYPES}
+Add-Type -AssemblyName System.Windows.Forms
+[void][NimbusWin32]::SetForegroundWindow([IntPtr]${windowHandle})
+Start-Sleep -Milliseconds 140
+[System.Windows.Forms.SendKeys]::SendWait("{ESC}")
+Start-Sleep -Milliseconds 90
+[System.Windows.Forms.SendKeys]::SendWait("^v")
+`)
+}
+
+/**
  * Puts `text` back into the window the selection came from, replacing what is
  * still highlighted there. Focus is restored explicitly because showing the
  * overlay takes it away.

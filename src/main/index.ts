@@ -16,7 +16,7 @@ import { askAboutScreen } from '../services/vision'
 import { looksLikePaperwork, readDocument } from '../services/paperwork'
 import { captureDisplayImage, encodeCapture, type ScreenCapture } from './screen'
 import { pickRegion, type RegionChoice } from './region-picker'
-import { captureSelection, pasteIntoWindow, type CapturedSelection } from './selection'
+import { captureSelection, pasteIntoWindow, replyInWindow, type CapturedSelection } from './selection'
 import { runTextAction } from '../services/text-actions'
 import type { TextActionKind } from '../shared/types'
 import { transcribeAudio } from '../services/whisper'
@@ -238,6 +238,15 @@ function registerIpcHandlers(): void {
       return { result, canReplace: pendingSelection.windowHandle !== '0' }
     }
   )
+
+  ipcMain.handle(IPC.REPLY_IN_APP, async (_event, text: string): Promise<void> => {
+    if (!pendingSelection) throw new Error('There is no conversation to reply to.')
+    const { windowHandle } = pendingSelection
+    // Hide first so focus can return to the chat app before the paste.
+    if (overlayWindow) hideOverlay(overlayWindow)
+    await replyInWindow(windowHandle, text)
+    pendingSelection = null
+  })
 
   ipcMain.handle(IPC.REPLACE_SELECTION, async (_event, text: string): Promise<void> => {
     if (!pendingSelection) throw new Error('There is no selection to replace.')

@@ -27,6 +27,8 @@ export const IPC = {
   RUN_TEXT_ACTION: 'nimbus:run-text-action',
   /** renderer -> main (invoke): paste a result back over the original selection */
   REPLACE_SELECTION: 'nimbus:replace-selection',
+  /** renderer -> main (invoke): drop a draft into the app's message box, unsent */
+  REPLY_IN_APP: 'nimbus:reply-in-app',
   /** renderer -> main: toggle click-through as the pointer enters/leaves the card */
   SET_MOUSE_IGNORE: 'nimbus:set-mouse-ignore',
   /** renderer -> main: put an answer on the clipboard */
