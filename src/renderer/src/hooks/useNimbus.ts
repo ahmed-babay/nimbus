@@ -747,6 +747,13 @@ export function useNimbus(): NimbusOverlayState {
     }
 
     if (stateRef.current === 'listening') {
+      // Drop out of 'listening' the moment the microphone is released, rather
+      // than staying blue until the overlay happens to fade. Nothing is being
+      // heard any more, and an orb that still looks like it is listening is a
+      // lie about a microphone — the one thing an assistant on screen all day
+      // has to be honest about. The idle palette is warm red, so it is
+      // visible at a glance that Nimbus has let go.
+      setState('idle')
       scheduleAutoFade()
     }
   }, [scheduleAutoFade])
