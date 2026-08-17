@@ -278,6 +278,25 @@ export interface Reminder {
   fired: boolean
 }
 
+/**
+ * Everything Nimbus is currently holding on the user's behalf.
+ *
+ * Grouped into one payload because the point of the panel is the *total* —
+ * "what has this thing promised to do for me" — and three separate fetches
+ * would let the answer arrive in pieces.
+ */
+export interface StandingItem {
+  id: string
+  kind: 'watch' | 'event' | 'reminder'
+  title: string
+  /** When it matters, already formatted. Empty when there is no time. */
+  detail: string
+  /** ISO, for sorting the whole list by when it comes up. */
+  at: string
+  /** Set when the thing is already going wrong, e.g. a delayed train. */
+  warning?: string
+}
+
 export interface ReminderCardData {
   /** The one just created, when this card is confirming a new reminder. */
   created: Reminder | null

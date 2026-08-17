@@ -14,7 +14,7 @@ const MAX_EMPTY_TURNS = 2
 
 export interface NimbusOverlayState {
   state: NimbusState
-  mode: 'assistant' | 'settings'
+  mode: 'assistant' | 'settings' | 'standing'
   response: NimbusResponse | null
   error: string | null
   transcript: string | null
@@ -52,6 +52,7 @@ export interface NimbusOverlayState {
   toggleTts: () => void
   /** Shows the settings panel — reachable without hunting for the tray icon. */
   openSettings: () => void
+  openStanding: () => void
   /** Keeps the overlay from fading while a long-running mode owns it. */
   setHoldOpen: (hold: boolean) => void
   dismiss: () => void
@@ -59,7 +60,7 @@ export interface NimbusOverlayState {
 
 export function useNimbus(): NimbusOverlayState {
   const [state, setState] = useState<NimbusState>('idle')
-  const [mode, setMode] = useState<'assistant' | 'settings'>('assistant')
+  const [mode, setMode] = useState<'assistant' | 'settings' | 'standing'>('assistant')
   const [response, setResponse] = useState<NimbusResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [transcript, setTranscript] = useState<string | null>(null)
@@ -193,6 +194,15 @@ export function useNimbus(): NimbusOverlayState {
   useEffect(() => {
     stopPlaybackNowRef.current = stopPlayback
   }, [stopPlayback])
+
+  /** Same treatment as settings: a list being read shouldn't fade away. */
+  const openStanding = useCallback(() => {
+    clearFadeTimer()
+    setIsOpen(true)
+    isOpenRef.current = true
+    hasContentRef.current = true
+    setMode('standing')
+  }, [clearFadeTimer])
 
   const openSettings = useCallback(() => {
     // Cancels the fade: settings is read-and-type, not glanced at, and having
@@ -829,9 +839,17 @@ export function useNimbus(): NimbusOverlayState {
       setState('idle')
     })
 
+    const unsubscribeStanding = window.nimbus.onShowStanding(() => {
+      clearFadeTimer()
+      setIsOpen(true)
+      setMode('standing')
+      setState('idle')
+    })
+
     return () => {
       unsubscribeWake()
       unsubscribeSettings()
+      unsubscribeStanding()
     }
   }, [clearFadeTimer, startVoiceInput])
 
@@ -860,6 +878,7 @@ export function useNimbus(): NimbusOverlayState {
     ttsEnabled,
     toggleTts,
     openSettings,
+    openStanding,
     setHoldOpen,
     dismiss
   }

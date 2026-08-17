@@ -26,6 +26,7 @@ import { heardWakeWord, wakeWordEnabled } from '../services/wake-word'
 import { localSttInstalled } from '../services/local-stt'
 import { readQuotas } from '../services/quota'
 import { cancelReminderById } from '../services/reminders'
+import { cancelStandingItem, standingItems } from '../services/standing'
 import { downloadLocalModel, downloadOnnxModel, localModelStatus } from './model-download'
 import type { LocalModelKind, LocalModelStatus } from '../shared/types'
 import { formatTranscript, summarizeMeeting, transcribePiece } from '../services/meeting'
@@ -42,6 +43,7 @@ import type {
   NimbusResponse,
   ProviderModel,
   QuotaLine,
+  StandingItem,
   SecretName,
   SecretStatus,
   SynthesizedSpeech
@@ -255,6 +257,13 @@ function registerIpcHandlers(): void {
     }
   )
 
+  ipcMain.handle(IPC.GET_STANDING, (): StandingItem[] => standingItems())
+
+  ipcMain.handle(
+    IPC.CANCEL_STANDING,
+    (_event, kind: StandingItem['kind'], id: string): boolean => cancelStandingItem(kind, id)
+  )
+
   ipcMain.handle(IPC.CANCEL_REMINDER, (_event, id: string): boolean => cancelReminderById(id))
 
   ipcMain.handle(IPC.GET_QUOTAS, (): Promise<QuotaLine[]> => readQuotas())
@@ -441,6 +450,11 @@ app.whenReady().then(() => {
   createTray({
     onShow: () => {
       if (overlayWindow) showOverlay(overlayWindow)
+    },
+    onStanding: () => {
+      // presentOverlay, not showOverlay: opening a list to read should not
+      // also open a hot microphone.
+      if (overlayWindow) presentOverlay(overlayWindow, IPC.SHOW_STANDING)
     },
     onSettings: () => {
       if (overlayWindow) showOverlay(overlayWindow, IPC.SHOW_SETTINGS)

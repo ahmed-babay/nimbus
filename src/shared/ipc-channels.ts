@@ -48,6 +48,12 @@ export const IPC = {
   DOWNLOAD_LOCAL_MODEL: 'nimbus:download-local-model',
   /** main -> renderer: download progress for the on-device model */
   LOCAL_MODEL_PROGRESS: 'nimbus:local-model-progress',
+  /** renderer -> main (invoke): everything Nimbus is holding — watches, events, reminders */
+  GET_STANDING: 'nimbus:get-standing',
+  /** renderer -> main (invoke): cancel one standing item by kind + id */
+  CANCEL_STANDING: 'nimbus:cancel-standing',
+  /** main -> renderer: open the panel of standing commitments */
+  SHOW_STANDING: 'nimbus:show-standing',
   /** renderer -> main (invoke): drop one reminder by id */
   CANCEL_REMINDER: 'nimbus:cancel-reminder',
   /** renderer -> main (invoke): how much of each free tier is left */

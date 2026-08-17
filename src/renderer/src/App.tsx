@@ -8,6 +8,7 @@ import { TextInput } from './components/TextInput'
 import { KeySettings } from './components/KeySettings'
 import { SubtitleBar } from './components/SubtitleBar'
 import { MeetingPanel } from './components/MeetingPanel'
+import { StandingPanel } from './components/StandingPanel'
 import { useNimbus } from './hooks/useNimbus'
 import { useWakeWord } from './hooks/useWakeWord'
 import { useSubtitles } from './hooks/useSubtitles'
@@ -47,6 +48,7 @@ export default function App() {
     ttsEnabled,
     toggleTts,
     openSettings,
+    openStanding,
     setHoldOpen,
     dismiss
   } = useNimbus()
@@ -58,7 +60,7 @@ export default function App() {
   // Driven by one explicit flag rather than inferred from state and content.
   // The card steps aside while subtitles run: they belong over the video, and
   // a panel on top of the picture is exactly what nobody wants there.
-  const isVisible = (isOpen || mode === 'settings') && !subtitles.active
+  const isVisible = (isOpen || mode === 'settings' || mode === 'standing') && !subtitles.active
 
   // Without this the overlay would fade out mid-film and take the subtitles
   // with it.
@@ -152,6 +154,8 @@ export default function App() {
 
             {mode === 'settings' ? (
               <SettingsPanel config={config} onClose={dismiss} />
+            ) : mode === 'standing' ? (
+              <StandingPanel onClose={dismiss} />
             ) : (
               // Header and input stay put; only the answer between them moves.
               <div className="flex min-h-0 flex-1 flex-col px-4 py-3.5">
@@ -162,6 +166,7 @@ export default function App() {
                   onToggleMic={toggleMic}
                   ttsEnabled={ttsEnabled}
                   onToggleTts={toggleTts}
+                  onStanding={openStanding}
                   onSettings={openSettings}
                 />
 
@@ -314,6 +319,7 @@ function Header({
   onToggleMic,
   ttsEnabled,
   onToggleTts,
+  onStanding,
   onSettings
 }: {
   state: NimbusState
@@ -322,6 +328,7 @@ function Header({
   onToggleMic: () => void
   ttsEnabled: boolean
   onToggleTts: () => void
+  onStanding: () => void
   onSettings: () => void
 }) {
   return (
@@ -369,6 +376,14 @@ function Header({
           }`}
         >
           {ttsEnabled ? 'Sound on' : 'Sound off'}
+        </button>
+        <button
+          onClick={onStanding}
+          aria-label="Things Nimbus is watching for you"
+          title="Watching — trains, events and reminders Nimbus is holding"
+          className="arcade-type rounded border border-nimbus-border px-1.5 py-0.5 text-[9px] text-nimbus-text-dim transition-colors hover:bg-nimbus-accent/20 hover:text-nimbus-text"
+        >
+          Watching
         </button>
         <button
           onClick={onSettings}

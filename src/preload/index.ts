@@ -15,6 +15,7 @@ import type {
   MeetingSummary,
   SecretName,
   SecretStatus,
+  StandingItem,
   Subtitle,
   SynthesizedSpeech,
   TextActionKind
@@ -79,6 +80,14 @@ const api = {
     sourceHint: string
   ): Promise<Subtitle | null> =>
     ipcRenderer.invoke(IPC.SUBTITLE_FOR, pcm, offsetMs, previous, sourceHint),
+  getStanding: (): Promise<StandingItem[]> => ipcRenderer.invoke(IPC.GET_STANDING),
+  cancelStanding: (kind: StandingItem['kind'], id: string): Promise<boolean> =>
+    ipcRenderer.invoke(IPC.CANCEL_STANDING, kind, id),
+  onShowStanding: (callback: () => void): (() => void) => {
+    const listener = (): void => callback()
+    ipcRenderer.on(IPC.SHOW_STANDING, listener)
+    return () => ipcRenderer.removeListener(IPC.SHOW_STANDING, listener)
+  },
   cancelReminder: (id: string): Promise<boolean> =>
     ipcRenderer.invoke(IPC.CANCEL_REMINDER, id),
   getQuotas: (): Promise<QuotaLine[]> => ipcRenderer.invoke(IPC.GET_QUOTAS),
