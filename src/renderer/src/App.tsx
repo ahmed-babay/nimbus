@@ -270,7 +270,7 @@ export default function App() {
                       <div className="flex h-14 flex-col justify-center gap-1">
                         <Waveform levelRef={levelRef} />
                         <p className="text-[9.5px] text-nimbus-text-dim">
-                          &gt; Listening — say &ldquo;stop&rdquo; when done
+                          Listening — say &ldquo;stop&rdquo; when done
                         </p>
                       </div>
                     ) : (
