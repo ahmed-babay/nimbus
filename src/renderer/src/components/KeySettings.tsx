@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { CountUp, FillBar, Stagger, StaggerItem } from './Motion'
 import type {
   AiProvider,
   LocalModelKind,
@@ -104,11 +105,8 @@ function LocalModelRow({
               {total ? `${(received / 1e6).toFixed(0)} / ${(total / 1e6).toFixed(0)} MB` : '…'}
             </span>
           </div>
-          <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/10">
-            <div
-              className="h-full bg-nimbus-accent transition-[width] duration-200"
-              style={{ width: total ? `${(received / total) * 100}%` : '5%' }}
-            />
+          <div className="mt-1">
+            <FillBar fraction={total ? received / total : 0.05} />
           </div>
         </>
       ) : (
@@ -151,7 +149,7 @@ function QuotaPanel(): React.JSX.Element {
   }
 
   return (
-    <ul className="mt-1.5 space-y-1.5">
+    <Stagger className="mt-1.5 space-y-1.5">
       {lines.map((line) => {
         const measured = line.state === 'ok' && line.limit
         const fraction = measured ? Math.min(1, (line.used ?? 0) / (line.limit ?? 1)) : 0
@@ -165,7 +163,7 @@ function QuotaPanel(): React.JSX.Element {
               : 'bg-nimbus-positive'
 
         return (
-          <li
+          <StaggerItem
             key={line.service}
             className="rounded-lg border border-white/[0.07] bg-white/[0.03] px-2 py-1.5"
           >
@@ -174,7 +172,7 @@ function QuotaPanel(): React.JSX.Element {
               <span className="text-[9.5px] text-nimbus-text-dim">{line.purpose}</span>
               <span className="ml-auto text-[9.5px] tabular-nums text-nimbus-text-dim">
                 {measured
-                  ? `${line.used} / ${line.limit}`
+                  ? <><CountUp value={line.used ?? 0} /> {`/ ${line.limit}`}</>
                   : line.state === 'local'
                     ? 'on device'
                     : line.state === 'missing'
@@ -184,16 +182,12 @@ function QuotaPanel(): React.JSX.Element {
                         : 'no limit published'}
               </span>
             </div>
-            {measured && (
-              <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/10">
-                <div className={`h-full ${bar}`} style={{ width: `${fraction * 100}%` }} />
-              </div>
-            )}
+            {measured && <div className="mt-1"><FillBar fraction={fraction} className={bar} /></div>}
             <div className="mt-0.5 text-[9.5px] text-nimbus-text-dim">{line.detail}</div>
-          </li>
+          </StaggerItem>
         )
       })}
-    </ul>
+    </Stagger>
   )
 }
 

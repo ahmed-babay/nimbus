@@ -1,4 +1,6 @@
+import { AnimatePresence, motion } from 'framer-motion'
 import { useCallback, useEffect, useState } from 'react'
+import { EASE } from './Motion'
 import type { StandingItem } from '@shared/types'
 
 /**
@@ -72,13 +74,21 @@ export function StandingPanel({ onClose }: { onClose: () => void }) {
         </div>
       ) : (
         <ul className="nimbus-scroll mt-2.5 min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1">
-          {items.map((item) => {
-            const kind = KIND[item.kind]
-            return (
-              <li
-                key={`${item.kind}:${item.id}`}
-                className="flex items-start gap-2 rounded-lg border border-white/[0.07] bg-white/[0.03] px-2 py-1.5"
-              >
+          <AnimatePresence initial={false}>
+            {items.map((item, index) => {
+              const kind = KIND[item.kind]
+              return (
+                <motion.li
+                  key={`${item.kind}:${item.id}`}
+                  layout
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  // Slides out on cancel rather than vanishing, so the click
+                  // visibly did the thing.
+                  exit={{ opacity: 0, x: 24, transition: { duration: 0.18 } }}
+                  transition={{ duration: 0.3, ease: EASE, delay: index * 0.04 }}
+                  className="mb-1.5 flex items-start gap-2 rounded-lg border border-white/[0.07] bg-white/[0.03] px-2 py-1.5"
+                >
                 <span className="mt-0.5 w-4 shrink-0 text-center text-[11px]">{kind.icon}</span>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-baseline gap-1.5">
@@ -110,10 +120,11 @@ export function StandingPanel({ onClose }: { onClose: () => void }) {
                   className="shrink-0 rounded px-1 text-[11px] leading-none text-nimbus-text-dim transition-colors hover:bg-white/[0.08] hover:text-nimbus-negative"
                 >
                   ×
-                </button>
-              </li>
-            )
-          })}
+                  </button>
+                </motion.li>
+              )
+            })}
+          </AnimatePresence>
         </ul>
       )}
     </div>

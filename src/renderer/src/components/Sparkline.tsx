@@ -1,3 +1,4 @@
+import { motion } from 'framer-motion'
 import { useId } from 'react'
 
 interface SparklineProps {
@@ -6,6 +7,12 @@ interface SparklineProps {
   positive?: boolean
   width?: number
   height?: number
+  /**
+   * Draws the line on rather than showing it complete. Off by default: this is
+   * also used inside dense lists, where several lines drawing at once is
+   * noise rather than information.
+   */
+  animate?: boolean
 }
 
 /**
@@ -14,7 +21,13 @@ interface SparklineProps {
  * Deliberately axis-free: at this size the shape is the information, and
  * exact values are already shown as text beside it.
  */
-export function Sparkline({ values, positive = true, width = 108, height = 34 }: SparklineProps) {
+export function Sparkline({
+  values,
+  positive = true,
+  width = 108,
+  height = 34,
+  animate = false
+}: SparklineProps) {
   const gradientId = useId()
 
   if (values.length < 2) return null
@@ -53,21 +66,35 @@ export function Sparkline({ values, positive = true, width = 108, height = 34 }:
           <stop offset="100%" stopColor={stroke} stopOpacity="0" />
         </linearGradient>
       </defs>
-      <path d={area} fill={`url(#${gradientId})`} />
-      <path
+      <motion.path
+        d={area}
+        fill={`url(#${gradientId})`}
+        initial={animate ? { opacity: 0 } : false}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.4 }}
+      />
+      <motion.path
         d={line}
         fill="none"
         stroke={stroke}
         strokeWidth="1.5"
         strokeLinecap="round"
         strokeLinejoin="round"
+        initial={animate ? { pathLength: 0 } : false}
+        animate={{ pathLength: 1 }}
+        transition={{ duration: 0.7, ease: 'easeOut' }}
       />
-      {/* Mark the latest value so the eye lands on "now". */}
-      <circle
+      {/* Mark the latest value so the eye lands on "now", and pulse it so
+          "now" reads as now. */}
+      <motion.circle
         cx={points[points.length - 1][0]}
         cy={points[points.length - 1][1]}
         r="2.2"
         fill={stroke}
+        initial={animate ? { scale: 0, opacity: 0 } : false}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{ delay: animate ? 0.7 : 0, duration: 0.3 }}
+        style={{ originX: '0px', originY: '0px' }}
       />
     </svg>
   )
