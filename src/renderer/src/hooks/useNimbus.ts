@@ -400,8 +400,39 @@ export function useNimbus(): NimbusOverlayState {
           stopPlayback()
           const source = ctx.createBufferSource()
           source.buffer = buffer
-          source.connect(ctx.destination)
+
+          // The orb reacts to Nimbus's own voice as well as to yours. Without
+          // this it sat perfectly still while speaking, which made the thing
+          // look like it had stopped working at the exact moment it was most
+          // obviously alive. Same levelRef the microphone writes to, so the
+          // sphere has one input and does not care where the sound came from.
+          const analyser = ctx.createAnalyser()
+          analyser.fftSize = 256
+          analyser.smoothingTimeConstant = 0.75
+          source.connect(analyser)
+          analyser.connect(ctx.destination)
+
+          const samples = new Uint8Array(analyser.frequencyBinCount)
+          let meter = 0
+          const readLevel = (): void => {
+            if (currentSourceRef.current !== source) return
+            analyser.getByteTimeDomainData(samples)
+            let sum = 0
+            for (let i = 0; i < samples.length; i++) {
+              const centred = (samples[i] - 128) / 128
+              sum += centred * centred
+            }
+            // RMS, lifted a little: speech rarely peaks, and a meter that only
+            // moves on plosives reads as broken.
+            const rms = Math.sqrt(sum / samples.length)
+            levelRef.current = Math.min(1, rms * 2.6)
+            meter = requestAnimationFrame(readLevel)
+          }
+          meter = requestAnimationFrame(readLevel)
+
           source.onended = () => {
+            cancelAnimationFrame(meter)
+            levelRef.current = 0
             currentSourceRef.current = null
             speechProgressRef.current = 1
             startPendingRadioRef.current?.()

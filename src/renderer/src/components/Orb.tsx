@@ -38,6 +38,17 @@ interface OrbProps {
 /** How far the sphere swells at full voice. Small: this is a meter, not a toy. */
 const VOICE_SWELL = 0.16
 
+/**
+ * The sphere arrives rather than appearing.
+ *
+ * Over this window it swells past its resting size and settles back, the bloom
+ * flares and fades, and the interior spins fast then slows — like something
+ * being switched on. It matters because the overlay is summoned: appearing
+ * fully-formed reads as a screenshot, and a beat of settling reads as a thing
+ * waking up.
+ */
+const ENTRANCE_MS = 900
+
 /** Per-state hues, as [core, mid, rim] — dark to bright. */
 const PALETTE: Record<NimbusState, [string, string, string]> = {
   idle: ['#101426', '#2a3355', '#6e7bff'],
@@ -51,13 +62,23 @@ export function Orb({ state, levelRef, size = 52 }: OrbProps) {
   const rootRef = useRef<HTMLDivElement>(null)
   const bloomRef = useRef<HTMLDivElement>(null)
   const ribbonsRef = useRef<SVGGElement[]>([])
+  /**
+   * Fixed at mount, not at each effect run. The effect re-runs on every state
+   * change, so a local start time replayed the whole arrival on idle ->
+   * listening -> thinking -> speaking. The card unmounts when the overlay
+   * hides, so mount is exactly "when Nimbus opens".
+   */
+  const mountedAt = useRef(performance.now())
 
   useEffect(() => {
     let frame = 0
     // Smoothed: raw level is jittery frame to frame, and following it exactly
     // makes the sphere vibrate instead of breathe.
     let smoothed = 0
-    const startedAt = performance.now()
+    const startedAt = mountedAt.current
+
+    /** Overshoot then settle: fast out of the gate, easing into rest. */
+    const easeOut = (t: number): number => 1 - Math.pow(1 - t, 3)
 
     const tick = (now: number): void => {
       const level = Math.max(0, Math.min(1, levelRef.current ?? 0))
@@ -67,17 +88,29 @@ export function Orb({ state, levelRef, size = 52 }: OrbProps) {
       // A slow sine keeps it alive when nothing is being said, so it never
       // looks frozen or broken.
       const breath = 0.5 + 0.5 * Math.sin(seconds * 0.9)
+
+      // 0 -> 1 across the entrance, then pinned at 1 forever after.
+      const intro = Math.min(1, (now - startedAt) / ENTRANCE_MS)
+      const eased = easeOut(intro)
+      // Swells past resting size at the midpoint and comes back down.
+      const arrival = Math.sin(intro * Math.PI) * 0.22
+
+      // The sphere reacts to whichever is speaking — the microphone while
+      // listening, and its own voice while talking, both through levelRef.
       const active = state === 'listening' || state === 'speaking'
       const swell = active ? smoothed * VOICE_SWELL : 0
-      // Thinking spins the interior up without needing a spinner.
-      const rate = state === 'thinking' ? 42 : 13
+      // Thinking spins the interior up without needing a spinner; the entrance
+      // spins faster still and slows into place.
+      const rate = (state === 'thinking' ? 42 : 13) + (1 - eased) * 220
 
       if (rootRef.current) {
-        rootRef.current.style.transform = `scale(${1 + swell + breath * 0.015})`
+        rootRef.current.style.transform = `scale(${(0.72 + eased * 0.28 + arrival) * (1 + swell + breath * 0.015)})`
+        rootRef.current.style.opacity = `${Math.min(1, intro * 2.2)}`
       }
       if (bloomRef.current) {
-        bloomRef.current.style.opacity = `${0.34 + breath * 0.14 + smoothed * 0.45}`
-        bloomRef.current.style.transform = `scale(${1.1 + swell * 1.6 + breath * 0.05})`
+        // Flares during the entrance, then settles to the resting breath.
+        bloomRef.current.style.opacity = `${0.34 + breath * 0.14 + smoothed * 0.45 + arrival * 1.6}`
+        bloomRef.current.style.transform = `scale(${1.1 + swell * 1.6 + breath * 0.05 + arrival})`
       }
 
       // Incommensurate speeds, one reversed: the three never line up twice, so
