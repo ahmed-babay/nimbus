@@ -1,6 +1,38 @@
 import { motion } from 'framer-motion'
 import { useEffect, useMemo, useState } from 'react'
 import { STOCK_RANGES, type StockCardData, type StockRange } from '@shared/types'
+import { CountUp, EASE } from './Motion'
+
+/** Spelled out, because "1D" next to a percentage is not self-explanatory. */
+const RANGE_LABEL: Record<StockRange, string> = {
+  '1d': 'today',
+  '5d': 'past week',
+  '1mo': 'past month',
+  '6mo': 'past 6 months',
+  '1y': 'past year'
+}
+
+/** Percentage move, coloured and with a nudging arrow. */
+function Delta({ value }: { value: number }) {
+  const positive = value >= 0
+  return (
+    <span
+      className={`flex shrink-0 items-baseline gap-0.5 text-[11px] font-medium tabular-nums ${
+        positive ? 'text-nimbus-positive' : 'text-nimbus-negative'
+      }`}
+    >
+      <motion.span
+        key={positive ? 'up' : 'down'}
+        initial={{ y: positive ? 4 : -4, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ duration: 0.4, ease: EASE }}
+      >
+        {positive ? '▲' : '▼'}
+      </motion.span>
+      <CountUp value={Math.abs(value)} decimals={2} suffix="%" />
+    </span>
+  )
+}
 
 /**
  * A price chart that draws itself in, switches window, and keeps up.
@@ -43,6 +75,11 @@ export function PriceChart({
   initial: StockCardData
   compact?: boolean
 }) {
+  // NOTE: the price and percentage are rendered *here*, from the same state
+  // the chart draws from. They used to live in the parent card, reading the
+  // original prop, so switching to 1W redrew the chart while the percentage
+  // stayed on the day's move — and the "live" poll updated a number nobody
+  // could see. One owner, one truth.
   const [data, setData] = useState(initial)
   const [range, setRange] = useState<StockRange>(initial.range)
   const [loading, setLoading] = useState(false)
@@ -111,6 +148,25 @@ export function PriceChart({
 
   return (
     <div>
+      <div className="flex items-baseline gap-2">
+        <span
+          className={`font-semibold tracking-wide text-nimbus-text ${compact ? 'text-[12px]' : 'text-sm'}`}
+        >
+          {data.symbol}
+        </span>
+        <span className="min-w-0 flex-1 truncate text-[10px] text-nimbus-text-dim">{data.name}</span>
+        <span
+          className={`shrink-0 font-semibold tabular-nums text-nimbus-text ${compact ? 'text-[13px]' : 'text-lg'}`}
+        >
+          <CountUp value={data.price} decimals={2} />
+        </span>
+        <Delta value={data.changePercent} />
+      </div>
+      <div className="mt-0.5 text-[9px] text-nimbus-text-dim">
+        {/* Says which window the percentage describes, so "down 10%" can never
+            be read as today when it is the month. */}
+        {RANGE_LABEL[data.range]} · {data.currency}
+      </div>
       <svg
         viewBox={`0 0 ${width} ${height}`}
         className="w-full"

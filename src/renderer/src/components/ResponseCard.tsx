@@ -226,19 +226,7 @@ function WeatherBody({ data }: { data: WeatherCardData }) {
 function StockBody({ data }: { data: StockCardData }) {
   return (
     <div className={panel}>
-      <div className="flex items-baseline gap-2">
-        <span className="text-sm font-semibold tracking-wide text-nimbus-text">{data.symbol}</span>
-        <span className="min-w-0 flex-1 truncate text-[10px] text-nimbus-text-dim">
-          {data.name}
-        </span>
-        <span className="shrink-0 text-lg font-semibold tabular-nums text-nimbus-text">
-          {data.price.toFixed(2)}
-        </span>
-        <Delta value={data.changePercent} suffix="%" />
-      </div>
-      <div className="mt-1.5">
-        <PriceChart initial={data} />
-      </div>
+      <PriceChart initial={data} />
     </div>
   )
 }
@@ -259,22 +247,8 @@ function WatchlistBody({ data }: { data: WatchlistCardData }) {
     <div className="space-y-2">
       {data.stocks.map((stock) => (
         <div key={stock.symbol} className={panel}>
-          <div className="flex items-baseline gap-2">
-            <span className="text-[12px] font-semibold tracking-wide text-nimbus-text">
-              {stock.symbol}
-            </span>
-            <span className="min-w-0 flex-1 truncate text-[10px] text-nimbus-text-dim">
-              {stock.name}
-            </span>
-            <span className="shrink-0 text-[13px] font-semibold tabular-nums text-nimbus-text">
-              {stock.price.toFixed(2)}
-            </span>
-            <Delta value={stock.changePercent} suffix="%" />
-          </div>
-          <div className="mt-1">
-            {/* Compact: a list of eight full-height charts is a wall. */}
-            <PriceChart initial={stock} compact />
-          </div>
+          {/* Compact: a list of eight full-height charts is a wall. */}
+          <PriceChart initial={stock} compact />
         </div>
       ))}
     </div>

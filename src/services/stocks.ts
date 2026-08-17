@@ -85,12 +85,27 @@ interface YahooChartResult {
     chartPreviousClose: number
     regularMarketDayHigh: number
     regularMarketDayLow: number
-    /** "REGULAR" while the exchange is open; PRE/POST/CLOSED otherwise. */
-    marketState?: string
+    /**
+     * Session window as epoch seconds. This endpoint does NOT return
+     * `marketState` despite it appearing on Yahoo's quote API — reading it
+     * here silently yielded undefined, so "live" was always false and the
+     * chart never polled at all.
+     */
+    currentTradingPeriod?: {
+      regular?: { start?: number; end?: number }
+    }
   }
   indicators?: {
     quote?: Array<{ close?: Array<number | null> }>
   }
+}
+
+/** True while the exchange's regular session is running right now. */
+function inSession(meta: YahooChartResult['meta']): boolean {
+  const period = meta.currentTradingPeriod?.regular
+  if (!period?.start || !period?.end) return false
+  const now = Date.now() / 1000
+  return now >= period.start && now <= period.end
 }
 
 interface YahooChartResponse {
@@ -145,8 +160,9 @@ export async function getStockQuote(
     range,
     history,
     currency: meta.currency || 'USD',
-    // Polling a closed exchange just re-fetches the same number every few
-    // seconds, so the card only goes live when there's something to see.
-    live: meta.marketState === 'REGULAR'
+    // Derived from the session window rather than a status string, because
+    // the chart endpoint doesn't send one. Works for crypto too, whose
+    // "session" spans the whole day.
+    live: inSession(meta)
   }
 }

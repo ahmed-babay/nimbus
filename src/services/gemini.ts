@@ -53,7 +53,10 @@ the relevant parameter for it, leaving the others empty:
 - "stocks": asking about a public company's stock price/quote, about a saved
   list of stocks, or asking to be told when a price moves.
   -> params.symbol (the ticker, e.g. "Apple" -> AAPL, "Tesla" -> TSLA; if
-     unsure give the company name. Omit only for params.stockAction "list".)
+     unsure give the company name. Omit only for params.stockAction "list".
+     When they name SEVERAL companies -- "show me Tesla and Google", "how are
+     Apple, Nvidia and AMD doing" -- put ALL of them here separated by commas:
+     "TSLA,GOOGL". Order them as the user said them.)
   -> params.stockAction: what they want done, one of:
        "quote"  — just the price now. The default; omit for this.
        "list"   — show their saved stocks: "my stocks", "my watchlist",

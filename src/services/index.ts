@@ -179,21 +179,53 @@ async function runIntent(
         const symbol = params.symbol
         if (!symbol) throw new Error("I didn't catch which ticker you meant.")
 
+        // "Show me Tesla and Google" is one question about two companies. The
+        // router returns them comma-separated; anything with more than one
+        // gets the list card rather than silently answering about the first.
+        const symbols = symbol
+          .split(',')
+          .map((entry) => entry.trim())
+          .filter(Boolean)
+
+        if (action === 'quote' && symbols.length > 1) {
+          const quotes = await Promise.all(
+            symbols.slice(0, 6).map((entry) => getStockQuote(entry, '1d').catch(() => null))
+          )
+          const stocks = quotes.filter((quote): quote is NonNullable<typeof quote> => quote !== null)
+          if (stocks.length === 0) throw new Error("I couldn't find those stocks.")
+          const movers = stocks
+            .map(
+              (s) =>
+                `${s.symbol} ${s.changePercent >= 0 ? 'up' : 'down'} ${Math.abs(s.changePercent).toFixed(1)}%`
+            )
+            .join(', ')
+          return { speech: `${movers}.`, card: { type: 'watchlist', data: { stocks } } }
+        }
+
         if (action === 'add') {
-          const ticker = await addToWatchlist(symbol)
+          const added: string[] = []
+          for (const entry of symbols.slice(0, 6)) {
+            // One bad name shouldn't lose the others in "add Tesla and Googl".
+            try {
+              added.push(await addToWatchlist(entry))
+            } catch (err) {
+              console.warn(`[stocks] could not add ${entry}:`, err)
+            }
+          }
+          if (added.length === 0) throw new Error(`I couldn't find "${symbol}".`)
           const stocks = await pricedWatchlist()
           return {
-            speech: `Added ${ticker} to your stocks.`,
+            speech: `Added ${added.join(' and ')} to your stocks.`,
             card: { type: 'watchlist', data: { stocks } }
           }
         }
 
         if (action === 'remove') {
-          const removed = removeFromWatchlist(symbol)
+          const gone = symbols.filter((entry) => removeFromWatchlist(entry))
           const stocks = await pricedWatchlist()
           return {
-            speech: removed
-              ? `Removed ${symbol.toUpperCase()} from your stocks.`
+            speech: gone.length
+              ? `Removed ${gone.join(' and ').toUpperCase()} from your stocks.`
               : `${symbol.toUpperCase()} wasn't in your stocks.`,
             card: { type: 'watchlist', data: { stocks } }
           }
@@ -229,7 +261,7 @@ async function runIntent(
           return { speech, card: { type: 'stock', data } }
         }
 
-        const data = await getStockQuote(symbol, '1d')
+        const data = await getStockQuote(symbols[0], '1d')
         const speech = await formatResponse('stocks', utterance, data, onChunk)
         return { speech, card: { type: 'stock', data } }
       }
