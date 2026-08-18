@@ -1,5 +1,6 @@
 import { app } from 'electron'
 import { join } from 'node:path'
+import type { DeviceType } from '@huggingface/transformers'
 
 /**
  * Speech recognition that runs on your own machine.
@@ -36,6 +37,16 @@ import { join } from 'node:path'
 /** Small, accurate enough, and the fp32 weights the GPU path needs. */
 const MODEL_ID = 'onnx-community/whisper-base'
 const DTYPE = 'fp32'
+
+/**
+ * WebGPU by default — see above. Overridable because a WebGPU driver crash
+ * here is a native crash, not a JS exception: it takes the whole process
+ * down instead of throwing something catchable, so there is no safe way to
+ * detect and fall back to it automatically. A machine that hits this should
+ * set NIMBUS_STT_DEVICE=cpu (always available, just slower) until its GPU
+ * driver is sorted out.
+ */
+const DEVICE = (process.env.NIMBUS_STT_DEVICE || 'webgpu') as DeviceType
 
 /** What Whisper is trained on; the renderer resamples to match. */
 export const SAMPLE_RATE = 16000
@@ -101,7 +112,7 @@ async function load(onProgress?: (progress: SttProgress) => void): Promise<Trans
     const started = Date.now()
     const asr = await pipeline('automatic-speech-recognition', MODEL_ID, {
       dtype: DTYPE,
-      device: 'webgpu',
+      device: DEVICE,
       progress_callback: onProgress
         ? (report: { status: string; file?: string; loaded?: number; total?: number }) => {
             if (report.status === 'progress') {
@@ -116,7 +127,7 @@ async function load(onProgress?: (progress: SttProgress) => void): Promise<Trans
         : undefined
     })
 
-    console.log(`[local-stt] ready in ${Date.now() - started}ms (${MODEL_ID}, webgpu)`)
+    console.log(`[local-stt] ready in ${Date.now() - started}ms (${MODEL_ID}, ${DEVICE})`)
     onProgress?.({ file: '', receivedBytes: 0, totalBytes: 0, done: true })
     loaded = asr as unknown as Transcriber
     return loaded
