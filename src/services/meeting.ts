@@ -40,9 +40,10 @@ export function speakerFor(source: 'system' | 'microphone'): MeetingLine['speake
  */
 export async function transcribePiece(
   pcm: Float32Array,
-  previous: string
+  previous: string,
+  language?: string
 ): Promise<string | null> {
-  const text = await transcribeAudio(pcm, { contextPrompt: previous.slice(-220) })
+  const text = await transcribeAudio(pcm, { contextPrompt: previous.slice(-220), language })
   const bare = text.replace(/[.,!?…\-[\]()*]/g, '').trim()
   if (!bare) return null
   return text.trim()

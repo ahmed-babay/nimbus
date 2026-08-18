@@ -63,11 +63,29 @@ export function MeetingPanel({ meeting }: { meeting: MeetingControls }) {
             <span className="tabular-nums">{clock(elapsedMs)}</span>
           </span>
         )}
-        <span className="ml-auto text-[10px] text-nimbus-text-dim">
-          {meeting.pending > 0
-            ? `${meeting.lines.length} lines · ${meeting.pending} transcribing…`
-            : `${meeting.lines.length} ${meeting.lines.length === 1 ? 'line' : 'lines'}`}
-        </span>
+        <div className="ml-auto flex items-center gap-1.5">
+          <span className="text-[10px] text-nimbus-text-dim">
+            {meeting.pending > 0
+              ? `${meeting.lines.length} lines · ${meeting.pending} transcribing…`
+              : `${meeting.lines.length} ${meeting.lines.length === 1 ? 'line' : 'lines'}`}
+          </span>
+          <div className="flex overflow-hidden rounded-md border border-white/[0.07]">
+            {(['en', 'de'] as const).map((code) => (
+              <button
+                key={code}
+                onClick={() => meeting.setLanguage(code)}
+                title={`Transcribe this meeting as ${code === 'en' ? 'English' : 'German'}`}
+                className={`px-1.5 py-0.5 text-[9.5px] font-semibold uppercase transition-colors ${
+                  meeting.language === code
+                    ? 'bg-nimbus-accent/25 text-nimbus-text'
+                    : 'text-nimbus-text-dim hover:bg-white/[0.05] hover:text-nimbus-text'
+                }`}
+              >
+                {code}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {recording && (

@@ -409,13 +409,14 @@ function registerIpcHandlers(): void {
     async (
       _event,
       pcm: ArrayBuffer,
-      previous: string
+      previous: string,
+      language?: string
     ): Promise<string | null> => {
       // As with subtitles, one failed piece must not end the recording —
       // losing a sentence of a meeting is recoverable, losing the meeting is
       // not.
       try {
-        return await transcribePiece(new Float32Array(pcm), previous)
+        return await transcribePiece(new Float32Array(pcm), previous, language)
       } catch (error) {
         console.warn('[meeting] piece failed:', error)
         return null

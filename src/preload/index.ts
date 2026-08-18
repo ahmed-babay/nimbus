@@ -126,8 +126,8 @@ const api = {
     ipcRenderer.on(IPC.LOCAL_MODEL_PROGRESS, listener)
     return () => ipcRenderer.removeListener(IPC.LOCAL_MODEL_PROGRESS, listener)
   },
-  meetingPiece: (pcm: ArrayBuffer, previous: string): Promise<string | null> =>
-    ipcRenderer.invoke(IPC.MEETING_PIECE, pcm, previous),
+  meetingPiece: (pcm: ArrayBuffer, previous: string, language?: string): Promise<string | null> =>
+    ipcRenderer.invoke(IPC.MEETING_PIECE, pcm, previous, language),
   saveMeeting: (
     lines: MeetingLine[],
     startedAt: number

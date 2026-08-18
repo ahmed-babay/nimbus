@@ -17,6 +17,9 @@ import type { MeetingLine, MeetingSummary } from '@shared/types'
 
 export type MeetingPhase = 'idle' | 'recording' | 'stopped'
 
+/** What language the meeting is being spoken in, as a Whisper language hint. */
+export type MeetingLanguage = 'en' | 'de'
+
 export interface MeetingControls {
   phase: MeetingPhase
   lines: MeetingLine[]
@@ -27,6 +30,8 @@ export interface MeetingControls {
   summarizing: boolean
   savedPath: string
   error: string
+  language: MeetingLanguage
+  setLanguage: (language: MeetingLanguage) => void
   start: () => Promise<void>
   stop: () => void
   save: () => Promise<void>
@@ -43,11 +48,22 @@ export function useMeeting(): MeetingControls {
   const [summarizing, setSummarizing] = useState(false)
   const [savedPath, setSavedPath] = useState('')
   const [error, setError] = useState('')
+  const [language, setLanguageState] = useState<MeetingLanguage>('en')
 
   // Continuation context per speaker. Keeping them apart matters: feeding
   // your own last sentence as context for their audio would push the
   // transcription towards words that were never said on that side.
   const previousRef = useRef<Record<string, string>>({ you: '', them: '' })
+
+  // Whisper's language hint per piece. A ref because pieces are handled by
+  // a stable callback set up once at capture start — switching languages
+  // mid-meeting (rare, but the toggle stays live) should reach the very
+  // next piece without recreating the capture pipeline.
+  const languageRef = useRef<MeetingLanguage>('en')
+  const setLanguage = useCallback((next: MeetingLanguage) => {
+    languageRef.current = next
+    setLanguageState(next)
+  }, [])
 
   const handlePiece = useCallback((piece: CapturedPiece) => {
     const speaker: MeetingLine['speaker'] = piece.source === 'microphone' ? 'you' : 'them'
@@ -55,7 +71,7 @@ export function useMeeting(): MeetingControls {
 
     setPending((count) => count + 1)
     void window.nimbus
-      .meetingPiece(piece.pcm.buffer as ArrayBuffer, previous)
+      .meetingPiece(piece.pcm.buffer as ArrayBuffer, previous, languageRef.current)
       .then((text) => {
         if (!text) return
         previousRef.current[speaker] = text
@@ -135,6 +151,8 @@ export function useMeeting(): MeetingControls {
     summarizing,
     savedPath,
     error,
+    language,
+    setLanguage,
     start,
     stop,
     save,
