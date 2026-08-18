@@ -290,6 +290,11 @@ const KEY_INFO: Record<SecretName, { label: string; why: string; where: string }
     why: 'Optional — nicer news images',
     where: 'gnews.io'
   },
+  FINNHUB_API_KEY: {
+    label: 'Finnhub',
+    why: 'Optional — company names on stock cards',
+    where: 'finnhub.io'
+  },
   GITHUB_TOKEN: {
     label: 'GitHub',
     why: 'Optional — raises the trending-repos rate limit',
