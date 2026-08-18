@@ -45,8 +45,15 @@ const DEVICES_BY_PREFERENCE = ['webgpu', 'dml'] as const
  * A warm, unremarkable narrator voice. Deliberately not a character: this
  * reads train times and weather dozens of times a day, and personality wears
  * out fast at that frequency.
+ *
+ * Read lazily, not at module load: this module is reached (via tts.ts) from
+ * main/index.ts's static imports, which run before that file's own
+ * `dotenv.config()` call — a top-level `const` here would freeze before
+ * .env was ever read.
  */
-const VOICE = process.env.NIMBUS_LOCAL_VOICE || 'af_heart'
+function voice(): string {
+  return process.env.NIMBUS_LOCAL_VOICE || 'af_heart'
+}
 
 /** Unloaded on the same schedule as the speech recogniser it sits beside. */
 const IDLE_UNLOAD_MS = 15 * 60 * 1000
@@ -189,12 +196,13 @@ export async function speakLocally(text: string): Promise<LocalSpeech> {
   return enqueue(async () => {
     const tts = await load()
     const started = Date.now()
-    const result = await tts.generate(text, { voice: VOICE })
+    const selectedVoice = voice()
+    const result = await tts.generate(text, { voice: selectedVoice })
     scheduleUnload()
 
     const seconds = result.audio.length / result.sampling_rate
     console.log(
-      `[local-tts] ${seconds.toFixed(1)}s of speech in ${Date.now() - started}ms (${VOICE})`
+      `[local-tts] ${seconds.toFixed(1)}s of speech in ${Date.now() - started}ms (${selectedVoice})`
     )
 
     // WAV rather than raw samples: the renderer hands this straight to an

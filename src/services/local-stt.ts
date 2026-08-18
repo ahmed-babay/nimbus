@@ -45,8 +45,14 @@ const DTYPE = 'fp32'
  * detect and fall back to it automatically. A machine that hits this should
  * set NIMBUS_STT_DEVICE=cpu (always available, just slower) until its GPU
  * driver is sorted out.
+ *
+ * Read lazily, not at module load: this module is statically imported by
+ * main/index.ts above the `dotenv.config()` call there, so a top-level
+ * `const` here would freeze at 'webgpu' before .env was ever read.
  */
-const DEVICE = (process.env.NIMBUS_STT_DEVICE || 'webgpu') as DeviceType
+function sttDevice(): DeviceType {
+  return (process.env.NIMBUS_STT_DEVICE || 'webgpu') as DeviceType
+}
 
 /** What Whisper is trained on; the renderer resamples to match. */
 export const SAMPLE_RATE = 16000
@@ -110,9 +116,10 @@ async function load(onProgress?: (progress: SttProgress) => void): Promise<Trans
     env.cacheDir = sttCacheDir()
 
     const started = Date.now()
+    const device = sttDevice()
     const asr = await pipeline('automatic-speech-recognition', MODEL_ID, {
       dtype: DTYPE,
-      device: DEVICE,
+      device,
       progress_callback: onProgress
         ? (report: { status: string; file?: string; loaded?: number; total?: number }) => {
             if (report.status === 'progress') {
@@ -127,7 +134,7 @@ async function load(onProgress?: (progress: SttProgress) => void): Promise<Trans
         : undefined
     })
 
-    console.log(`[local-stt] ready in ${Date.now() - started}ms (${MODEL_ID}, ${DEVICE})`)
+    console.log(`[local-stt] ready in ${Date.now() - started}ms (${MODEL_ID}, ${device})`)
     onProgress?.({ file: '', receivedBytes: 0, totalBytes: 0, done: true })
     loaded = asr as unknown as Transcriber
     return loaded
