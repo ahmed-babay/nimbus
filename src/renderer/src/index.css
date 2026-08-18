@@ -16,12 +16,14 @@
   --color-nimbus-bg-raised: rgb(255 255 255 / 0.035);
   --color-nimbus-border: rgb(255 255 255 / 0.09);
 
-  /* Warm ember, matching the orb's own idle/resting hue (see Orb.tsx's
-     PALETTE) — present enough to lead the eye, quiet enough to live under
-     text without competing with it. Was a cool indigo, which put the orb
-     and every button/highlight it sits beside in two unrelated colour
-     families; panels like reminders read as a different app from the orb
-     they were opened next to. */
+  /* Live values, overwritten on the root element by useAccentTheme to track
+     the orb's current state — see src/renderer/src/lib/orb-palette.ts for
+     the actual per-state colours. These are only the values in place before
+     that effect first runs (idle's warm ember) and for any window that never
+     mounts it, e.g. the region picker. Was a fixed cool indigo, which put
+     the orb and every button/highlight it sits beside in two unrelated
+     colour families once the orb moved off idle — a panel like reminders
+     read as a different app from the orb it was opened next to. */
   --color-nimbus-accent: #ff7a5c;
   --color-nimbus-accent-bright: #ffab8f;
   --color-nimbus-accent-deep: #c1503a;
@@ -47,6 +49,22 @@ body,
   background: transparent;
   overflow: hidden;
   user-select: none;
+}
+
+/* The accent tokens above change live as the orb's state changes (see
+   useAccentTheme). A custom property swap doesn't animate on its own — every
+   element reading one needs its own transition, so this covers the color
+   properties broadly rather than retrofitting each component. Scoped to
+   colour only, never transform/layout, so it can't introduce jank. */
+*,
+*::before,
+*::after {
+  transition:
+    color 450ms ease,
+    background-color 450ms ease,
+    border-color 450ms ease,
+    fill 450ms ease,
+    stroke 450ms ease;
 }
 
 body {

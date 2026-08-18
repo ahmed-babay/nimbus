@@ -1,5 +1,6 @@
 import { useEffect, useRef, type RefObject } from 'react'
 import type { NimbusState } from '@shared/types'
+import { ORB_PALETTE, orbModeFor } from '../lib/orb-palette'
 
 interface OrbProps {
   state: NimbusState
@@ -15,9 +16,6 @@ interface OrbProps {
   /** Overrides the default size, in pixels. */
   size?: number
 }
-
-/** The orb's own palette key includes a variant no `NimbusState` has. */
-type OrbMode = NimbusState | 'searching'
 
 /**
  * The voice orb: a glass sphere with a living void inside it.
@@ -57,22 +55,6 @@ const VOICE_SWELL = 0.16
  * waking up.
  */
 const ENTRANCE_MS = 900
-
-/** Per-state hues, as [core, mid, rim] — dark to bright. */
-const PALETTE: Record<OrbMode, [string, string, string]> = {
-  // Warm ember rather than the cool accent: at rest the orb should read as
-  // banked rather than working. Deliberately not alarm red - a saturated red
-  // on an assistant means "recording" or "broken" to everyone who sees it.
-  idle: ['#26100e', '#5c241f', '#ff7a5c'],
-  listening: ['#0d1a33', '#1e4c8a', '#7fb2ff'],
-  thinking: ['#141029', '#3b2f7a', '#a5aeff'],
-  // Thinking's violet pushed toward cyan — reaching outward rather than
-  // turning something over internally, the same relationship listening
-  // (blue) has to speaking (cyan) but a step further into that green-blue.
-  searching: ['#031c22', '#0d5b6e', '#5cf0ff'],
-  speaking: ['#08202b', '#136a86', '#63d8f5'],
-  playing: ['#0b2418', '#166b4a', '#4ec99a']
-}
 
 /**
  * One lobe of the void's outline: how many bumps around the circle, how deep,
@@ -148,7 +130,7 @@ const MOTES = [
 ]
 
 export function Orb({ state, searching = false, levelRef, size = 52 }: OrbProps) {
-  const mode: OrbMode = searching ? 'searching' : state
+  const mode = orbModeFor(state, searching)
   const rootRef = useRef<HTMLDivElement>(null)
   const bloomRef = useRef<HTMLDivElement>(null)
   const voidRef = useRef<SVGPathElement>(null)
@@ -260,7 +242,7 @@ export function Orb({ state, searching = false, levelRef, size = 52 }: OrbProps)
     return () => cancelAnimationFrame(frame)
   }, [levelRef, state, searching])
 
-  const [core, mid, rim] = PALETTE[mode]
+  const [core, mid, rim] = ORB_PALETTE[mode]
   const id = `orb-${mode}`
 
   return (

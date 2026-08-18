@@ -15,6 +15,8 @@ import { useWakeWord } from './hooks/useWakeWord'
 import { useSubtitles } from './hooks/useSubtitles'
 import { useMeeting } from './hooks/useMeeting'
 import { useTypewriter } from './hooks/useTypewriter'
+import { useAccentTheme } from './hooks/useAccentTheme'
+import { orbModeFor } from './lib/orb-palette'
 import type { NimbusConfig, NimbusState } from '@shared/types'
 
 const STATE_LABEL: Record<NimbusState, string> = {
@@ -55,6 +57,8 @@ export default function App() {
     setHoldOpen,
     dismiss
   } = useNimbus()
+  // The whole app's accent colour tracks the orb live — see useAccentTheme.
+  useAccentTheme(orbModeFor(state, searching))
   // Paced reveal: the model streams in a few big chunks, which otherwise
   // lands as the whole answer at once.
   const typedText = useTypewriter(streamingText)
