@@ -218,6 +218,11 @@ export function useNimbus(): NimbusOverlayState {
       isOpenRef.current = true
       hasContentRef.current = true
       setState('idle')
+      // The recording was just cancelled, so the microphone really is off and
+      // the toggle has to say so. Leaving it lit while a settings form is open
+      // is the same lie as the orb staying blue after a timeout.
+      micEnabledRef.current = false
+      setMicEnabled(false)
       setMode(panel)
     },
     [clearFadeTimer]
@@ -796,7 +801,8 @@ export function useNimbus(): NimbusOverlayState {
   const {
     start: startVoiceInput,
     stop: stopVoiceInput,
-    cancel: cancelVoiceInput
+    cancel: cancelVoiceInput,
+    isRecording
   } = useVoiceInput({
     onResult: handleResult,
     onEnd: handleVoiceEnd,
@@ -921,11 +927,19 @@ export function useNimbus(): NimbusOverlayState {
         setResponse(null)
       }
 
-      if (micEnabledRef.current) {
+      if (!micEnabledRef.current) {
+        setState('idle')
+      } else if (isRecording()) {
+        // Already listening. A second wake — the hotkey pressed again, or the
+        // wake word heard mid-sentence — used to start a fresh turn, and the
+        // one in progress was then discarded as superseded. That threw away
+        // whatever had just been said into it, which is the worst possible
+        // response to someone asking for attention they already had.
+        console.log('[nimbus] wake while already listening — keeping the current turn')
+        setState('listening')
+      } else {
         setState('listening')
         startVoiceInput()
-      } else {
-        setState('idle')
       }
     })
 

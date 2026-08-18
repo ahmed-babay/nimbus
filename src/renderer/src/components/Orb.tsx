@@ -1,6 +1,6 @@
 import { useEffect, useRef, type RefObject } from 'react'
 import type { NimbusState } from '@shared/types'
-import { ORB_PALETTE, orbModeFor } from '../lib/orb-palette'
+import { STATE_THEME, orbModeFor } from '../lib/state-theme'
 
 interface OrbProps {
   state: NimbusState
@@ -55,6 +55,14 @@ const VOICE_SWELL = 0.16
  * waking up.
  */
 const ENTRANCE_MS = 900
+
+/**
+ * Per-state hues, as [core, mid, rim] — dark to bright.
+ *
+ * Shared with the panel chrome rather than kept here, so the card and the
+ * sphere cannot end up disagreeing about what state Nimbus is in.
+ */
+const PALETTE = STATE_THEME
 
 /**
  * One lobe of the void's outline: how many bumps around the circle, how deep,
@@ -242,7 +250,7 @@ export function Orb({ state, searching = false, levelRef, size = 52 }: OrbProps)
     return () => cancelAnimationFrame(frame)
   }, [levelRef, state, searching])
 
-  const [core, mid, rim] = ORB_PALETTE[mode]
+  const [core, mid, rim] = PALETTE[mode].orb
   const id = `orb-${mode}`
 
   return (

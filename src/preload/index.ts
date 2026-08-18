@@ -11,6 +11,7 @@ import type {
   LocalModelKind,
   LocalModelProgress,
   LocalModelStatus,
+  MeetingExportFormat,
   MeetingLine,
   MeetingSummary,
   SecretName,
@@ -131,13 +132,15 @@ const api = {
     ipcRenderer.on(IPC.LOCAL_MODEL_PROGRESS, listener)
     return () => ipcRenderer.removeListener(IPC.LOCAL_MODEL_PROGRESS, listener)
   },
-  meetingPiece: (pcm: ArrayBuffer, previous: string, language?: string): Promise<string | null> =>
+  meetingPiece: (pcm: ArrayBuffer, previous: string, language: string): Promise<string | null> =>
     ipcRenderer.invoke(IPC.MEETING_PIECE, pcm, previous, language),
   saveMeeting: (
     lines: MeetingLine[],
-    startedAt: number
+    startedAt: number,
+    format: MeetingExportFormat,
+    summary: MeetingSummary | null
   ): Promise<{ ok: boolean; path?: string; error?: string }> =>
-    ipcRenderer.invoke(IPC.SAVE_MEETING, lines, startedAt),
+    ipcRenderer.invoke(IPC.SAVE_MEETING, lines, startedAt, format, summary),
   summarizeMeeting: (lines: MeetingLine[], startedAt: number): Promise<MeetingSummary> =>
     ipcRenderer.invoke(IPC.SUMMARIZE_MEETING, lines, startedAt),
   synthesizeSpeech: (text: string): Promise<SynthesizedSpeech> =>

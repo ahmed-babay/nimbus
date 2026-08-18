@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { useEffect, useRef } from 'react'
 import { Orb } from './components/Orb'
 import { Waveform } from './components/Waveform'
+import { accentVars, orbModeFor } from './lib/state-theme'
 import { ResponseCard } from './components/ResponseCard'
 import { SelectionActions } from './components/SelectionActions'
 import { TextInput } from './components/TextInput'
@@ -15,8 +16,6 @@ import { useWakeWord } from './hooks/useWakeWord'
 import { useSubtitles } from './hooks/useSubtitles'
 import { useMeeting } from './hooks/useMeeting'
 import { useTypewriter } from './hooks/useTypewriter'
-import { useAccentTheme } from './hooks/useAccentTheme'
-import { orbModeFor } from './lib/orb-palette'
 import type { NimbusConfig, NimbusState } from '@shared/types'
 
 const STATE_LABEL: Record<NimbusState, string> = {
@@ -57,8 +56,6 @@ export default function App() {
     setHoldOpen,
     dismiss
   } = useNimbus()
-  // The whole app's accent colour tracks the orb live — see useAccentTheme.
-  useAccentTheme(orbModeFor(state, searching))
   // Paced reveal: the model streams in a few big chunks, which otherwise
   // lands as the whole answer at once.
   const typedText = useTypewriter(streamingText)
@@ -148,7 +145,15 @@ export default function App() {
             // can send, and this one sits next to real work all day.
             style={{
               boxShadow:
-                '0 24px 64px -16px rgba(0,0,0,0.7), 0 2px 8px -2px rgba(0,0,0,0.5), inset 0 1px 0 0 rgba(255,255,255,0.06)'
+                '0 24px 64px -16px rgba(0,0,0,0.7), 0 2px 8px -2px rgba(0,0,0,0.5), inset 0 1px 0 0 rgba(255,255,255,0.06)',
+              // Re-points the accent tokens at the current state's hue. Every
+              // accented control inside — settings, the standing list, badges,
+              // buttons — is written against these variables, so the whole card
+              // follows the orb without a single component knowing about state.
+              // Transitioned so a state change is a shift in the light rather
+              // than a flicker.
+              ...accentVars(orbModeFor(state, searching)),
+              transition: 'color 500ms ease'
             }}
           >
             {/* The panel catches a little of the orb's light rather than
@@ -156,8 +161,11 @@ export default function App() {
             <div
               className="pointer-events-none absolute inset-0"
               style={{
+                // Mixed from the accent rather than hardcoded indigo, so the
+                // light spilling onto the panel is the orb's own colour.
                 background:
-                  'radial-gradient(120% 70% at 12% 0%, rgba(110,123,255,0.10), transparent 60%)'
+                  'radial-gradient(120% 70% at 12% 0%, color-mix(in srgb, var(--color-nimbus-accent) 11%, transparent), transparent 60%)',
+                transition: 'background 500ms ease'
               }}
             />
             {/* A single hairline of light along the top edge — enough to
