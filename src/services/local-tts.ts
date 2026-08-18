@@ -35,6 +35,13 @@ const MODEL_ID = 'onnx-community/Kokoro-82M-v1.0-ONNX'
 const DTYPE = 'fp32'
 
 /**
+ * WebGPU first, DirectML second. Both are GPU execution providers on Windows —
+ * this is not a slide down to CPU, just a hedge against `onnxruntime-node`
+ * builds (or driver setups) that don't expose WebGPU on a given machine.
+ */
+const DEVICES_BY_PREFERENCE = ['webgpu', 'dml'] as const
+
+/**
  * A warm, unremarkable narrator voice. Deliberately not a character: this
  * reads train times and weather dozens of times a day, and personality wears
  * out fast at that frequency.
@@ -103,25 +110,40 @@ async function load(onProgress?: (progress: TtsProgress) => void): Promise<Kokor
     env.cacheDir = ttsCacheDir()
 
     const started = Date.now()
-    const tts = await KokoroTTS.from_pretrained(MODEL_ID, {
-      dtype: DTYPE,
-      device: 'webgpu',
-      progress_callback: onProgress
-        ? (report: { status: string; loaded?: number; total?: number }) => {
-            if (report.status === 'progress') {
-              onProgress({
-                receivedBytes: report.loaded ?? 0,
-                totalBytes: report.total ?? 0,
-                done: false
-              })
-            }
+    const progressCallback = onProgress
+      ? (report: { status: string; loaded?: number; total?: number }) => {
+          if (report.status === 'progress') {
+            onProgress({
+              receivedBytes: report.loaded ?? 0,
+              totalBytes: report.total ?? 0,
+              done: false
+            })
           }
-        : undefined
-    } as Parameters<typeof KokoroTTS.from_pretrained>[1])
+        }
+      : undefined
 
-    console.log(`[local-tts] ready in ${Date.now() - started}ms (${MODEL_ID}, webgpu)`)
+    let tts: Kokoro | undefined
+    let device: (typeof DEVICES_BY_PREFERENCE)[number] | undefined
+    let lastError: unknown
+    for (const candidate of DEVICES_BY_PREFERENCE) {
+      try {
+        tts = (await KokoroTTS.from_pretrained(MODEL_ID, {
+          dtype: DTYPE,
+          device: candidate,
+          progress_callback: progressCallback
+        } as Parameters<typeof KokoroTTS.from_pretrained>[1])) as unknown as Kokoro
+        device = candidate
+        break
+      } catch (error) {
+        console.warn(`[local-tts] ${candidate} unavailable, trying next backend`, error)
+        lastError = error
+      }
+    }
+    if (!tts) throw lastError
+
+    console.log(`[local-tts] ready in ${Date.now() - started}ms (${MODEL_ID}, ${device})`)
     onProgress?.({ receivedBytes: 0, totalBytes: 0, done: true })
-    loaded = tts as unknown as Kokoro
+    loaded = tts
     return loaded
   })()
 
