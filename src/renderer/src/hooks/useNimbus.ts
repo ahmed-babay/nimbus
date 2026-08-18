@@ -21,6 +21,8 @@ export interface NimbusOverlayState {
   transcript: string | null
   /** Partial answer text while the model is still generating. */
   streamingText: string
+  /** True while a web search is actually in flight, mid-"thinking". */
+  searching: boolean
   /** Screenshot captured and awaiting a question. */
   pendingCapture: string | null
   /** Text captured from another app, awaiting an action. */
@@ -69,6 +71,8 @@ export function useNimbus(): NimbusOverlayState {
   const [transcript, setTranscript] = useState<string | null>(null)
   /** Answer text accumulating live from the model, shown while thinking. */
   const [streamingText, setStreamingText] = useState('')
+  /** True while a web search is actually in flight, so the orb can show that rather than plain thinking. */
+  const [searching, setSearching] = useState(false)
   /** Screenshot awaiting a question about it, shown above the waveform. */
   const [pendingCapture, setPendingCapture] = useState<string | null>(null)
   /** Text grabbed from another app, awaiting an action. '' means the grab
@@ -273,6 +277,7 @@ export function useNimbus(): NimbusOverlayState {
     setTranscript(null)
     setPendingCapture(null)
     setPendingSelection(null)
+    setSearching(false)
     // Each time the overlay closes the conversation ends, so the next
     // session doesn't inherit stale context from an old topic.
     window.nimbus.resetConversation()
@@ -483,6 +488,7 @@ export function useNimbus(): NimbusOverlayState {
       setResponse(null)
       setError(null)
       setStreamingText('')
+      setSearching(false)
       setTranscript(finalTranscript)
       setState('thinking')
       const generation = generationRef.current
@@ -494,6 +500,7 @@ export function useNimbus(): NimbusOverlayState {
             return
           }
           setStreamingText('')
+          setSearching(false)
           setPendingCapture(null)
           // Reset before the card renders. If it still held 1 from the last
           // answer, the new text mounted fully revealed and the reveal never
@@ -519,6 +526,7 @@ export function useNimbus(): NimbusOverlayState {
         })
         .catch((err: unknown) => {
           const message = err instanceof Error ? err.message : 'Something went wrong.'
+          setSearching(false)
           setError(message)
           setState('speaking')
           speak(message)
@@ -819,6 +827,10 @@ export function useNimbus(): NimbusOverlayState {
   }, [])
 
   useEffect(() => {
+    return window.nimbus.onSearchStatus(setSearching)
+  }, [])
+
+  useEffect(() => {
     return window.nimbus.onScreenCaptured((thumbnail) => {
       setIsOpen(true)
       setPendingCapture(thumbnail)
@@ -947,6 +959,7 @@ export function useNimbus(): NimbusOverlayState {
     error,
     transcript,
     streamingText,
+    searching,
     pendingCapture,
     pendingSelection,
     runTextAction,

@@ -21,6 +21,8 @@ export const IPC = {
   RESET_CONVERSATION: 'nimbus:reset-conversation',
   /** main -> renderer: a token chunk of the answer as the model generates it */
   SPEECH_CHUNK: 'nimbus:speech-chunk',
+  /** main -> renderer: web search started (true) or its results are back and Nimbus is composing the answer (false) */
+  SEARCH_STATUS: 'nimbus:search-status',
   /** renderer -> main: open a result link in the user's default browser */
   OPEN_EXTERNAL: 'nimbus:open-external',
   /** main -> renderer: screen captured; payload is a thumbnail data URI to display */

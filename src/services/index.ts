@@ -101,9 +101,10 @@ function memoryCard(query: string): MemoryCardData {
 
 export async function handleUtterance(
   utterance: string,
-  onChunk?: StreamHandler
+  onChunk?: StreamHandler,
+  onSearching?: (active: boolean) => void
 ): Promise<NimbusResponse> {
-  const { intent, ...resolved } = await resolveUtterance(utterance, onChunk)
+  const { intent, ...resolved } = await resolveUtterance(utterance, onChunk, onSearching)
   const spoken = capSpokenLength(resolved.speech)
   const response: NimbusResponse = {
     ...resolved,
@@ -126,10 +127,11 @@ export async function handleUtterance(
 
 async function resolveUtterance(
   utterance: string,
-  onChunk?: StreamHandler
+  onChunk?: StreamHandler,
+  onSearching?: (active: boolean) => void
 ): Promise<NimbusResponse & { intent: NimbusIntent }> {
   const { intent, params } = await classifyIntent(utterance)
-  const response = await runIntent(intent, params, utterance, onChunk)
+  const response = await runIntent(intent, params, utterance, onChunk, onSearching)
   return { ...response, intent }
 }
 
@@ -137,7 +139,8 @@ async function runIntent(
   intent: NimbusIntent,
   params: Record<string, string>,
   utterance: string,
-  onChunk?: StreamHandler
+  onChunk?: StreamHandler,
+  onSearching?: (active: boolean) => void
 ): Promise<NimbusResponse> {
   try {
     switch (intent) {
@@ -679,7 +682,7 @@ async function runIntent(
               }
             : undefined
           try {
-            const { speech, card } = await research(utterance, query, track)
+            const { speech, card } = await research(utterance, query, track, onSearching)
             return {
               speech,
               card: { type: 'search', data: { ...card, illustrations: await pictures } }
@@ -690,7 +693,13 @@ async function runIntent(
           }
         }
 
-        const data = await webSearch(query)
+        onSearching?.(true)
+        let data: Awaited<ReturnType<typeof webSearch>>
+        try {
+          data = await webSearch(query)
+        } finally {
+          onSearching?.(false)
+        }
         // Tavily often returns its own summary; prefer letting Gemini phrase
         // it conversationally, but fall back to Tavily's if Gemini is rate
         // limited so the user still gets an answer.

@@ -3,11 +3,21 @@ import type { NimbusState } from '@shared/types'
 
 interface OrbProps {
   state: NimbusState
+  /**
+   * True while a web search is actually in flight. Not a state of its own —
+   * Nimbus is still "thinking" as far as the rest of the app is concerned —
+   * but reaching out to the network reads differently from turning an
+   * answer over, and the orb should show the difference.
+   */
+  searching?: boolean
   /** Live microphone level, 0..1, updated outside React. */
   levelRef: RefObject<number>
   /** Overrides the default size, in pixels. */
   size?: number
 }
+
+/** The orb's own palette key includes a variant no `NimbusState` has. */
+type OrbMode = NimbusState | 'searching'
 
 /**
  * The voice orb: a glass sphere with a living void inside it.
@@ -49,13 +59,17 @@ const VOICE_SWELL = 0.16
 const ENTRANCE_MS = 900
 
 /** Per-state hues, as [core, mid, rim] — dark to bright. */
-const PALETTE: Record<NimbusState, [string, string, string]> = {
+const PALETTE: Record<OrbMode, [string, string, string]> = {
   // Warm ember rather than the cool accent: at rest the orb should read as
   // banked rather than working. Deliberately not alarm red - a saturated red
   // on an assistant means "recording" or "broken" to everyone who sees it.
   idle: ['#26100e', '#5c241f', '#ff7a5c'],
   listening: ['#0d1a33', '#1e4c8a', '#7fb2ff'],
   thinking: ['#141029', '#3b2f7a', '#a5aeff'],
+  // Thinking's violet pushed toward cyan — reaching outward rather than
+  // turning something over internally, the same relationship listening
+  // (blue) has to speaking (cyan) but a step further into that green-blue.
+  searching: ['#031c22', '#0d5b6e', '#5cf0ff'],
   speaking: ['#08202b', '#136a86', '#63d8f5'],
   playing: ['#0b2418', '#166b4a', '#4ec99a']
 }
@@ -133,7 +147,8 @@ const MOTES = [
   { fx: 1, fy: 2, phase: 3.4, reach: 12, radius: 13, opacity: 0.5 }
 ]
 
-export function Orb({ state, levelRef, size = 52 }: OrbProps) {
+export function Orb({ state, searching = false, levelRef, size = 52 }: OrbProps) {
+  const mode: OrbMode = searching ? 'searching' : state
   const rootRef = useRef<HTMLDivElement>(null)
   const bloomRef = useRef<HTMLDivElement>(null)
   const voidRef = useRef<SVGPathElement>(null)
@@ -177,19 +192,28 @@ export function Orb({ state, levelRef, size = 52 }: OrbProps) {
       const active = state === 'listening' || state === 'speaking'
       const swell = active ? smoothed * VOICE_SWELL : 0
 
+      // A radar ping while searching: a sharp pulse that reaches out and
+      // recedes. Squaring the sine keeps it resting near zero between pings
+      // instead of oscillating symmetrically, which is what makes it read as
+      // a beat rather than a wobble.
+      const ping = searching ? Math.pow(Math.max(0, Math.sin(seconds * 2.4)), 3) : 0
+
       if (rootRef.current) {
         rootRef.current.style.transform = `scale(${(0.72 + eased * 0.28 + arrival) * (1 + swell + breath * 0.015)})`
         rootRef.current.style.opacity = `${Math.min(1, intro * 2.2)}`
       }
       if (bloomRef.current) {
         // Flares during the entrance, then settles to the resting breath.
-        bloomRef.current.style.opacity = `${0.34 + breath * 0.14 + smoothed * 0.45 + arrival * 1.6}`
-        bloomRef.current.style.transform = `scale(${1.1 + swell * 1.6 + breath * 0.05 + arrival})`
+        bloomRef.current.style.opacity = `${0.34 + breath * 0.14 + smoothed * 0.45 + arrival * 1.6 + ping * 0.2}`
+        bloomRef.current.style.transform = `scale(${1.1 + swell * 1.6 + breath * 0.05 + arrival + ping * 0.25})`
       }
 
       // The interior's clock. Thinking churns it faster without needing a
-      // spinner, and the entrance runs fast and slows into place.
-      const churn = seconds * (state === 'thinking' ? 2.6 : 1) + (1 - eased) * 9
+      // spinner, searching faster again — reaching out reads as more urgent
+      // than turning an answer over — and the entrance runs fast and slows
+      // into place.
+      const churnRate = searching ? 3.6 : state === 'thinking' ? 2.6 : 1
+      const churn = seconds * churnRate + (1 - eased) * 9
 
       // How far from round the void is allowed to get. It is never perfectly
       // round — a still shape would look broken — but a voice pushes it much
@@ -198,9 +222,11 @@ export function Orb({ state, levelRef, size = 52 }: OrbProps) {
       // Bounded so the outline stays inside the glass at full voice: the
       // harmonics sum to 0.27, so peak radius is radius * (1 + 0.27 * this),
       // and r=37 is the clip.
-      const distortion = 0.55 + breath * 0.2 + smoothed * 1.1
+      const distortion = 0.55 + breath * 0.2 + smoothed * 1.1 + ping * 0.5
       // It swells as it talks, so it grows into the glass and pulls back.
-      const voidRadius = 19 + smoothed * 4.5 + breath * 0.8
+      // The ping also reaches the bloom, not just the void, so the pulse
+      // feels like it leaves the sphere rather than churning inside it.
+      const voidRadius = 19 + smoothed * 4.5 + breath * 0.8 + ping * 1.5
 
       voidRef.current?.setAttribute('d', blobPath(voidRadius, churn, distortion, VOID_HARMONICS))
       haloRef.current?.setAttribute(
@@ -232,10 +258,10 @@ export function Orb({ state, levelRef, size = 52 }: OrbProps) {
 
     frame = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(frame)
-  }, [levelRef, state])
+  }, [levelRef, state, searching])
 
-  const [core, mid, rim] = PALETTE[state]
-  const id = `orb-${state}`
+  const [core, mid, rim] = PALETTE[mode]
+  const id = `orb-${mode}`
 
   return (
     <div

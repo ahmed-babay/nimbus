@@ -147,11 +147,15 @@ function registerIpcHandlers(): void {
       }
     }
 
+    const setSearching = (active: boolean): void => {
+      if (!event.sender.isDestroyed()) event.sender.send(IPC.SEARCH_STATUS, active)
+    }
+
     // Backstop: no matter what a service does, this handler always settles.
     // An un-timed-out fetch once left the overlay on "Thinking…" indefinitely
     // with no error to show, which is worse than simply failing.
     const response = await withDeadline(
-      handleUtterance(utterance, stream),
+      handleUtterance(utterance, stream, setSearching),
       TURN_DEADLINE_MS,
       'That'
     ).catch((err: unknown) => ({

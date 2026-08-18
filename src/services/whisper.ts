@@ -81,7 +81,10 @@ async function transcribeWithGroq(pcm: Float32Array, options: TranscribeOptions)
   console.log(`[whisper] uploading ${wav.length} bytes to Groq`)
 
   const form = new FormData()
-  form.append('file', new Blob([wav], { type: 'audio/wav' }), 'audio.wav')
+  // Buffer.buffer is typed as ArrayBufferLike (it can be backed by a
+  // SharedArrayBuffer), which Blob's constructor won't accept — Uint8Array.from
+  // copies into a plain ArrayBuffer-backed view.
+  form.append('file', new Blob([Uint8Array.from(wav)], { type: 'audio/wav' }), 'audio.wav')
   form.append('model', process.env.GROQ_WHISPER_MODEL || 'whisper-large-v3-turbo')
   form.append('response_format', 'json')
   // Whisper takes an optional prompt as a vocabulary hint. Naming the region

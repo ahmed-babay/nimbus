@@ -33,6 +33,7 @@ export default function App() {
     error,
     transcript,
     streamingText,
+    searching,
     pendingCapture,
     pendingSelection,
     runTextAction,
@@ -188,6 +189,7 @@ export default function App() {
               <div className="flex min-h-0 flex-1 flex-col px-4 py-3.5">
                 <Header
                   state={state}
+                  searching={searching}
                   onClose={dismiss}
                   micEnabled={micEnabled}
                   onToggleMic={toggleMic}
@@ -202,7 +204,7 @@ export default function App() {
                     to its content, so it grew past the card and got clipped
                     instead of scrolling. The orb pins itself with self-start. */}
                 <div className="mt-2.5 flex min-h-0 flex-1 gap-3.5">
-                  <Orb state={state} levelRef={levelRef} />
+                  <Orb state={state} searching={searching} levelRef={levelRef} />
 
                   <div className="nimbus-scroll min-h-0 min-w-0 flex-1 overflow-y-auto pr-1 pt-0.5">
                     {/* An existing answer stays on screen while listening for a
@@ -342,6 +344,7 @@ export default function App() {
 
 function Header({
   state,
+  searching,
   onClose,
   micEnabled,
   onToggleMic,
@@ -352,6 +355,7 @@ function Header({
   onDragChange
 }: {
   state: NimbusState
+  searching: boolean
   onClose: () => void
   micEnabled: boolean
   onToggleMic: () => void
@@ -375,7 +379,9 @@ function Header({
             weight and colour instead of a text-shadow glow. */}
         <span className="text-[12px] font-semibold tracking-[0.01em] text-nimbus-text">Nimbus</span>
         <span className="h-3 w-px bg-white/10" />
-        <span className="text-[10.5px] text-nimbus-text-dim">{STATE_LABEL[state]}</span>
+        <span className="text-[10.5px] text-nimbus-text-dim">
+          {state === 'thinking' && searching ? 'Searching' : STATE_LABEL[state]}
+        </span>
       </div>
       <div className="flex items-center gap-1.5">
         <button

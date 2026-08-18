@@ -109,10 +109,18 @@ function buildEvidenceBlock(evidence: Evidence[]): string {
 export async function research(
   question: string,
   query: string,
-  onChunk?: StreamHandler
+  onChunk?: StreamHandler,
+  onSearching?: (active: boolean) => void
 ): Promise<{ speech: string; card: SearchCardData }> {
   const queries = config.search?.plan === false ? [query] : await planQueries(question, query)
-  const { evidence, results } = await deepSearch(queries)
+
+  onSearching?.(true)
+  let evidence: Evidence[], results: SearchCardData['results']
+  try {
+    ;({ evidence, results } = await deepSearch(queries))
+  } finally {
+    onSearching?.(false)
+  }
 
   if (evidence.length === 0) {
     throw new Error("I searched but couldn't find anything useful on that.")
