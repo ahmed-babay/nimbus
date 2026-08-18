@@ -64,6 +64,13 @@ dotenv.config()
 // every single time — must be set before app is ready.
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
 
+// Chromium's own background pings (component updater, Safe Browsing, etc.)
+// have nothing to do with anything Nimbus does, but they still fire on
+// startup and log an ERROR on networks where TLS inspection mangles the
+// handshake to Google's endpoints. Silenced rather than left to alarm anyone
+// reading the console.
+app.commandLine.appendSwitch('disable-background-networking')
+
 // Time given to the compositor to actually repaint after hiding the overlay,
 // before a screenshot is taken. Without it the overlay is still on screen in
 // the captured frame even though the window reports itself hidden.
