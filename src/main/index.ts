@@ -1,6 +1,7 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Notification, session, shell } from 'electron'
 import { electronApp, optimizer } from '@electron-toolkit/utils'
 import dotenv from 'dotenv'
+import { setDefaultResultOrder } from 'node:dns'
 import { createTray } from './tray'
 import { createOverlayWindow, showOverlay, hideOverlay, presentOverlay } from './window'
 import { startReminderScheduler, stopReminderScheduler } from './reminder-scheduler'
@@ -59,6 +60,39 @@ import type {
   SynthesizedSpeech
 } from '../shared/types'
 import config from '../../config.json'
+
+/**
+ * Ask DNS for IPv4 first.
+ *
+ * This machine's network advertises IPv6 and cannot route it: a TCP connect to
+ * a Google DNS address over IPv6 fails outright while the same over IPv4
+ * succeeds. Node resolves AAAA records first, so every request to a host with
+ * an AAAA record - Gemini and the transit API both have one - stalled for the
+ * full 10 second connect timeout and then surfaced as a bare "fetch failed".
+ * That is what made trains and directions look broken while other services
+ * carried on working: whichever host happened to win the race still answered.
+ *
+ * Ordering, not forcing. A host with only an AAAA record is still reached over
+ * IPv6, so this costs nothing on a network where IPv6 does work.
+ */
+setDefaultResultOrder('ipv4first')
+
+/**
+ * A rejected promise must not take the whole app down.
+ *
+ * Node terminates the process on an unhandled rejection, and this app makes a
+ * lot of network calls from the main process - reminders, watchers and the
+ * schedulers all run unattended. One unreachable host at the wrong moment was
+ * enough to close the overlay and everything behind it with no explanation.
+ * Logged loudly rather than swallowed silently: these still point at bugs.
+ */
+process.on('unhandledRejection', (reason) => {
+  console.error('[main] unhandled rejection:', reason instanceof Error ? reason.stack : reason)
+})
+process.on('uncaughtException', (error) => {
+  console.error('[main] uncaught exception:', error instanceof Error ? error.stack : error)
+})
+
 
 dotenv.config()
 
