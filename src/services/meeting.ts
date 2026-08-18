@@ -2,6 +2,7 @@ import { complete } from './llm'
 import { transcribeAudio } from './whisper'
 import { buildDocx, buildPptx, type Slide } from './office'
 import config from '../../config.json'
+import { cleanMeetingLines } from '../shared/meeting-lines'
 import type { MeetingExportFormat, MeetingLine, MeetingSummary } from '../shared/types'
 
 /**
@@ -308,7 +309,7 @@ function meetingMarkdown(
   // the record of what was actually said is the thing you need when someone
   // disputes it — and splitting them across two files is how one gets lost.
   parts.push('---', '', '## Full transcript', '')
-  for (const line of lines.slice().sort((a, b) => a.offsetMs - b.offsetMs)) {
+  for (const line of cleanMeetingLines(lines)) {
     parts.push(`**[${clockFor(line.offsetMs)}] ${line.speaker === 'you' ? 'You' : 'Them'}:** ${line.text}`, '')
   }
 
@@ -387,9 +388,7 @@ export function exportMeeting(
       ...summarySections(summary),
       {
         heading: 'Full transcript',
-        body: lines
-          .slice()
-          .sort((a, b) => a.offsetMs - b.offsetMs)
+        body: cleanMeetingLines(lines)
           .map(
             (line) =>
               `[${clockFor(line.offsetMs)}] ${line.speaker === 'you' ? 'You' : 'Them'}: ${line.text}`

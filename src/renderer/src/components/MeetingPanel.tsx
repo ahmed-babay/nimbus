@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Dropdown } from './Dropdown'
 import type { MeetingControls } from '../hooks/useMeeting'
+import { cleanMeetingLines } from '@shared/meeting-lines'
 import type { MeetingExportFormat } from '@shared/types'
 
 /**
@@ -155,7 +156,7 @@ export function MeetingPanel({ meeting }: { meeting: MeetingControls }) {
           className="mt-2 max-h-[240px] space-y-1.5 overflow-y-auto pr-1"
           onMouseEnter={() => window.nimbus.setMouseIgnore(false)}
         >
-          {meeting.lines.map((line, index) => (
+          {cleanMeetingLines(meeting.lines).map((line, index) => (
             <div key={`${line.offsetMs}-${index}`} className="flex gap-2 text-[11.5px]">
               <span className="w-[34px] shrink-0 pt-[1px] text-[9.5px] tabular-nums text-nimbus-text-dim">
                 {clock(line.offsetMs)}
