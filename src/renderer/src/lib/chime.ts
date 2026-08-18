@@ -79,6 +79,22 @@ export function playOpenChime(): void {
 }
 
 /**
+ * Nimbus closing: the opening chime in reverse — octave, fifth, root.
+ *
+ * Same notes as `playOpenChime`, same instrument, but falling instead of
+ * rising: an opening chime that bloomed outward on the way in has to
+ * settle back down on the way out, or the two ends of one session sound
+ * unrelated. Quieter and quicker than the open, for the same reason the
+ * listen-end chime is softer than its start — leaving is felt, not
+ * announced.
+ */
+export function playCloseChime(): void {
+  note({ hz: 392.0, startOffsetMs: 0, durationMs: 950, gain: 0.03 })
+  note({ hz: 293.66, startOffsetMs: 220, durationMs: 1000, gain: 0.036 })
+  note({ hz: 196.0, startOffsetMs: 440, durationMs: 1100, gain: 0.04 })
+}
+
+/**
  * Listening: two sine tones a fifth apart, unhurried.
  *
  * A perfect fifth (D5 over G4) is the most consonant interval there is after

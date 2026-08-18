@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 import type { NimbusConfig, NimbusResponse, NimbusState, TextActionKind } from '@shared/types'
 import { useVoiceInput, type VoiceEndReason } from './useVoiceInput'
-import { playOpenChime } from '../lib/chime'
+import { playOpenChime, playCloseChime } from '../lib/chime'
 import { useRadioPlayer, type RadioPlayerControls } from './useRadioPlayer'
 import { isStopPhrase, isStopPlaybackPhrase } from '../lib/stop-phrases'
 
@@ -253,6 +253,9 @@ export function useNimbus(): NimbusOverlayState {
   )
 
   const dismiss = useCallback(() => {
+    // Only for a real close: a dismiss reached while already closed (a
+    // second Esc, a stray auto-fade tick) must not play the sound twice.
+    if (isOpenRef.current) playCloseChime()
     holdOpenRef.current = false
     clearFadeTimer()
     setIsOpen(false)
@@ -759,12 +762,17 @@ export function useNimbus(): NimbusOverlayState {
       // nobody there, it is genuinely off now and must say so. Only on real
       // silence — a turn that came back unusable had someone talking into it,
       // and switching their mic off mid-conversation would be maddening.
+      //
+      // Silence is also the one case that must NOT auto-fade the overlay:
+      // saying nothing is not a request to be dismissed, just a mic to turn
+      // off. A turn that came back unusable, on the other hand, was someone
+      // trying to say something — that still fades like any other dead end.
       if (reason === 'silence') {
         micEnabledRef.current = false
         setMicEnabled(false)
+      } else {
+        scheduleAutoFade()
       }
-
-      scheduleAutoFade()
     }
   }, [scheduleAutoFade])
 
