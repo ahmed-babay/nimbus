@@ -9,6 +9,7 @@ export type SecretName =
   | 'OPENWEATHER_API_KEY'
   | 'GNEWS_API_KEY'
   | 'GITHUB_TOKEN'
+  | 'FINNHUB_API_KEY'
 
 export interface SecretStatus {
   name: SecretName

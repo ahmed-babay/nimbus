@@ -32,7 +32,10 @@ export const SECRET_NAMES = [
   'TAVILY_API_KEY',
   'OPENWEATHER_API_KEY',
   'GNEWS_API_KEY',
-  'GITHUB_TOKEN'
+  'GITHUB_TOKEN',
+  // Stocks quietly used a slower path without this, and Settings had no way
+  // to supply it — the only route in was a .env the installed build cannot see.
+  'FINNHUB_API_KEY'
 ] as const
 
 interface SecretFile {

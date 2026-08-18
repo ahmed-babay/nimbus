@@ -63,8 +63,6 @@ function isOverloaded(error: unknown): boolean {
  */
 const FAILED = Symbol('failed')
 const SLOW = Symbol('slow')
-/** A promise that never settles — used to drop a loser from a race. */
-const never = <T,>(): Promise<T> => new Promise<T>(() => {})
 
 export async function withModelFallback<T>(work: (modelName: string) => Promise<T>): Promise<T> {
   const started = Date.now()
@@ -92,16 +90,27 @@ export async function withModelFallback<T>(work: (modelName: string) => Promise<
     `[gemini] ${PRIMARY_MODEL} ${first === FAILED ? 'failed' : 'slow'} after ${Date.now() - started}ms; using ${FALLBACK_MODEL}`
   )
 
-  const fallback = work(FALLBACK_MODEL).catch((error) => {
-    throw primaryError ?? error
-  })
+  const fallback = work(FALLBACK_MODEL)
 
   // Primary already dead — nothing left to race against.
-  if (first === FAILED) return fallback
+  if (first === FAILED) return fallback.catch((error) => { throw primaryError ?? error })
 
-  // Still in flight: take whichever answers first, ignoring a late failure.
-  return Promise.race([
-    primary.then((value) => (value === FAILED ? never<T>() : value)),
-    fallback
-  ])
+  // Both still in flight. `Promise.any`, not `Promise.race`: race rejects the
+  // moment *either* entry rejects, so a fallback that came back 503 "high
+  // demand" ended the turn while the primary was still working and about to
+  // answer. That is the whole reason a slow question — directions, departures —
+  // could fail while quick ones never did: only the slow ones ever reached the
+  // fallback, and then the loser took the winner down with it.
+  //
+  // `any` waits for the first *success* and only gives up if both fail.
+  const primaryOutcome = primary.then((value) => {
+    if (value === FAILED) throw primaryError ?? new Error(`${PRIMARY_MODEL} failed.`)
+    return value
+  })
+
+  return Promise.any([primaryOutcome, fallback]).catch((error: unknown) => {
+    // Both models failed; report the first real cause rather than the wrapper.
+    if (error instanceof AggregateError) throw error.errors[0] ?? error
+    throw error
+  })
 }

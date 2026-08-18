@@ -1,7 +1,7 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Notification, session, shell } from 'electron'
 import { electronApp, optimizer } from '@electron-toolkit/utils'
 import dotenv from 'dotenv'
-import { setDefaultResultOrder } from 'node:dns'
+import dns from 'node:dns'
 import { createTray } from './tray'
 import { createOverlayWindow, showOverlay, hideOverlay, presentOverlay } from './window'
 import { startReminderScheduler, stopReminderScheduler } from './reminder-scheduler'
@@ -62,20 +62,55 @@ import type {
 import config from '../../config.json'
 
 /**
- * Ask DNS for IPv4 first.
+ * Resolve names over IPv4 unless there is no IPv4 to be had.
  *
- * This machine's network advertises IPv6 and cannot route it: a TCP connect to
- * a Google DNS address over IPv6 fails outright while the same over IPv4
- * succeeds. Node resolves AAAA records first, so every request to a host with
- * an AAAA record - Gemini and the transit API both have one - stalled for the
- * full 10 second connect timeout and then surfaced as a bare "fetch failed".
- * That is what made trains and directions look broken while other services
- * carried on working: whichever host happened to win the race still answered.
+ * This machine has six network interfaces whose IPv6 DNS servers are
+ * `fec0:0:0:ffff::1`-`::3` — the obsolete site-local placeholders Windows
+ * falls back to when nothing real is configured. Nothing answers there, so
+ * every name lookup that asks for an AAAA record waits for those servers to
+ * time out. Measured back to back in one process on a cold cache:
  *
- * Ordering, not forcing. A host with only an AAAA record is still reached over
- * IPv6, so this costs nothing on a network where IPv6 does work.
+ *     dns.lookup(host)              8441ms
+ *     dns.lookup(host, family: 4)     30ms
+ *
+ * undici calls `lookup` with no family at all, so every request paid the 8
+ * second penalty and then failed the 10 second connect timeout as a bare
+ * "fetch failed". It looked like specific APIs were down, and it looked
+ * intermittent, because once a name is in the OS cache the next lookup is
+ * instant — until the cache expires and it all comes back.
+ *
+ * Ordering the results (`ipv4first`) does not help: getaddrinfo still *asks*
+ * for AAAA. The query itself has to be avoided.
+ *
+ * Falls back to an unrestricted lookup when there is no A record, so a
+ * genuinely IPv6-only host still resolves. The cost of that fallback is paid
+ * only by hosts that have no IPv4 at all.
  */
-setDefaultResultOrder('ipv4first')
+const systemLookup = dns.lookup
+type LookupArgs = Parameters<typeof dns.lookup>
+function ipv4FirstLookup(hostname: string, options: unknown, callback: unknown): void {
+  const done = (typeof options === 'function' ? options : callback) as (...args: unknown[]) => void
+  const given = typeof options === 'function' ? undefined : options
+  const opts =
+    typeof given === 'number' ? { family: given } : ({ ...((given as object) ?? {}) } as { family?: number })
+
+  // An explicit family is the caller's business; leave it alone.
+  if (opts.family) {
+    ;(systemLookup as (...a: unknown[]) => void)(hostname, opts, done)
+    return
+  }
+
+  ;(systemLookup as (...a: unknown[]) => void)(
+    hostname,
+    { ...opts, family: 4 },
+    (error: unknown, ...rest: unknown[]) => {
+      if (!error) return done(error, ...rest)
+      // No IPv4 for this name — ask again without the restriction.
+      ;(systemLookup as (...a: unknown[]) => void)(hostname, given ?? {}, done)
+    }
+  )
+}
+;(dns as { lookup: unknown }).lookup = ipv4FirstLookup as unknown as (...a: LookupArgs) => void
 
 /**
  * A rejected promise must not take the whole app down.
@@ -94,7 +129,27 @@ process.on('uncaughtException', (error) => {
 })
 
 
+/**
+ * Environment, from the working directory *and* from the user's own data
+ * folder.
+ *
+ * dotenv reads the current working directory, which under `yarn dev` is the
+ * project — so every key in .env is present. For an installed build the
+ * working directory is wherever the shortcut happened to point, so none of
+ * them were, and the app quietly degraded: without GROQ_API_KEY speech
+ * recognition fell back to loading Whisper on-device, which is why the
+ * packaged app felt slow when dev did not. It looked like the network was
+ * slow. It was the app doing far more work.
+ *
+ * .env is deliberately not shipped inside the installer — that would put live
+ * API keys in a file handed to other people. Reading one from userData keeps
+ * the keys on the machine they belong to.
+ *
+ * Order matters: dotenv never overwrites a variable that is already set, so
+ * the working directory wins where it has one, and this fills in the rest.
+ */
 dotenv.config()
+dotenv.config({ path: join(app.getPath('userData'), '.env') })
 
 // Chromium blocks audio.play() without a user gesture by default. Nimbus's
 // "gesture" is a global OS-level hotkey, which never reaches the renderer
