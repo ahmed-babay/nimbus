@@ -23,7 +23,7 @@
     "kokoro-js": "^1.2.1",
     "msedge-tts": "^2.0.7",
     "node-llama-cpp": "^3.20.0",
-    "onnxruntime-node": "^1.24.3",
+    "onnxruntime-node": "1.24.3",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
@@ -40,7 +40,8 @@
     "vite": "^7.3.6"
   },
   "overrides": {
-    "@huggingface/transformers": "$@huggingface/transformers"
+    "@huggingface/transformers": "$@huggingface/transformers",
+    "onnxruntime-node": "1.24.3"
   },
   "build": {
     "appId": "com.nimbus.assistant",
@@ -52,13 +53,25 @@
       "out/**/*",
       "resources/**/*",
       "config.json",
-      "package.json"
+      "package.json",
+      "!node_modules/**/.cache/**",
+      "!node_modules/**/*.onnx"
     ],
     "asar": false,
     "win": {
       "target": [
-        { "target": "nsis", "arch": ["x64"] },
-        { "target": "portable", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "icon": "resources/icon.png"
     },
@@ -67,5 +80,9 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true
     }
+  },
+  "resolutions": {
+    "onnxruntime-node": "1.24.3",
+    "@huggingface/transformers": "^4.2.0"
   }
 }

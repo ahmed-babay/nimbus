@@ -107,6 +107,33 @@ export interface TtsProgress {
   done: boolean
 }
 
+/**
+ * How long a backend gets to load before it is written off.
+ *
+ * Not a safety net — a real measurement. DirectML on this hardware took 170
+ * seconds to load and then failed anyway, so with it in the fallback chain a
+ * WebGPU failure did not produce a quick switch to the cloud voice; it produced
+ * three minutes of apparent silence first. Whatever the backend, one that has
+ * not loaded by now is not the one the user should be waiting on.
+ *
+ * The abandoned load carries on in the background because ONNX Runtime has no
+ * way to cancel it. That is worth it: the alternative is blocking the answer.
+ */
+const BACKEND_LOAD_TIMEOUT_MS = 25_000
+
+function withDeadline<T>(work: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>
+  return Promise.race([
+    work,
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () => reject(new Error(`did not load within ${BACKEND_LOAD_TIMEOUT_MS}ms`)),
+        BACKEND_LOAD_TIMEOUT_MS
+      )
+    })
+  ]).finally(() => clearTimeout(timer)) as Promise<T>
+}
+
 async function load(onProgress?: (progress: TtsProgress) => void): Promise<Kokoro> {
   if (loaded) return loaded
   if (loading) return loading
@@ -133,16 +160,22 @@ async function load(onProgress?: (progress: TtsProgress) => void): Promise<Kokor
     let device: (typeof DEVICES_BY_PREFERENCE)[number] | undefined
     let lastError: unknown
     for (const candidate of DEVICES_BY_PREFERENCE) {
+      const attempt = Date.now()
       try {
-        tts = (await KokoroTTS.from_pretrained(MODEL_ID, {
-          dtype: DTYPE,
-          device: candidate,
-          progress_callback: progressCallback
-        } as Parameters<typeof KokoroTTS.from_pretrained>[1])) as unknown as Kokoro
+        tts = (await withDeadline(
+          KokoroTTS.from_pretrained(MODEL_ID, {
+            dtype: DTYPE,
+            device: candidate,
+            progress_callback: progressCallback
+          } as Parameters<typeof KokoroTTS.from_pretrained>[1])
+        )) as unknown as Kokoro
         device = candidate
         break
       } catch (error) {
-        console.warn(`[local-tts] ${candidate} unavailable, trying next backend`, error)
+        console.warn(
+          `[local-tts] ${candidate} unusable after ${Date.now() - attempt}ms, trying next backend:`,
+          error instanceof Error ? error.message : error
+        )
         lastError = error
       }
     }
