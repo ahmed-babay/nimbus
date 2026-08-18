@@ -155,7 +155,18 @@ export function useAudioCapture({
           const stream =
             source === 'system'
               ? await navigator.mediaDevices.getDisplayMedia({ audio: RAW_AUDIO, video: true })
-              : await navigator.mediaDevices.getUserMedia({ audio: true })
+              : await navigator.mediaDevices.getUserMedia({
+                  audio: {
+                    // Asked for explicitly rather than left to the default.
+                    // It only removes what Chromium itself is playing, so a
+                    // meeting running in another app still leaks through and
+                    // is cleaned up in `cleanMeetingLines` - but it costs
+                    // nothing and handles the case where the call is in a tab.
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true
+                  }
+                })
 
           // Only the sound is wanted. Dropping the video track immediately
           // means no frame is ever decoded, let alone looked at.

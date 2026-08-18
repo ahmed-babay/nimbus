@@ -78,9 +78,10 @@ export function formatTranscript(lines: MeetingLine[], startedAt: number): strin
     ''
   ]
 
-  const body = lines
-    .slice()
-    .sort((a, b) => a.offsetMs - b.offsetMs)
+  // Cleaned first: the microphone hears the far end through the speakers, so
+  // without this the other side's words appear twice, the second time
+  // attributed to you.
+  const body = cleanMeetingLines(lines)
     .map((line) => `[${clockFor(line.offsetMs)}] ${line.speaker === 'you' ? 'You' : 'Them'}: ${line.text}`)
 
   return [...header, ...body, ''].join('\n')
