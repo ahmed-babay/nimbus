@@ -16,11 +16,15 @@
   --color-nimbus-bg-raised: rgb(255 255 255 / 0.035);
   --color-nimbus-border: rgb(255 255 255 / 0.09);
 
-  /* Cool indigo — present enough to lead the eye, quiet enough to live
-     under text without competing with it. */
-  --color-nimbus-accent: #6e7bff;
-  --color-nimbus-accent-bright: #a5aeff;
-  --color-nimbus-accent-deep: #4650c8;
+  /* Warm ember, matching the orb's own idle/resting hue (see Orb.tsx's
+     PALETTE) — present enough to lead the eye, quiet enough to live under
+     text without competing with it. Was a cool indigo, which put the orb
+     and every button/highlight it sits beside in two unrelated colour
+     families; panels like reminders read as a different app from the orb
+     they were opened next to. */
+  --color-nimbus-accent: #ff7a5c;
+  --color-nimbus-accent-bright: #ffab8f;
+  --color-nimbus-accent-deep: #c1503a;
 
   /* Kept as tokens because components reference them; retuned from neon to
      muted so a badge is legible rather than loud. */
