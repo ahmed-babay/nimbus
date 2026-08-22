@@ -56,10 +56,16 @@ const VOICE_SWELL = 0.16
  */
 const ENTRANCE_MS = 900
 
-/** How long one front takes to cross the panel and fade. */
-const RIPPLE_MS = 1400
-/** Gap between the three fronts, so they read as one swell. */
-const RIPPLE_STAGGER_MS = 190
+/**
+ * How long one front takes to cross the panel and fade.
+ *
+ * Slow on purpose. At 1.4 seconds this read as a ping being fired; water takes
+ * its time, and the whole point of the effect is that it feels like a swell
+ * passing under the glass rather than a notification going off.
+ */
+const RIPPLE_MS = 2600
+/** Gap between the fronts, so they read as one swell rather than three events. */
+const RIPPLE_STAGGER_MS = 340
 /**
  * How wide the wave grows, in pixels.
  *
@@ -68,7 +74,34 @@ const RIPPLE_STAGGER_MS = 190
  * glass; anything smaller stops mid-panel and reads as a ring rather than a
  * wave passing through.
  */
-const WAVE_SPAN = 1250
+const WAVE_REACH = 1250
+
+/**
+ * How far out of round each front runs. Larger than the void's, because a
+ * gentle wobble is invisible once the curve is twelve times the size of the
+ * sphere — the deviation has to grow with the radius to still read.
+ */
+const WAVE_WAVINESS = 1.35
+
+/**
+ * A different harmonic set per front, so the three never trace the same shape.
+ * Low lobe counts: a front with eight crests reads as a gear, three or four
+ * reads as water.
+ */
+const WAVE_FRONTS: Harmonic[][] = [
+  [
+    { lobes: 3, depth: 0.055, speed: 0.5, phase: 0 },
+    { lobes: 5, depth: 0.028, speed: -0.34, phase: 1.7 }
+  ],
+  [
+    { lobes: 4, depth: 0.05, speed: -0.42, phase: 2.4 },
+    { lobes: 2, depth: 0.035, speed: 0.29, phase: 0.8 }
+  ],
+  [
+    { lobes: 3, depth: 0.045, speed: 0.37, phase: 4.1 },
+    { lobes: 6, depth: 0.022, speed: -0.26, phase: 3.3 }
+  ]
+]
 
 /**
  * Per-state hues, as [core, mid, rim] — dark to bright.
@@ -166,7 +199,7 @@ export function Orb({ state, searching = false, levelRef, size = 52 }: OrbProps)
    */
   const mountedAt = useRef(performance.now())
   /** The expanding rings emitted when Nimbus changes what it is doing. */
-  const waveRefs = useRef<HTMLDivElement[]>([])
+  const waveRefs = useRef<SVGPathElement[]>([])
   /**
    * When the mode last changed, and what it changed from.
    *
@@ -180,9 +213,17 @@ export function Orb({ state, searching = false, levelRef, size = 52 }: OrbProps)
   const lastMode = useRef(mode)
 
   useEffect(() => {
-    if (lastMode.current === mode) return
+    const previous = lastMode.current
+    if (previous === mode) return
     lastMode.current = mode
-    rippleAt.current = performance.now()
+    // Only when Nimbus begins to answer.
+    //
+    // Firing on every transition meant a wave went out when it stopped
+    // listening too, which is the moment the user has just finished talking
+    // and is waiting — a flourish there says "something happened" when nothing
+    // has yet. Reserved for the answer, it means one thing and reads as the
+    // voice arriving.
+    if (mode === 'speaking') rippleAt.current = performance.now()
   }, [mode])
 
   useEffect(() => {
@@ -291,16 +332,23 @@ export function Orb({ state, searching = false, levelRef, size = 52 }: OrbProps)
           return
         }
         const t = delayed / RIPPLE_MS
-        // Fast out of the sphere, slowing as it spreads — how a ripple in
-        // water actually travels, and the reason a linear one looks mechanical.
-        const eased = 1 - Math.pow(1 - t, 2.6)
-        // Starts smaller than the sphere so the front emerges from inside it.
-        const scale = 0.03 + eased * 0.97
-        front.style.transform = `scale(${scale.toFixed(4)})`
-        // Fades in over the first fifth, then out. A front that starts at full
-        // strength looks like it was switched on rather than sent.
-        const fade = t < 0.2 ? t / 0.2 : 1 - (t - 0.2) / 0.8
-        front.style.opacity = `${(fade * 0.26).toFixed(3)}`
+        // Slowing as it spreads, the way a ripple in water does. Linear looks
+        // mechanical, and too sharp an ease makes it a flash.
+        const eased = 1 - Math.pow(1 - t, 2.1)
+        const radius = 8 + eased * (WAVE_REACH - 8)
+
+        // The undulation travels along the front as it goes, so the crests
+        // move around it rather than sitting frozen in place — the thing that
+        // separates a wobbling ring from moving water.
+        front.setAttribute(
+          'd',
+          blobPath(radius, seconds * 1.6 + i * 2.2, WAVE_WAVINESS, WAVE_FRONTS[i])
+        )
+        // Thins as it spreads, like a front losing energy.
+        front.setAttribute('stroke-width', (5.5 * (1 - t * 0.55)).toFixed(2))
+
+        const fade = t < 0.18 ? t / 0.18 : 1 - (t - 0.18) / 0.82
+        front.style.opacity = `${(fade * 0.3).toFixed(3)}`
       })
 
       frame = requestAnimationFrame(tick)
@@ -329,35 +377,6 @@ export function Orb({ state, searching = false, levelRef, size = 52 }: OrbProps)
           transition: 'background 500ms ease'
         }}
       />
-
-      {/* The wave, sent across the whole panel rather than around the sphere.
-          Rendered from the orb's centre and left to overflow: the card clips
-          it, so what you see is a front crossing the glass and running off the
-          edges — the sonar pulse an iPhone shows when it finds another phone,
-          not a ring drawn around an object. */}
-      {[0, 1, 2].map((i) => (
-        <div
-          key={i}
-          ref={(node) => {
-            if (node) waveRefs.current[i] = node
-          }}
-          className="pointer-events-none absolute rounded-full will-change-transform"
-          style={{
-            left: '50%',
-            top: '50%',
-            width: WAVE_SPAN,
-            height: WAVE_SPAN,
-            marginLeft: -WAVE_SPAN / 2,
-            marginTop: -WAVE_SPAN / 2,
-            opacity: 0,
-            // A band, not a disc: transparent inside and out, bright only at
-            // the front. That is what makes it a travelling wave rather than a
-            // flash filling the panel.
-            background: `radial-gradient(circle, transparent 58%, ${rim} 66%, transparent 74%)`,
-            transition: 'background 500ms ease'
-          }}
-        />
-      ))}
 
       <div ref={rootRef} className="absolute inset-0 will-change-transform">
         <svg viewBox="0 0 100 100" className="h-full w-full overflow-visible">
@@ -407,6 +426,29 @@ export function Orb({ state, searching = false, levelRef, size = 52 }: OrbProps)
               <circle cx="50" cy="50" r="37" />
             </clipPath>
           </defs>
+
+          {/* The wave, sent across the whole panel rather than around the
+              sphere. Drawn here because this SVG already overflows its box, so
+              a path far outside the viewBox still renders and the card clips
+              it — what you see is a front crossing the glass and running off
+              the edges.
+
+              Built from the same travelling-harmonic function as the void, so
+              the front undulates as it spreads instead of staying a perfect
+              circle. A circle expanding is a radar ping; water has a moving
+              edge, and that is the whole difference. */}
+          {WAVE_FRONTS.map((_, i) => (
+            <path
+              key={i}
+              ref={(node) => {
+                if (node) waveRefs.current[i] = node
+              }}
+              fill="none"
+              stroke={rim}
+              opacity="0"
+              style={{ transition: 'stroke 500ms ease' }}
+            />
+          ))}
 
           <circle cx="50" cy="50" r="37" fill={`url(#${id}-glass)`} />
 
