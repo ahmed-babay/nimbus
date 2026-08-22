@@ -1,6 +1,8 @@
 export interface ConversationTurn {
   role: 'user' | 'model'
   text: string
+  /** When it was said, so stale turns can be dropped rather than reused. */
+  at: number
 }
 
 /** Gemini's `Content` wire shape, kept local so callers don't import SDK types. */
@@ -13,20 +15,46 @@ export interface GeminiContent {
 // ("what about tomorrow?", "who is he?") without growing the prompt forever.
 const MAX_TURNS = 12
 
+/**
+ * After this long, a turn stops being context and becomes misinformation.
+ *
+ * Everything Nimbus answers is perishable - departures, prices, weather, what
+ * is on now. Asked about trains an hour after the last conversation, it
+ * repeated the departure it had given then, because as far as it could tell
+ * that was simply what had been established. Ten minutes is roughly the span
+ * over which "what about tomorrow?" still refers to something, and well under
+ * the life of any answer it gives.
+ */
+const STALE_AFTER_MS = 10 * 60 * 1000
+
 let history: ConversationTurn[] = []
 
-export function getHistory(): ConversationTurn[] {
+/** Drops anything too old to be context. Applied on read, not on a timer. */
+function fresh(): ConversationTurn[] {
+  const cutoff = Date.now() - STALE_AFTER_MS
+  const kept = history.filter((turn) => turn.at >= cutoff)
+  if (kept.length !== history.length) {
+    console.log(`[conversation] dropped ${history.length - kept.length} stale turn(s)`)
+    history = kept
+  }
   return history
+}
+
+export function getHistory(): ConversationTurn[] {
+  return fresh()
 }
 
 /** History formatted for the Gemini SDK's `contents` array. */
 export function getHistoryAsContents(): GeminiContent[] {
-  return history.map((turn) => ({ role: turn.role, parts: [{ text: turn.text }] }))
+  return fresh().map((turn) => ({ role: turn.role, parts: [{ text: turn.text }] }))
 }
 
 export function recordTurn(role: ConversationTurn['role'], text: string): void {
   if (!text.trim()) return
-  history.push({ role, text })
+  // Read first, so a new turn after a long gap starts a clean conversation
+  // rather than being appended to an hour-old one.
+  fresh()
+  history.push({ role, text, at: Date.now() })
   if (history.length > MAX_TURNS) {
     history = history.slice(-MAX_TURNS)
   }
@@ -39,7 +67,7 @@ export function resetConversation(): void {
 
 /** Compact transcript used to give the intent classifier recent context. */
 export function getHistorySummary(maxTurns = 6): string {
-  return history
+  return fresh()
     .slice(-maxTurns)
     .map((turn) => `${turn.role === 'user' ? 'User' : 'Nimbus'}: ${turn.text}`)
     .join('\n')

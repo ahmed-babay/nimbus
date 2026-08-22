@@ -556,12 +556,23 @@ export async function formatResponse(
     `${replyLanguageContext()}\n\n` +
     currentTimeContext()
 
-  const context = getHistorySummary(4)
+  // No conversation history here, deliberately.
+  //
+  // This turns freshly fetched data into a sentence, and it was being handed
+  // the last few turns as well. The model blended the two and answered with a
+  // departure from an hour earlier, because nothing told it which source was
+  // current. Everything Nimbus looks up is perishable - times, prices,
+  // weather, what is on now - so the fetched data has to be the only thing it
+  // can draw a fact from. Nothing is lost: the router already used the
+  // conversation to work out what was being asked.
   const prompt = [
-    context ? `Recent conversation:\n${context}\n` : '',
     `The user asked: "${utterance}"`,
     `Intent: ${intent}`,
     `Data: ${JSON.stringify(data)}`,
+    '',
+    'Every fact in your reply must come from Data above, which was fetched just',
+    'now. Never use times, numbers, prices or names from anywhere else. If Data',
+    'does not contain something, say you do not have it.',
     '',
     'Respond with only the spoken sentence(s), nothing else.'
   ]
