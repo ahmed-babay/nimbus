@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/ipc-channels'
 import type {
   AiChoice,
+  Interruption,
   AiProvider,
   NimbusConfig,
   NimbusResponse,
@@ -87,6 +88,10 @@ const api = {
   /** Takes 16kHz mono float samples; the renderer decodes, main transcribes. */
   transcribeAudio: (pcm: ArrayBuffer): Promise<string> =>
     ipcRenderer.invoke(IPC.TRANSCRIBE_AUDIO, pcm),
+  /** Anything raised while Nimbus was told to stay quiet. */
+  getMissed: (): Promise<Interruption[]> => ipcRenderer.invoke(IPC.GET_MISSED),
+  clearMissed: (): Promise<void> => ipcRenderer.invoke(IPC.CLEAR_MISSED),
+  muteSource: (source: string): Promise<void> => ipcRenderer.invoke(IPC.MUTE_SOURCE, source),
   /**
    * Speech probability per 512-sample frame, from Silero VAD in the main
    * process. An empty array means the model isn't loaded and the caller should

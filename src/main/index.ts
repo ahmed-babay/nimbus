@@ -22,7 +22,13 @@ import { runTextAction } from '../services/text-actions'
 import type { TextActionKind } from '../shared/types'
 import { transcribeAudio } from '../services/whisper'
 import { endVadSession, resetVadSession, vadProbabilities, warmVad } from '../services/vad'
-import { considerInterruption } from '../services/interruptions'
+import {
+  clearHeld,
+  considerInterruption,
+  missedInterruptions,
+  mute,
+  type Interruption
+} from '../services/interruptions'
 import { refreshPlace } from '../services/region'
 import { stopSpeechHost } from './speech-host'
 import { subtitleFor, type Subtitle } from '../services/subtitles'
@@ -403,6 +409,10 @@ function registerIpcHandlers(): void {
       return transcribeAudio(new Float32Array(pcm), { language: targetLanguage() })
     }
   )
+
+  ipcMain.handle(IPC.GET_MISSED, (): Interruption[] => missedInterruptions())
+  ipcMain.handle(IPC.CLEAR_MISSED, (): void => clearHeld())
+  ipcMain.handle(IPC.MUTE_SOURCE, (_event, source: string): void => mute(source))
 
   ipcMain.handle(
     IPC.VAD_FRAMES,

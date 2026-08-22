@@ -2,6 +2,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { app } from 'electron'
 import { silenceReason } from './quiet'
+import type { Interruption } from '../shared/types'
 
 /**
  * A record of every time Nimbus spoke first, and a way to make it stop.
@@ -16,16 +17,7 @@ import { silenceReason } from './quiet'
  * not silence every train.
  */
 
-export interface Interruption {
-  id: string
-  /** Stable per subject — "price:TSLA", "watch:trip-9912" — so it can be muted. */
-  source: string
-  kind: 'reminder' | 'watch' | 'price' | 'outdoor' | 'leave'
-  text: string
-  at: string
-  /** Null when it was shown; otherwise why it was held back. */
-  heldBecause: string | null
-}
+export type { Interruption } from '../shared/types'
 
 interface Store {
   interruptions: Interruption[]

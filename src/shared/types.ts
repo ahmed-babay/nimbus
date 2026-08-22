@@ -11,6 +11,18 @@ export type SecretName =
   | 'GITHUB_TOKEN'
   | 'FINNHUB_API_KEY'
 
+/** One time Nimbus spoke first, and whether it actually reached the user. */
+export interface Interruption {
+  id: string
+  /** Stable per subject — "price:TSLA" — so one subject can be muted alone. */
+  source: string
+  kind: 'reminder' | 'watch' | 'price' | 'outdoor' | 'leave'
+  text: string
+  at: string
+  /** Null when it was shown; otherwise why it was held back. */
+  heldBecause: string | null
+}
+
 export interface SecretStatus {
   name: SecretName
   set: boolean

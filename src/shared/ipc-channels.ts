@@ -7,6 +7,12 @@ export const IPC = {
   TRANSCRIPT: 'nimbus:transcript',
   /** renderer -> main (invoke): recorded mic audio (ArrayBuffer + mimeType), returns the transcript string */
   TRANSCRIBE_AUDIO: 'nimbus:transcribe-audio',
+  /** renderer -> main (invoke): things Nimbus held back rather than interrupting with */
+  GET_MISSED: 'nimbus:get-missed',
+  /** renderer -> main (invoke): mark held items as seen */
+  CLEAR_MISSED: 'nimbus:clear-missed',
+  /** renderer -> main (invoke): stop interrupting about one subject */
+  MUTE_SOURCE: 'nimbus:mute-source',
   /** renderer -> main (invoke): 16kHz mono frames, returns a speech probability per 512 samples */
   VAD_FRAMES: 'nimbus:vad-frames',
   /** renderer -> main: a listening turn started or ended; resets the VAD's recurrent state */
