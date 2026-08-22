@@ -45,9 +45,22 @@ export interface DepartureAlarm {
   journey: TransitJourney
 }
 
+/**
+ * Works out when to leave.
+ *
+ * With `arriveBy` this answers the question people actually have — "I need to
+ * be there by nine" — rather than the one that is easy to answer, "when is the
+ * next train". Those give opposite results: the next train after nine gets you
+ * there far too late.
+ *
+ * The journey it settles on is also handed to the delay watcher, so this is
+ * not a one-off calculation that rots. If that train is later cancelled,
+ * Nimbus already knows you were relying on it.
+ */
 export async function planDepartureAlarm(
   to: string,
-  from?: string
+  from?: string,
+  arriveBy?: string
 ): Promise<DepartureAlarm> {
   const origin = from ? await geocode(from) : await homeLocation()
   if (!origin) {
@@ -57,10 +70,13 @@ export async function planDepartureAlarm(
   const destination = await geocode(to, origin)
   if (!destination) throw new Error(`I couldn't find "${to}" on the map.`)
 
-  const plan = await findJourneys(origin, destination)
+  const plan = await findJourneys(origin, destination, arriveBy, Boolean(arriveBy))
   const now = Date.now()
 
-  // The soonest journey you could still realistically catch.
+  // Catchable means far enough ahead to actually get out of the door. With a
+  // deadline the list already runs latest-first, so this picks the one that
+  // lets you leave as late as possible and still arrive in time; without one
+  // it picks the soonest.
   const journey = plan.journeys.find((candidate) => {
     const leaveAt = new Date(candidate.departsAt).getTime()
     return Number.isFinite(leaveAt) && leaveAt - now > MIN_NOTICE_MINUTES * 60_000
@@ -78,9 +94,12 @@ export async function planDepartureAlarm(
   // Mannheimer Straße" — which is unbearable read aloud. The leading segment
   // is the part anyone would actually say.
   const destinationName = plan.to.split(',')[0].trim()
+  // Says what it gets you, not just what to catch. "Leave now" is only
+  // actionable if you can tell it is the right train.
+  const arrival = journey.arrives ? `, arriving ${journey.arrives}` : ''
   const text = boarding
-    ? `Time to leave for the ${line} at ${boarding.departs} to ${destinationName}.`
-    : `Time to leave for ${destinationName}.`
+    ? `Time to leave for the ${line} at ${boarding.departs} to ${destinationName}${arrival}.`
+    : `Time to leave for ${destinationName}${arrival}.`
 
   return {
     at: leaveAt.toISOString(),

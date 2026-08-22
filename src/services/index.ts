@@ -457,12 +457,27 @@ async function runIntent(
         // "Tell me when to leave" — worked out from the timetable, not a clock
         // time the user had to know in advance.
         if (params.leaveFor) {
-          const alarm = await planDepartureAlarm(params.leaveFor, params.from)
+          // "Be at the office by nine" is a deadline; "tell me when to leave
+          // for the office" is not. Same phrase test the transit lookup uses,
+          // so the two agree about what was asked.
+          const deadline =
+            params.timeMode === 'arrive' || wantsArrival(utterance) ? params.when : undefined
+          const alarm = await planDepartureAlarm(params.leaveFor, params.from, deadline)
           const created = addReminder({
             at: alarm.at,
             text: alarm.text,
             departure: alarm.departure
           })
+          // The reminder alone is a calculation frozen at the moment it was
+          // made. Watching the journey too is what makes this worth having:
+          // if that train is cancelled at seven in the morning, the thing
+          // Nimbus knows is that you were counting on it.
+          await watchJourney(params.from, params.leaveFor, alarm.journey.departsAt).catch(
+            (error: unknown) => {
+              // A failed watch must not lose the user their reminder.
+              console.warn('[commute] could not watch the journey:', error)
+            }
+          )
           const leaveIn = Math.max(
             0,
             Math.round((new Date(alarm.at).getTime() - Date.now()) / 60_000)
