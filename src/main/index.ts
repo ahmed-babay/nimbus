@@ -721,6 +721,33 @@ app.on('window-all-closed', () => {
   /* intentionally empty */
 })
 
+/**
+ * A dead renderer looks exactly like the app closing, so rebuild it.
+ *
+ * The window is the only thing the user can see. If its process is killed —
+ * out of memory, a GPU reset, a driver fault — the tray icon stays but the
+ * overlay never appears again, which reads as "it closed for no reason".
+ * Logged with the actual reason, because until now there was nothing to go on.
+ */
+app.on('render-process-gone', (_event, _contents, details) => {
+  console.error(`[main] renderer gone: ${details.reason} (exitCode ${details.exitCode})`)
+  if (details.reason === 'clean-exit') return
+  try {
+    // ipcMain handlers are process-wide and already registered, so only the
+    // window itself needs rebuilding.
+    overlayWindow = createOverlayWindow()
+    console.log('[main] overlay rebuilt after renderer crash')
+  } catch (error) {
+    console.error('[main] could not rebuild the overlay:', error)
+  }
+})
+
+// The GPU and utility processes recover on their own; this is only so there is
+// a record when one of them goes, since that often precedes the renderer going.
+app.on('child-process-gone', (_event, details) => {
+  console.error(`[main] ${details.type} process gone: ${details.reason}`)
+})
+
 app.on('will-quit', () => {
   stopReminderScheduler()
   stopWatchScheduler()

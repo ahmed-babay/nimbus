@@ -1,6 +1,7 @@
 import { app } from 'electron'
 import { join } from 'node:path'
 import config from '../../config.json'
+import { usableBackend } from '../main/gpu-probe'
 
 /**
  * The voice that runs on your own machine.
@@ -39,7 +40,15 @@ const DTYPE = 'fp32'
  * this is not a slide down to CPU, just a hedge against `onnxruntime-node`
  * builds (or driver setups) that don't expose WebGPU on a given machine.
  */
-const DEVICES_BY_PREFERENCE = ['webgpu', 'dml'] as const
+/** Decided by probing the GPU in a child process — see main/gpu-probe.ts. */
+async function devicesToTry(): Promise<readonly string[]> {
+  const backend = await usableBackend()
+  // On a machine with no usable GPU there is no point loading Kokoro at all:
+  // on CPU it takes longer to speak a sentence than the sentence lasts. An
+  // empty list makes speakLocally fail fast so the caller uses Edge, which is
+  // free, keyless and fast everywhere.
+  return backend === 'webgpu' ? ['webgpu'] : []
+}
 
 /**
  * A warm, unremarkable narrator voice. Deliberately not a character: this
@@ -78,12 +87,29 @@ function scheduleUnload(): void {
   idleTimer = setTimeout(() => unloadLocalTts(), IDLE_UNLOAD_MS)
 }
 
+/**
+ * Idle unloading is only safe for a CPU session.
+ *
+ * Dropping the reference hands the native session to the garbage collector,
+ * which frees the GPU device whenever it next runs — and freeing a WebGPU
+ * device crashes the process outright with 0xC0000409 on hardware where
+ * inference itself is perfectly healthy (measured: a child process that opens
+ * a session, uses it, then exits, dies every time). At an unpredictable moment
+ * long after the last question, that is indistinguishable from the app
+ * closing for no reason.
+ *
+ * So a GPU-backed model stays resident for the life of the process. It costs
+ * memory; the alternative costs the app.
+ */
+let loadedOnGpu = false
+
 export function unloadLocalTts(): void {
   if (idleTimer) {
     clearTimeout(idleTimer)
     idleTimer = null
   }
   if (!loaded) return
+  if (loadedOnGpu) return
   loaded = null
   console.log('[local-tts] unloaded after idle')
 }
@@ -157,9 +183,11 @@ async function load(onProgress?: (progress: TtsProgress) => void): Promise<Kokor
       : undefined
 
     let tts: Kokoro | undefined
-    let device: (typeof DEVICES_BY_PREFERENCE)[number] | undefined
+    let device: string | undefined
     let lastError: unknown
-    for (const candidate of DEVICES_BY_PREFERENCE) {
+    const candidates = await devicesToTry()
+    if (candidates.length === 0) throw new Error('No GPU backend on this machine for the on-device voice.')
+    for (const candidate of candidates) {
       const attempt = Date.now()
       try {
         tts = (await withDeadline(
@@ -181,6 +209,7 @@ async function load(onProgress?: (progress: TtsProgress) => void): Promise<Kokor
     }
     if (!tts) throw lastError
 
+    loadedOnGpu = device !== 'cpu'
     console.log(`[local-tts] ready in ${Date.now() - started}ms (${MODEL_ID}, ${device})`)
     onProgress?.({ receivedBytes: 0, totalBytes: 0, done: true })
     loaded = tts

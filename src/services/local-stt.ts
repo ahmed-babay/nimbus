@@ -1,6 +1,7 @@
 import { app } from 'electron'
 import { join } from 'node:path'
 import type { DeviceType } from '@huggingface/transformers'
+import { usableBackend } from '../main/gpu-probe'
 
 /**
  * Speech recognition that runs on your own machine.
@@ -34,24 +35,27 @@ import type { DeviceType } from '@huggingface/transformers'
  * nothing and avoids bundling a codec.
  */
 
-/** Small, accurate enough, and the fp32 weights the GPU path needs. */
+/** Small, accurate enough. fp32 runs on every backend, GPU or CPU, so a
+ *  machine that falls back to CPU reuses the weights it already downloaded
+ *  rather than fetching a second quantised copy mid-question. */
 const MODEL_ID = 'onnx-community/whisper-base'
 const DTYPE = 'fp32'
 
 /**
- * WebGPU by default — see above. Overridable because a WebGPU driver crash
- * here is a native crash, not a JS exception: it takes the whole process
- * down instead of throwing something catchable, so there is no safe way to
- * detect and fall back to it automatically. A machine that hits this should
- * set NIMBUS_STT_DEVICE=cpu (always available, just slower) until its GPU
- * driver is sorted out.
+ * The device is decided by probing the GPU in a child process first.
  *
- * Read lazily, not at module load: this module is statically imported by
- * main/index.ts above the `dotenv.config()` call there, so a top-level
- * `const` here would freeze at 'webgpu' before .env was ever read.
+ * A WebGPU or DirectML failure here is a native crash, not a JS exception —
+ * it takes the whole process down instead of throwing something catchable, so
+ * there is no way to try it in-process and recover. main/gpu-probe.ts tries it
+ * somewhere expendable and reports back, which is what lets this fall back to
+ * CPU on a machine whose driver cannot cope instead of dying on it.
+ *
+ * NIMBUS_STT_DEVICE still forces a specific backend when someone wants one.
  */
-function sttDevice(): DeviceType {
-  return (process.env.NIMBUS_STT_DEVICE || 'webgpu') as DeviceType
+async function sttDevice(): Promise<DeviceType> {
+  const forced = process.env.NIMBUS_STT_DEVICE
+  if (forced) return forced as DeviceType
+  return (await usableBackend()) as DeviceType
 }
 
 /** What Whisper is trained on; the renderer resamples to match. */
@@ -87,12 +91,29 @@ function scheduleUnload(): void {
   idleTimer = setTimeout(() => unloadLocalStt(), IDLE_UNLOAD_MS)
 }
 
+/**
+ * Idle unloading is only safe for a CPU session.
+ *
+ * Dropping the reference hands the native session to the garbage collector,
+ * which frees the GPU device whenever it next runs — and freeing a WebGPU
+ * device crashes the process outright with 0xC0000409 on hardware where
+ * inference itself is perfectly healthy (measured: a child process that opens
+ * a session, uses it, then exits, dies every time). At an unpredictable moment
+ * long after the last question, that is indistinguishable from the app
+ * closing for no reason.
+ *
+ * So a GPU-backed model stays resident for the life of the process. It costs
+ * memory; the alternative costs the app.
+ */
+let loadedOnGpu = false
+
 export function unloadLocalStt(): void {
   if (idleTimer) {
     clearTimeout(idleTimer)
     idleTimer = null
   }
   if (!loaded) return
+  if (loadedOnGpu) return
   loaded = null
   console.log('[local-stt] unloaded after idle')
 }
@@ -116,7 +137,8 @@ async function load(onProgress?: (progress: SttProgress) => void): Promise<Trans
     env.cacheDir = sttCacheDir()
 
     const started = Date.now()
-    const device = sttDevice()
+    const device = await sttDevice()
+    loadedOnGpu = device !== 'cpu'
     const asr = await pipeline('automatic-speech-recognition', MODEL_ID, {
       dtype: DTYPE,
       device,
