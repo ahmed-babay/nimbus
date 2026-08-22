@@ -144,20 +144,22 @@ export async function deviceLocation(): Promise<DeviceFix | null> {
   }
 }
 
-interface ReverseResult {
+interface Reverse {
   address?: Record<string, string>
   display_name?: string
 }
 
 /**
- * A name for a set of coordinates, so Nimbus can say "Darmstadt" rather than
- * reading out a latitude. Failure is fine — the coordinates still work for
- * every lookup; only the wording suffers.
+ * Asks Nominatim what is at these coordinates.
+ *
+ * `zoom` decides how fine the answer is: 14 lands on the town, 18 on the
+ * building. Both are wanted for different things - the town is what the model
+ * needs as background context, the street is what a person needs to hear.
  */
-export async function describeFix(fix: DeviceFix): Promise<string | null> {
+async function reverseGeocode(fix: DeviceFix, zoom: number): Promise<Reverse | null> {
   try {
     const res = await httpFetch(
-      `https://nominatim.openstreetmap.org/reverse?lat=${fix.lat}&lon=${fix.lon}&format=json&zoom=14`,
+      `https://nominatim.openstreetmap.org/reverse?lat=${fix.lat}&lon=${fix.lon}&format=json&zoom=${zoom}&addressdetails=1`,
       {
         // Nominatim's usage policy requires callers to identify themselves and
         // it refuses anonymous requests, which is why this quietly returned
@@ -169,20 +171,29 @@ export async function describeFix(fix: DeviceFix): Promise<string | null> {
       }
     )
     if (!res.ok) return null
-    const json = (await res.json()) as ReverseResult
-    const address = json.address ?? {}
-    return (
-      address.city ??
-      address.town ??
-      address.village ??
-      address.suburb ??
-      address.county ??
-      json.display_name?.split(',')[0] ??
-      null
-    )
+    return (await res.json()) as Reverse
   } catch {
     return null
   }
+}
+
+/**
+ * The town, for context the model reasons with. Failure is fine — the
+ * coordinates still work for every lookup; only the wording suffers.
+ */
+export async function describeFix(fix: DeviceFix): Promise<string | null> {
+  const json = await reverseGeocode(fix, 14)
+  if (!json) return null
+  const address = json.address ?? {}
+  return (
+    address.city ??
+    address.town ??
+    address.village ??
+    address.suburb ??
+    address.county ??
+    json.display_name?.split(',')[0] ??
+    null
+  )
 }
 
 /** Drops the cached fix, so the next question re-asks Windows. */
@@ -206,7 +217,15 @@ export function asksWhereTheyAre(utterance: string): boolean {
   )
 }
 
-/** A spoken answer to "where am I", straight from the device. */
+/**
+ * A spoken answer to "where am I".
+ *
+ * The street and the district, not the city and a margin of error. "Darmstadt,
+ * to within 81 metres" is true and useless: it is a town of 160,000 people,
+ * and nobody can work out which bus stop they are near from it. The accuracy
+ * figure in particular reads as precision while telling you nothing about
+ * where you are.
+ */
 export async function describeWhereYouAre(): Promise<string> {
   const fix = await deviceLocation()
   if (!fix) {
@@ -215,11 +234,21 @@ export async function describeWhereYouAre(): Promise<string> {
       'You can turn it on in Windows Settings under Privacy and security, Location.'
     )
   }
-  const name = await describeFix(fix)
-  const precision = Number.isFinite(fix.accuracy) ? ` to within about ${Math.round(fix.accuracy)} metres` : ''
-  return name
-    ? `You're in ${name}${precision}, according to your device.`
-    : `You're at ${fix.lat.toFixed(3)}, ${fix.lon.toFixed(3)}${precision}.`
+
+  const json = await reverseGeocode(fix, 18)
+  const address = json?.address ?? {}
+  const street = address.road ?? address.pedestrian ?? address.footway ?? null
+  // The district is what makes a street name locatable — there is a
+  // Bahnhofstraße in most German towns, and often several per town.
+  const area = address.suburb ?? address.quarter ?? address.city_district ?? null
+  const town = address.city ?? address.town ?? address.village ?? null
+
+  if (street && area) return `You're on ${street} in ${area}${town && town !== area ? `, ${town}` : ''}.`
+  if (street && town) return `You're on ${street} in ${town}.`
+  if (street) return `You're on ${street}.`
+  if (area && town) return `You're in ${area}, ${town}.`
+  if (town) return `You're in ${town}.`
+  return `You're at ${fix.lat.toFixed(4)}, ${fix.lon.toFixed(4)}.`
 }
 
 /**

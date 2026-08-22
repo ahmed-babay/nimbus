@@ -294,8 +294,19 @@ export async function findJourneys(
   // piece of information nobody needed.
   if (arriveBy) usable.reverse()
 
+  // Starting from raw coordinates, the origin has no name worth showing - it
+  // is literally "here". The useful answer is the stop you actually walk to,
+  // which the planner has already chosen: "trains from Darmstadt" tells you
+  // nothing about which platform to stand on, and that is the entire question.
+  const boardingStop = usable[0]?.legs[0]?.from
+  const startedFromCoordinates = typeof origin !== 'string'
+  const fromLabel =
+    startedFromCoordinates && boardingStop
+      ? boardingStop
+      : (fromStop.name ?? placeLabel(origin))
+
   return {
-    from: fromStop.name ?? placeLabel(origin),
+    from: fromLabel,
     to: toStop.name ?? placeLabel(to),
     journeys: usable,
     deadline: arriveBy ? clockTime(time.toISOString(), timeZone) : null
