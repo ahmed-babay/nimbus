@@ -139,13 +139,16 @@ export default function App() {
             }}
             // Capped to the window so a long answer scrolls instead of being
             // clipped off the bottom with no way to reach it.
-            className="relative flex max-h-[calc(100vh-1rem)] w-[492px] flex-col overflow-hidden rounded-[20px] border border-nimbus-border bg-nimbus-bg backdrop-blur-2xl"
+            className="relative flex max-h-[calc(100vh-1rem)] w-[492px] flex-col overflow-hidden rounded-[20px] border border-nimbus-border bg-nimbus-bg backdrop-blur-[28px] backdrop-saturate-150"
             // Depth from shadow and a hairline edge rather than a neon ring.
             // A glowing outline is the single strongest "toy" signal a panel
             // can send, and this one sits next to real work all day.
             style={{
+              // A thicker inner top highlight and a wider, softer drop: the two
+              // things that make a translucent panel read as a pane of glass
+              // sitting above the desktop rather than a hole cut into it.
               boxShadow:
-                '0 24px 64px -16px rgba(0,0,0,0.7), 0 2px 8px -2px rgba(0,0,0,0.5), inset 0 1px 0 0 rgba(255,255,255,0.06)',
+                '0 32px 80px -20px rgba(0,0,0,0.75), 0 4px 16px -4px rgba(0,0,0,0.5), inset 0 1px 0 0 rgba(255,255,255,0.10), inset 0 -1px 0 0 rgba(255,255,255,0.03)',
               // Re-points the accent tokens at the current state's hue. Every
               // accented control inside — settings, the standing list, badges,
               // buttons — is written against these variables, so the whole card

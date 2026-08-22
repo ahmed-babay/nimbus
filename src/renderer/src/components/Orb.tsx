@@ -56,6 +56,11 @@ const VOICE_SWELL = 0.16
  */
 const ENTRANCE_MS = 900
 
+/** How long one ring takes to travel out and fade. */
+const RIPPLE_MS = 900
+/** Gap between the three rings, so they read as one wave. */
+const RIPPLE_STAGGER_MS = 130
+
 /**
  * Per-state hues, as [core, mid, rim] — dark to bright.
  *
@@ -151,6 +156,25 @@ export function Orb({ state, searching = false, levelRef, size = 52 }: OrbProps)
    * hides, so mount is exactly "when Nimbus opens".
    */
   const mountedAt = useRef(performance.now())
+  /** The expanding rings emitted when Nimbus changes what it is doing. */
+  const rippleRefs = useRef<SVGCircleElement[]>([])
+  /**
+   * When the mode last changed, and what it changed from.
+   *
+   * The interesting moments in a voice interface are the seams: the instant it
+   * stops listening, the instant it starts speaking. Those are exactly the
+   * moments the orb was silent about - it simply became a different colour.
+   * A ring leaving the sphere marks the transition so it is felt rather than
+   * merely noticed.
+   */
+  const rippleAt = useRef(0)
+  const lastMode = useRef(mode)
+
+  useEffect(() => {
+    if (lastMode.current === mode) return
+    lastMode.current = mode
+    rippleAt.current = performance.now()
+  }, [mode])
 
   useEffect(() => {
     let frame = 0
@@ -241,6 +265,29 @@ export function Orb({ state, searching = false, levelRef, size = 52 }: OrbProps)
         const depth = 0.55 + 0.45 * Math.cos(fx * churn * 0.6 + phase)
         mote.style.transform = `translate(${x.toFixed(2)}px, ${y.toFixed(2)}px) scale(${(0.75 + depth * 0.5 + smoothed * 0.3).toFixed(3)})`
         mote.style.opacity = `${(MOTES[i].opacity * depth).toFixed(3)}`
+      })
+
+      // Rings leaving the sphere when Nimbus changes what it is doing.
+      //
+      // Three of them, staggered, so it reads as one wave rather than three
+      // events. They expand well past the glass and fade as they go — light
+      // spreading outward, not a border being drawn. Between transitions the
+      // whole thing is invisible and costs two style writes.
+      const sinceRipple = now - rippleAt.current
+      rippleRefs.current.forEach((ring, i) => {
+        if (!ring) return
+        const delayed = sinceRipple - i * RIPPLE_STAGGER_MS
+        if (rippleAt.current === 0 || delayed < 0 || delayed > RIPPLE_MS) {
+          ring.style.opacity = '0'
+          return
+        }
+        const t = delayed / RIPPLE_MS
+        // Fast out, slowing as it goes, which is how a real ripple travels.
+        const eased = 1 - Math.pow(1 - t, 2.2)
+        ring.setAttribute('r', (37 + eased * 30).toFixed(2))
+        // Never quite reaching full strength, so it stays a suggestion.
+        ring.style.opacity = `${((1 - t) * 0.4).toFixed(3)}`
+        ring.setAttribute('stroke-width', (1.6 * (1 - t * 0.6)).toFixed(2))
       })
 
       frame = requestAnimationFrame(tick)
@@ -368,6 +415,26 @@ export function Orb({ state, searching = false, levelRef, size = 52 }: OrbProps)
               style={{ transition: 'stroke 500ms ease' }}
             />
           </g>
+
+          {/* Transition rings. Outside the clip so they can leave the sphere,
+              and behind the rim so the edge still reads as the brightest
+              thing. Sized and faded entirely from the loop above. */}
+          {[0, 1, 2].map((i) => (
+            <circle
+              key={i}
+              ref={(node) => {
+                if (node) rippleRefs.current[i] = node
+              }}
+              cx="50"
+              cy="50"
+              r="37"
+              fill="none"
+              stroke={rim}
+              strokeWidth="1.6"
+              opacity="0"
+              style={{ transition: 'stroke 500ms ease' }}
+            />
+          ))}
 
           {/* Rim last, over the interior — the edge is the brightest thing. */}
           <circle cx="50" cy="50" r="37" fill="none" stroke={`url(#${id}-rim)`} strokeWidth="1.6" />

@@ -12,9 +12,13 @@
    * actionable; everything else is neutral and lets the text carry the card.
    * Token names are unchanged, so every component re-themes from this block.
    */
-  --color-nimbus-bg: rgb(9 11 18 / 0.94);
+  /* Glass, not a slab. At 0.94 the backdrop blur behind it was doing almost
+     nothing — the panel was effectively opaque and read as a dialog from a
+     desktop toolkit. Letting a little of the desktop through is the whole
+     difference, and the blur keeps text on it perfectly legible. */
+  --color-nimbus-bg: rgb(10 12 20 / 0.80);
   --color-nimbus-bg-raised: rgb(255 255 255 / 0.035);
-  --color-nimbus-border: rgb(255 255 255 / 0.09);
+  --color-nimbus-border: rgb(255 255 255 / 0.12);
 
   /* Live values, overwritten on the root element by useAccentTheme to track
      the orb's current state — see src/renderer/src/lib/orb-palette.ts for
