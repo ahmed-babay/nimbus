@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { Orb } from './components/Orb'
 import { Waveform } from './components/Waveform'
 import { accentVars, orbModeFor } from './lib/state-theme'
@@ -139,7 +139,7 @@ export default function App() {
             }}
             // Capped to the window so a long answer scrolls instead of being
             // clipped off the bottom with no way to reach it.
-            className="relative flex max-h-[calc(100vh-1rem)] w-[492px] flex-col overflow-hidden rounded-[18px] border border-nimbus-border bg-nimbus-bg backdrop-blur-2xl"
+            className="relative flex max-h-[calc(100vh-1rem)] w-[492px] flex-col overflow-hidden rounded-[20px] border border-nimbus-border bg-nimbus-bg backdrop-blur-2xl"
             // Depth from shadow and a hairline edge rather than a neon ring.
             // A glowing outline is the single strongest "toy" signal a panel
             // can send, and this one sits next to real work all day.
@@ -198,7 +198,7 @@ export default function App() {
               <StandingPanel onClose={closePanel} onDragChange={onDragChange} />
             ) : (
               // Header and input stay put; only the answer between them moves.
-              <div className="flex min-h-0 flex-1 flex-col px-4 py-3.5">
+              <div className="flex min-h-0 flex-1 flex-col px-[18px] py-4">
                 <Header
                   state={state}
                   searching={searching}
@@ -236,22 +236,22 @@ export default function App() {
                     ) : state === 'thinking' ? (
                       <div className="flex min-h-14 flex-col justify-center">
                         {transcript && (
-                          <p className="truncate text-[11px] text-nimbus-text-dim">
+                          <p className="truncate text-[11.5px] text-nimbus-text-dim">
                             &ldquo;{transcript}&rdquo;
                           </p>
                         )}
                         {typedText ? (
                           // Live tokens from the model, with a blinking caret.
-                          <p className="mt-1 text-[13px] leading-relaxed text-nimbus-text">
+                          <p className="mt-1.5 text-[14px] leading-[1.55] text-nimbus-text">
                             {typedText}
                             <motion.span
                               animate={{ opacity: [1, 0.15, 1] }}
                               transition={{ duration: 0.9, repeat: Infinity }}
-                              className="ml-0.5 inline-block h-[13px] w-[2px] translate-y-[2px] bg-nimbus-accent"
+                              className="ml-0.5 inline-block h-[14px] w-[2px] translate-y-[2px] rounded-full bg-nimbus-accent"
                             />
                           </p>
                         ) : (
-                          <p className="mt-1 text-[10px] text-nimbus-text-dim">Thinking…</p>
+                          <p className="mt-1.5 text-[11px] text-nimbus-text-dim">Thinking…</p>
                         )}
                       </div>
                     ) : pendingSelection ? (
@@ -386,69 +386,161 @@ function Header({
       onPointerDown={drag.onPointerDown}
       style={drag.style}
     >
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2.5">
         {/* Set in the interface face rather than a marquee mono, and lit by
             weight and colour instead of a text-shadow glow. */}
-        <span className="text-[12px] font-semibold tracking-[0.01em] text-nimbus-text">Nimbus</span>
-        <span className="h-3 w-px bg-white/10" />
-        <span className="text-[10.5px] text-nimbus-text-dim">
-          {state === 'thinking' && searching ? 'Searching' : STATE_LABEL[state]}
+        <span className="text-[13px] font-semibold tracking-[-0.01em] text-nimbus-text">Nimbus</span>
+        {/* A lit dot rather than a divider and a word. State is the thing this
+            header exists to convey, and a dot in the state's own colour says
+            it faster than a label — the label is then free to be quiet. */}
+        <span className="flex items-center gap-1.5">
+          <motion.span
+            className="block h-[5px] w-[5px] rounded-full bg-nimbus-accent"
+            animate={
+              state === 'idle'
+                ? { opacity: 0.55, scale: 1 }
+                : { opacity: [0.45, 1, 0.45], scale: [1, 1.25, 1] }
+            }
+            transition={
+              state === 'idle'
+                ? { duration: 0.3 }
+                : { duration: 1.8, repeat: Infinity, ease: 'easeInOut' }
+            }
+          />
+          <span className="text-[11px] text-nimbus-text-dim">
+            {state === 'thinking' && searching ? 'Searching' : STATE_LABEL[state]}
+          </span>
         </span>
       </div>
-      <div className="flex items-center gap-1.5">
-        <button
+      <div className="flex items-center gap-0.5">
+        {/* Icons, not words. Five text labels in a row read as a toolbar from
+            2010 and take three times the width; a mic that is plainly a mic
+            needs no reading at all. */}
+        <IconButton
           onClick={onToggleMic}
-          aria-label={micEnabled ? 'Turn off voice input' : 'Turn on voice input'}
-          title={micEnabled ? 'Voice on — click to mute' : 'Voice off — click to enable'}
-          className={`rounded-md px-2 py-[3px] text-[10px] transition-colors ${
-            micEnabled
-              ? 'bg-nimbus-accent/15 text-nimbus-accent-bright'
-              : 'text-nimbus-text-dim hover:bg-white/[0.06]'
-          }`}
+          active={micEnabled}
+          label={micEnabled ? 'Voice on — click to mute' : 'Voice off — click to enable'}
         >
-          {micEnabled ? 'Mic on' : 'Mic off'}
-        </button>
-        <button
+          {micEnabled ? <MicIcon /> : <MicOffIcon />}
+        </IconButton>
+        <IconButton
           onClick={onToggleTts}
-          aria-label={ttsEnabled ? 'Mute spoken answers' : 'Unmute spoken answers'}
-          title={
-            ttsEnabled
-              ? 'Answers are spoken — click to mute'
-              : 'Answers are silent — click to unmute'
-          }
-          className={`rounded-md px-2 py-[3px] text-[10px] transition-colors ${
-            ttsEnabled
-              ? 'bg-nimbus-accent/15 text-nimbus-accent-bright'
-              : 'text-nimbus-text-dim hover:bg-white/[0.06]'
-          }`}
+          active={ttsEnabled}
+          label={ttsEnabled ? 'Answers are spoken — click to mute' : 'Answers are silent — click to unmute'}
         >
-          {ttsEnabled ? 'Sound on' : 'Sound off'}
-        </button>
+          {ttsEnabled ? <SoundIcon /> : <SoundOffIcon />}
+        </IconButton>
+
+        <span className="mx-1 h-3.5 w-px bg-white/10" />
+
         <button
           onClick={onStanding}
-          aria-label="Things Nimbus is watching for you"
           title="Watching — trains, events and reminders Nimbus is holding"
-          className="rounded-md px-2 py-[3px] text-[10px] text-nimbus-text-dim transition-colors hover:bg-white/[0.06] hover:text-nimbus-text"
+          className="rounded-lg px-2 py-1 text-[11px] text-nimbus-text-dim transition-colors hover:bg-white/[0.07] hover:text-nimbus-text"
         >
           Watching
         </button>
         <button
           onClick={onSettings}
-          aria-label="Settings and API keys"
           title="Settings — API keys and model"
-          className="rounded-md px-2 py-[3px] text-[10px] text-nimbus-text-dim transition-colors hover:bg-white/[0.06] hover:text-nimbus-text"
+          className="rounded-lg px-2 py-1 text-[11px] text-nimbus-text-dim transition-colors hover:bg-white/[0.07] hover:text-nimbus-text"
         >
           Setup
         </button>
         <button
           onClick={onClose}
           aria-label="Close Nimbus"
-          className="-mr-1 rounded-md px-2 py-[3px] text-[10px] text-nimbus-text-dim transition-colors hover:bg-white/[0.06] hover:text-nimbus-text"
+          title="Close (Esc)"
+          className="-mr-1 ml-0.5 rounded-lg p-1.5 text-nimbus-text-dim transition-colors hover:bg-white/[0.07] hover:text-nimbus-text"
         >
-          Esc
+          <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+            <path d="M4 4l8 8M12 4l-8 8" />
+          </svg>
         </button>
       </div>
     </div>
+  )
+}
+
+/**
+ * A header toggle.
+ *
+ * Lit when on, quiet when off — the same two-state treatment the text buttons
+ * had, at a third of the width and readable without being read.
+ */
+function IconButton({
+  onClick,
+  active,
+  label,
+  children
+}: {
+  onClick: () => void
+  active: boolean
+  label: string
+  children: ReactNode
+}) {
+  return (
+    <button
+      onClick={onClick}
+      aria-label={label}
+      aria-pressed={active}
+      title={label}
+      className={`rounded-lg p-1.5 transition-colors ${
+        active
+          ? 'bg-nimbus-accent/15 text-nimbus-accent-bright'
+          : 'text-nimbus-text-dim hover:bg-white/[0.07] hover:text-nimbus-text'
+      }`}
+    >
+      {children}
+    </button>
+  )
+}
+
+/** 16px line icons, stroked in currentColor so the state palette drives them. */
+const iconProps = {
+  viewBox: '0 0 16 16',
+  className: 'h-3.5 w-3.5',
+  fill: 'none',
+  stroke: 'currentColor',
+  strokeWidth: 1.5,
+  strokeLinecap: 'round' as const,
+  strokeLinejoin: 'round' as const
+}
+
+function MicIcon() {
+  return (
+    <svg {...iconProps}>
+      <rect x="6" y="1.5" width="4" height="7.5" rx="2" />
+      <path d="M3.5 7v.5a4.5 4.5 0 0 0 9 0V7M8 12v2.5" />
+    </svg>
+  )
+}
+
+function MicOffIcon() {
+  return (
+    <svg {...iconProps}>
+      <rect x="6" y="1.5" width="4" height="7.5" rx="2" />
+      <path d="M3.5 7v.5a4.5 4.5 0 0 0 9 0V7M8 12v2.5" />
+      <path d="M2 2l12 12" />
+    </svg>
+  )
+}
+
+function SoundIcon() {
+  return (
+    <svg {...iconProps}>
+      <path d="M8.5 2.5 5 5.5H2.5v5H5l3.5 3z" />
+      <path d="M11 5.5a3.5 3.5 0 0 1 0 5M13 3.5a6.5 6.5 0 0 1 0 9" />
+    </svg>
+  )
+}
+
+function SoundOffIcon() {
+  return (
+    <svg {...iconProps}>
+      <path d="M8.5 2.5 5 5.5H2.5v5H5l3.5 3z" />
+      <path d="M11 6l3.5 4M14.5 6L11 10" />
+    </svg>
   )
 }
 
@@ -481,7 +573,7 @@ function SettingsPanel({
     // to its content, grows past the card's max height and gets clipped by the
     // card's overflow-hidden — which looked exactly like "settings can't
     // scroll", because there was nothing to scroll.
-    <div className="flex min-h-0 flex-1 flex-col px-4 py-3.5">
+    <div className="flex min-h-0 flex-1 flex-col px-[18px] py-4">
       <div
         className="flex items-center justify-between"
         onPointerDown={drag.onPointerDown}

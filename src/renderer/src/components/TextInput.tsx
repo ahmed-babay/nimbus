@@ -68,8 +68,10 @@ export function TextInput({
     inputRef.current?.focus()
   }
 
+  // No rule above the field: it has an edge of its own now, and two horizontal
+  // lines a few pixels apart is how a panel starts to look busy.
   return (
-    <div className="mt-3 border-t border-white/[0.07] pt-2.5">
+    <div className="mt-3">
       {paletteOpen && (
         <CommandPalette
           matches={matches}
@@ -91,15 +93,12 @@ export function TextInput({
           onSubmit(value)
           setValue('')
         }}
-        className="flex items-center gap-2"
+        // A field, not a terminal. The neon "&gt;" prompt and its glow were the
+        // last of the arcade theme in here; a bordered well that lights on
+        // focus is what every other desktop tool does, and it tells you where
+        // to type without saying anything.
+        className="flex items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2 transition-colors focus-within:border-nimbus-accent/40 focus-within:bg-white/[0.05]"
       >
-        <span
-          className="arcade-type shrink-0 text-[11px] text-nimbus-cyan"
-          style={{ textShadow: '0 0 8px rgba(34,232,255,0.7)' }}
-          aria-hidden
-        >
-          &gt;
-        </span>
         <input
           ref={inputRef}
           value={value}

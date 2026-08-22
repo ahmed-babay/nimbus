@@ -64,7 +64,7 @@ export function StandingPanel({
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col px-4 py-3.5">
+    <div className="flex min-h-0 flex-1 flex-col px-[18px] py-4">
       <div
         className="flex items-center justify-between"
         onPointerDown={drag.onPointerDown}
