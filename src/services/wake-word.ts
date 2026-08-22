@@ -1,4 +1,4 @@
-import { transcribeLocally } from './local-stt'
+import { transcribeOutOfProcess } from '../main/speech-host'
 import { targetLanguage } from './translate'
 import config from '../../config.json'
 
@@ -122,6 +122,10 @@ export async function heardWakeWord(pcm: Float32Array, sampleRate = 16000): Prom
   // positive guard and the cheaper path.
   if (durationMs > MAX_WAKE_MS) return false
 
-  const heard = await transcribeLocally(pcm, { language: targetLanguage() })
+  // Out of process, like every other use of Whisper. This one matters most:
+  // it runs on every burst of speech while the wake word is armed, so it is
+  // the model this app asks for work by far the most often, and each call was
+  // another chance for the GPU teardown fault to take the whole app down.
+  const heard = await transcribeOutOfProcess(pcm, targetLanguage())
   return matchesWakeWord(heard)
 }
