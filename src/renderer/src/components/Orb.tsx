@@ -57,53 +57,6 @@ const VOICE_SWELL = 0.16
 const ENTRANCE_MS = 900
 
 /**
- * How long one front takes to cross the panel and fade.
- *
- * Slow on purpose. At 1.4 seconds this read as a ping being fired; water takes
- * its time, and the whole point of the effect is that it feels like a swell
- * passing under the glass rather than a notification going off.
- */
-const RIPPLE_MS = 2600
-/** Gap between the fronts, so they read as one swell rather than three events. */
-const RIPPLE_STAGGER_MS = 340
-/**
- * How wide the wave grows, in pixels.
- *
- * Bigger than the card on purpose. The orb sits near the left edge, so the
- * front has to travel the full width plus the diagonal before it leaves the
- * glass; anything smaller stops mid-panel and reads as a ring rather than a
- * wave passing through.
- */
-const WAVE_REACH = 1250
-
-/**
- * How far out of round each front runs. Larger than the void's, because a
- * gentle wobble is invisible once the curve is twelve times the size of the
- * sphere — the deviation has to grow with the radius to still read.
- */
-const WAVE_WAVINESS = 1.35
-
-/**
- * A different harmonic set per front, so the three never trace the same shape.
- * Low lobe counts: a front with eight crests reads as a gear, three or four
- * reads as water.
- */
-const WAVE_FRONTS: Harmonic[][] = [
-  [
-    { lobes: 3, depth: 0.055, speed: 0.5, phase: 0 },
-    { lobes: 5, depth: 0.028, speed: -0.34, phase: 1.7 }
-  ],
-  [
-    { lobes: 4, depth: 0.05, speed: -0.42, phase: 2.4 },
-    { lobes: 2, depth: 0.035, speed: 0.29, phase: 0.8 }
-  ],
-  [
-    { lobes: 3, depth: 0.045, speed: 0.37, phase: 4.1 },
-    { lobes: 6, depth: 0.022, speed: -0.26, phase: 3.3 }
-  ]
-]
-
-/**
  * Per-state hues, as [core, mid, rim] — dark to bright.
  *
  * Shared with the panel chrome rather than kept here, so the card and the
@@ -139,6 +92,32 @@ const HALO_HARMONICS: Harmonic[] = [
   { lobes: 4, depth: 0.07, speed: 0.23, phase: 3.2 },
   { lobes: 3, depth: 0.05, speed: -0.53, phase: 0.6 }
 ]
+
+/**
+ * How long the swell takes to cross the panel and leave.
+ *
+ * Slow on purpose. Anything under two seconds reads as something being fired
+ * rather than water moving, which was the problem with the first two attempts.
+ */
+const RIPPLE_MS = 2800
+
+/** How far the crest travels, in viewBox units (the sphere is 100 across). */
+const WAVE_TRAVEL = 1500
+
+/** How far the crest bows out of straight. This is what makes it a wave. */
+const WAVE_AMPLITUDE = 52
+
+/** Crests along the crest's length. Few and long, like a swell, not ripples. */
+const WAVE_FREQUENCY = 0.0042
+
+/**
+ * How far the sweep can tilt from horizontal, in degrees.
+ *
+ * Picked fresh each time so the swell does not arrive from the same place
+ * twice — a wave that always crosses on the identical line stops looking like
+ * weather and starts looking like a progress bar.
+ */
+const WAVE_TILT_RANGE = 46
 
 /** Enough segments that the curve reads as smooth at this size, and no more. */
 const OUTLINE_POINTS = 56
@@ -199,7 +178,11 @@ export function Orb({ state, searching = false, levelRef, size = 52 }: OrbProps)
    */
   const mountedAt = useRef(performance.now())
   /** The expanding rings emitted when Nimbus changes what it is doing. */
-  const waveRefs = useRef<SVGPathElement[]>([])
+  const crestRef = useRef<SVGPathElement>(null)
+  const washRef = useRef<SVGPathElement>(null)
+  const waveGroupRef = useRef<SVGGElement>(null)
+  /** Tilt for this particular swell, so no two arrive the same way. */
+  const waveTilt = useRef(0)
   /**
    * When the mode last changed, and what it changed from.
    *
@@ -223,7 +206,10 @@ export function Orb({ state, searching = false, levelRef, size = 52 }: OrbProps)
     // and is waiting — a flourish there says "something happened" when nothing
     // has yet. Reserved for the answer, it means one thing and reads as the
     // voice arriving.
-    if (mode === 'speaking') rippleAt.current = performance.now()
+    if (mode === 'speaking') {
+      rippleAt.current = performance.now()
+      waveTilt.current = (Math.random() * 2 - 1) * WAVE_TILT_RANGE
+    }
   }, [mode])
 
   useEffect(() => {
@@ -323,33 +309,56 @@ export function Orb({ state, searching = false, levelRef, size = 52 }: OrbProps)
       // events. They expand well past the glass and fade as they go — light
       // spreading outward, not a border being drawn. Between transitions the
       // whole thing is invisible and costs two style writes.
+      // One swell crossing the glass.
+      //
+      // Not rings. A ring expanding from a point is a radar sweep; the sea
+      // sends a crest travelling in a direction, bowed rather than straight,
+      // and that is what this draws — a long curve that leaves the sphere,
+      // crosses the panel and runs off the far edge. The card clips it, so
+      // only the part over the glass is ever seen.
       const sinceRipple = now - rippleAt.current
-      waveRefs.current.forEach((front, i) => {
-        if (!front) return
-        const delayed = sinceRipple - i * RIPPLE_STAGGER_MS
-        if (rippleAt.current === 0 || delayed < 0 || delayed > RIPPLE_MS) {
-          front.style.opacity = '0'
-          return
+      const running = rippleAt.current !== 0 && sinceRipple >= 0 && sinceRipple <= RIPPLE_MS
+      if (!running) {
+        if (crestRef.current) crestRef.current.style.opacity = '0'
+        if (washRef.current) washRef.current.style.opacity = '0'
+      } else {
+        const t = sinceRipple / RIPPLE_MS
+        // Eases as it goes, the way a wave slows in shallow water. A linear
+        // sweep reads as a scanner passing over the panel.
+        const travelled = (1 - Math.pow(1 - t, 2.2)) * WAVE_TRAVEL
+
+        // The crest is drawn as a long vertical curve and swept sideways; the
+        // group's rotation decides which way the swell is actually running.
+        const phase = seconds * 1.9
+        let crest = ''
+        let wash = ''
+        for (let y = -700; y <= 1100; y += 40) {
+          // Two lengths of undulation so the crest is not a clean sine — the
+          // giveaway that a wave was drawn rather than observed.
+          const bow =
+            Math.sin(y * WAVE_FREQUENCY + phase) * WAVE_AMPLITUDE +
+            Math.sin(y * WAVE_FREQUENCY * 2.7 + phase * 1.4) * WAVE_AMPLITUDE * 0.32
+          const x = 50 + travelled - WAVE_TRAVEL * 0.06 + bow
+          crest += `${y === -700 ? 'M' : 'L'}${x.toFixed(1)},${y}`
+          // The wash trails the crest, wider and fainter, like the water
+          // still moving behind the front.
+          wash += `${y === -700 ? 'M' : 'L'}${(x - 34).toFixed(1)},${y}`
         }
-        const t = delayed / RIPPLE_MS
-        // Slowing as it spreads, the way a ripple in water does. Linear looks
-        // mechanical, and too sharp an ease makes it a flash.
-        const eased = 1 - Math.pow(1 - t, 2.1)
-        const radius = 8 + eased * (WAVE_REACH - 8)
+        crestRef.current?.setAttribute('d', crest)
+        washRef.current?.setAttribute('d', wash)
 
-        // The undulation travels along the front as it goes, so the crests
-        // move around it rather than sitting frozen in place — the thing that
-        // separates a wobbling ring from moving water.
-        front.setAttribute(
-          'd',
-          blobPath(radius, seconds * 1.6 + i * 2.2, WAVE_WAVINESS, WAVE_FRONTS[i])
-        )
-        // Thins as it spreads, like a front losing energy.
-        front.setAttribute('stroke-width', (5.5 * (1 - t * 0.55)).toFixed(2))
+        if (waveGroupRef.current) {
+          waveGroupRef.current.setAttribute(
+            'transform',
+            `rotate(${waveTilt.current.toFixed(1)} 50 50)`
+          )
+        }
 
-        const fade = t < 0.18 ? t / 0.18 : 1 - (t - 0.18) / 0.82
-        front.style.opacity = `${(fade * 0.3).toFixed(3)}`
-      })
+        // In quickly as it leaves the sphere, out slowly as it crosses.
+        const fade = t < 0.14 ? t / 0.14 : 1 - (t - 0.14) / 0.86
+        if (crestRef.current) crestRef.current.style.opacity = `${(fade * 0.34).toFixed(3)}`
+        if (washRef.current) washRef.current.style.opacity = `${(fade * 0.16).toFixed(3)}`
+      }
 
       frame = requestAnimationFrame(tick)
     }
@@ -382,10 +391,27 @@ export function Orb({ state, searching = false, levelRef, size = 52 }: OrbProps)
         <svg viewBox="0 0 100 100" className="h-full w-full overflow-visible">
           <defs>
             {/* Glass body: dark at the centre, lifting toward the edge. */}
-            <radialGradient id={`${id}-glass`} cx="42%" cy="36%" r="72%">
-              <stop offset="0%" stopColor={core} />
-              <stop offset="62%" stopColor={core} />
-              <stop offset="100%" stopColor={mid} />
+            {/* The body. Held near-black through most of the radius and lifted
+                only in the last fifth: a glass sphere is dark almost all the way
+                out and bright only where the surface turns away. The earlier
+                gradient lifted from 62% and the result read as a shaded ball
+                rather than something you could see into. */}
+            <radialGradient id={`${id}-glass`} cx="38%" cy="32%" r="78%">
+              <stop offset="0%" stopColor={core} stopOpacity="0.96" />
+              <stop offset="55%" stopColor={core} />
+              <stop offset="82%" stopColor={core} />
+              <stop offset="94%" stopColor={mid} stopOpacity="0.85" />
+              <stop offset="100%" stopColor={rim} stopOpacity="0.5" />
+            </radialGradient>
+
+            {/* Caustic: light that passed through the glass and focused on the
+                far side from the source. It is the single detail that reads as
+                "solid transparent object" rather than "dark disc", and nothing
+                else in here does that job. */}
+            <radialGradient id={`${id}-caustic`} cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stopColor="#ffffff" stopOpacity="0.5" />
+              <stop offset="45%" stopColor={rim} stopOpacity="0.28" />
+              <stop offset="100%" stopColor={rim} stopOpacity="0" />
             </radialGradient>
 
             {/* Rim: bright through the lower-right arc, fading to nothing at
@@ -427,28 +453,33 @@ export function Orb({ state, searching = false, levelRef, size = 52 }: OrbProps)
             </clipPath>
           </defs>
 
-          {/* The wave, sent across the whole panel rather than around the
-              sphere. Drawn here because this SVG already overflows its box, so
-              a path far outside the viewBox still renders and the card clips
-              it — what you see is a front crossing the glass and running off
-              the edges.
-
-              Built from the same travelling-harmonic function as the void, so
-              the front undulates as it spreads instead of staying a perfect
-              circle. A circle expanding is a radar ping; water has a moving
-              edge, and that is the whole difference. */}
-          {WAVE_FRONTS.map((_, i) => (
+          {/* The swell. Drawn here because this SVG already overflows its
+              box, so a curve far outside the viewBox still renders and the
+              card clips it — what you see is a crest crossing the glass. The
+              group is rotated per swell, which is what sends it across at a
+              different angle each time. */}
+          <g ref={waveGroupRef}>
             <path
-              key={i}
-              ref={(node) => {
-                if (node) waveRefs.current[i] = node
-              }}
+              ref={washRef}
               fill="none"
               stroke={rim}
+              strokeWidth="46"
+              strokeLinecap="round"
               opacity="0"
+              filter={`url(#${id}-soft)`}
               style={{ transition: 'stroke 500ms ease' }}
             />
-          ))}
+            <path
+              ref={crestRef}
+              fill="none"
+              stroke={rim}
+              strokeWidth="7"
+              strokeLinecap="round"
+              opacity="0"
+              filter={`url(#${id}-edge)`}
+              style={{ transition: 'stroke 500ms ease' }}
+            />
+          </g>
 
           <circle cx="50" cy="50" r="37" fill={`url(#${id}-glass)`} />
 
@@ -500,17 +531,41 @@ export function Orb({ state, searching = false, levelRef, size = 52 }: OrbProps)
             />
           </g>
 
-          {/* Rim last, over the interior — the edge is the brightest thing. */}
-          <circle cx="50" cy="50" r="37" fill="none" stroke={`url(#${id}-rim)`} strokeWidth="1.6" />
+          {/* The focused light, opposite the highlight, inside the glass. */}
+          <g clipPath={`url(#${id}-clip)`} style={{ mixBlendMode: 'screen' }}>
+            <ellipse cx="62" cy="66" rx="17" ry="13" fill={`url(#${id}-caustic)`} />
+          </g>
 
-          {/* A short specular clip where the light source hits, which is what
-              makes the surface read as glass rather than as a hole. */}
+          {/* Rim last, over the interior — the edge is the brightest thing. */}
+          <circle cx="50" cy="50" r="37" fill="none" stroke={`url(#${id}-rim)`} strokeWidth="1.15" />
+          {/* Fresnel: every sphere is brighter right at its silhouette, all the
+              way round, not only where the key light hits. Faint, but its
+              absence is why the edge looked drawn on. */}
+          <circle
+            cx="50"
+            cy="50"
+            r="36.6"
+            fill="none"
+            stroke={rim}
+            strokeOpacity="0.22"
+            strokeWidth="0.8"
+          />
+
+          {/* Specular highlight. A small, *sharp*, filled shape rather than a
+              soft stroke: gloss is defined by how crisp the reflection is, and
+              a blurred highlight is what makes a render look plastic. Two
+              parts, as on any polished sphere — a bright core and the faint
+              wider bloom around it. */}
+          <ellipse cx="35" cy="27" rx="9" ry="6.5" fill="#ffffff" opacity="0.10" transform="rotate(-32 35 27)" />
+          <ellipse cx="34" cy="26" rx="4.6" ry="3" fill="#ffffff" opacity="0.55" transform="rotate(-32 34 26)" />
+          {/* The thin catch of light along the top edge, where the surface is
+              nearly parallel to the viewer. */}
           <path
-            d="M28,26 A 32 32 0 0 1 52,15"
+            d="M26,28 A 30 30 0 0 1 50,14"
             fill="none"
             stroke="#ffffff"
-            strokeOpacity="0.5"
-            strokeWidth="1.4"
+            strokeOpacity="0.4"
+            strokeWidth="1.1"
             strokeLinecap="round"
           />
         </svg>
