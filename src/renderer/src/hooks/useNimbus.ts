@@ -747,6 +747,9 @@ export function useNimbus(): NimbusOverlayState {
     }
   }, [])
 
+  /** True while the open microphone is a follow-up to Nimbus speaking first. */
+  const afterInterruptionRef = useRef(false)
+
   const handleVoiceEnd = useCallback((reason: VoiceEndReason = 'empty') => {
     // Recording ended with nothing usable (silence timeout) — fade out.
     // Reads state from a ref rather than triggering the side effect inside a
@@ -780,12 +783,18 @@ export function useNimbus(): NimbusOverlayState {
       // saying nothing is not a request to be dismissed, just a mic to turn
       // off. A turn that came back unusable, on the other hand, was someone
       // trying to say something — that still fades like any other dead end.
+      // Not after an interruption: Nimbus opened that microphone itself, so
+      // nobody who decides to ignore a notification should find their mic
+      // switched off because of it.
       if (reason === 'silence') {
-        micEnabledRef.current = false
-        setMicEnabled(false)
+        if (!afterInterruptionRef.current) {
+          micEnabledRef.current = false
+          setMicEnabled(false)
+        }
       } else {
         scheduleAutoFade()
       }
+      afterInterruptionRef.current = false
     }
   }, [scheduleAutoFade])
 
@@ -887,14 +896,18 @@ export function useNimbus(): NimbusOverlayState {
       setPendingSelection(null)
       setPendingCapture(null)
       setStreamingText('')
-      // Nimbus is the one initiating here, so it shows and speaks but does not
-      // open the microphone — see presentOverlay in src/main/window.ts.
       setResponse({
         speech: reminder.text,
         card: { type: 'reminder', data: { created: reminder, pending: [] } }
       })
       speechProgressRef.current = 0
-      speak(reminder.text, false)
+      // Listens once it has finished speaking. This is the moment Nimbus is
+      // worth more than a chat window: it has just told you your train is
+      // cancelled, and "what's the next one" should not require reaching for
+      // a hotkey. Every other assistant makes you start a fresh conversation
+      // here, by which time you have already picked up your phone.
+      afterInterruptionRef.current = true
+      speak(reminder.text, true)
       // Stays up longer than a normal answer: an alert you miss is worthless,
       // and the user was not looking at the screen when it appeared.
       scheduleAutoFadeRef.current?.()
