@@ -58,5 +58,10 @@
   "wakeWord": {
     "enabled": false,
     "phrase": "hi nimbus"
+  },
+  "quietHours": {
+    "enabled": true,
+    "from": "22:00",
+    "until": "07:00"
   }
 }

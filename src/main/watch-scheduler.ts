@@ -6,6 +6,7 @@ import {
   type OutdoorUpdate
 } from '../services/outdoor-watch'
 import { checkPriceAlerts, priceAlerts, type PriceUpdate } from '../services/watchlist'
+import { considerInterruption } from '../services/interruptions'
 
 /**
  * Polls watched journeys and reports the ones that changed.
@@ -33,6 +34,22 @@ export interface WatchHooks {
   onUpdate: (update: WatchUpdate | OutdoorUpdate | PriceUpdate) => void
 }
 
+/**
+ * A stable name for what this update is about, so muting one subject does not
+ * mute the rest. Each kind carries its own identifier; the shape it arrives in
+ * is what tells them apart.
+ */
+function sourceOf(update: WatchUpdate | OutdoorUpdate | PriceUpdate): {
+  source: string
+  kind: 'watch' | 'outdoor' | 'price'
+} {
+  if ('alert' in update) return { source: `price:${update.alert.symbol}`, kind: 'price' }
+  if ('watch' in update && 'tripId' in update.watch) {
+    return { source: `watch:${update.watch.tripId}`, kind: 'watch' }
+  }
+  return { source: 'outdoor', kind: 'outdoor' }
+}
+
 function notify(update: WatchUpdate | OutdoorUpdate | PriceUpdate): void {
   // The overlay alone is missable when the user is in a full-screen app,
   // which is exactly where someone is when they're about to miss a train.
@@ -57,6 +74,11 @@ export function startWatchScheduler({ onUpdate }: WatchHooks): void {
       ]
       for (const update of updates) {
         console.log(`[watchers] ${update.speech}`)
+        // Gate both the OS notification and the overlay together. Gating only
+        // the overlay would still pop a toast at 3am, which is the thing this
+        // exists to prevent.
+        const { source, kind } = sourceOf(update)
+        if (!considerInterruption(source, kind, update.speech).deliver) continue
         notify(update)
         try {
           onUpdate(update)

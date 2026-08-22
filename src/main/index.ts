@@ -22,6 +22,7 @@ import { runTextAction } from '../services/text-actions'
 import type { TextActionKind } from '../shared/types'
 import { transcribeAudio } from '../services/whisper'
 import { endVadSession, resetVadSession, vadProbabilities, warmVad } from '../services/vad'
+import { considerInterruption } from '../services/interruptions'
 import { subtitleFor, type Subtitle } from '../services/subtitles'
 import { targetLanguage } from '../services/translate'
 import { heardWakeWord, wakeWordEnabled } from '../services/wake-word'
@@ -605,7 +606,12 @@ app.whenReady().then(() => {
 
   startReminderScheduler({
     onDue: (reminder) => {
-      if (overlayWindow) presentOverlay(overlayWindow, IPC.REMINDER_DUE, reminder)
+      if (!overlayWindow) return
+      // Every unprompted interruption goes through here: muted subjects are
+      // dropped, quiet hours hold it for later, and either way it is recorded
+      // so "what did you tell me while I was out" has an answer.
+      const { deliver } = considerInterruption(`reminder:${reminder.id}`, 'reminder', reminder.text)
+      if (deliver) presentOverlay(overlayWindow, IPC.REMINDER_DUE, reminder)
     }
   })
 
