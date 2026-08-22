@@ -1,6 +1,6 @@
 import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts'
 import config from '../../config.json'
-import { localTtsInstalled, localTtsSupportsLanguage, speakLocally } from './local-tts'
+import { purgeLocalTts, localTtsInstalled, localTtsSupportsLanguage, speakLocally } from './local-tts'
 
 const VOICE = process.env.TTS_VOICE || 'en-GB-SoniaNeural'
 
@@ -30,6 +30,11 @@ export async function synthesizeSpeech(text: string): Promise<SynthesizedSpeech>
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       console.error(`[tts] on-device voice failed, falling back to Edge: ${message}`)
+      // Same as speech recognition: unparseable weights are a truncated
+      // download, and a bad cache nobody clears never gets better.
+      if (/protobuf|deserial|invalid|corrupt|failed to load model/i.test(message)) {
+        await purgeLocalTts()
+      }
     }
   }
 

@@ -35,6 +35,9 @@ const MODEL_ID = 'onnx-community/Kokoro-82M-v1.0-ONNX'
 /** fp32 because quantised weights do not run on the WebGPU backend. */
 const DTYPE = 'fp32'
 
+/** Kokoro's weights are 325MB whole, so anything near this is truncated. */
+const MIN_WEIGHT_BYTES = 100_000_000
+
 /**
  * WebGPU first, DirectML second. Both are GPU execution providers on Windows —
  * this is not a slide down to CPU, just a hedge against `onnxruntime-node`
@@ -102,6 +105,15 @@ function scheduleUnload(): void {
  * memory; the alternative costs the app.
  */
 let loadedOnGpu = false
+
+/** Throws away the cached weights after a load failure — see local-stt. */
+export async function purgeLocalTts(): Promise<void> {
+  const { rm } = await import('node:fs/promises')
+  const dir = join(ttsCacheDir(), ...MODEL_ID.split('/'))
+  await rm(dir, { recursive: true, force: true }).catch(() => {})
+  loaded = null
+  console.warn('[local-tts] cleared a bad model cache; it will download again')
+}
 
 export function unloadLocalTts(): void {
   if (idleTimer) {
@@ -228,8 +240,14 @@ export async function localTtsInstalled(): Promise<boolean> {
   const dir = join(ttsCacheDir(), ...MODEL_ID.split('/'))
   if (!existsSync(dir)) return false
   try {
+    // Whole files, not just present ones — an interrupted download leaves a
+    // truncated .onnx that reports as installed and fails to parse for ever.
     const onnx = join(dir, 'onnx')
-    return existsSync(onnx) && readdirSync(onnx).some((name) => name.endsWith('.onnx'))
+    if (!existsSync(onnx)) return false
+    const { statSync } = await import('node:fs')
+    const weights = readdirSync(onnx).filter((name) => name.endsWith('.onnx'))
+    if (weights.length === 0) return false
+    return weights.every((name) => statSync(join(onnx, name)).size >= MIN_WEIGHT_BYTES)
   } catch {
     return false
   }

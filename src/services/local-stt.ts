@@ -42,6 +42,12 @@ const MODEL_ID = 'onnx-community/whisper-base'
 const DTYPE = 'fp32'
 
 /**
+ * Floor for a weights file. Whisper base's smallest part is 82MB, so anything
+ * under this is a truncated download rather than a real model.
+ */
+const MIN_WEIGHT_BYTES = 40_000_000
+
+/**
  * The device is decided by probing the GPU in a child process first.
  *
  * A WebGPU or DirectML failure here is a native crash, not a JS exception —
@@ -106,6 +112,21 @@ function scheduleUnload(): void {
  * memory; the alternative costs the app.
  */
 let loadedOnGpu = false
+
+/**
+ * Throws away the cached weights.
+ *
+ * Called when loading fails, because the overwhelmingly likely reason is a
+ * half-written file, and a bad cache that is never cleared is permanent: it
+ * keeps reporting itself as installed and failing for ever.
+ */
+export async function purgeLocalStt(): Promise<void> {
+  const { rm } = await import('node:fs/promises')
+  const dir = join(sttCacheDir(), ...MODEL_ID.split('/'))
+  await rm(dir, { recursive: true, force: true }).catch(() => {})
+  loaded = null
+  console.warn('[local-stt] cleared a bad model cache; it will download again')
+}
 
 export function unloadLocalStt(): void {
   if (idleTimer) {
@@ -179,8 +200,19 @@ export async function localSttInstalled(): Promise<boolean> {
   try {
     // A cache folder can exist with only a config in it after a failed fetch;
     // the weights are what actually matter.
+    //
+    // And the weights have to be *whole*. transformers.js writes straight to
+    // the cache, so a download cut off by a closed lid or a dropped connection
+    // leaves a truncated .onnx behind. Merely checking the file exists then
+    // reports the model as installed for ever: Setup shows it as ready, every
+    // load fails to parse, and Nimbus quietly falls back to the cloud - which
+    // needs a key, so on a machine without one it simply stops hearing.
     const onnx = join(dir, 'onnx')
-    return existsSync(onnx) && readdirSync(onnx).some((name) => name.endsWith('.onnx'))
+    if (!existsSync(onnx)) return false
+    const { statSync } = await import('node:fs')
+    const weights = readdirSync(onnx).filter((name) => name.endsWith('.onnx'))
+    if (weights.length === 0) return false
+    return weights.every((name) => statSync(join(onnx, name)).size >= MIN_WEIGHT_BYTES)
   } catch {
     return false
   }

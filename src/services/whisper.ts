@@ -1,6 +1,6 @@
 import { httpFetch } from './http'
 import { transcriptionHint } from './region'
-import { localSttInstalled, transcribeLocally, SAMPLE_RATE } from './local-stt'
+import { purgeLocalStt, localSttInstalled, transcribeLocally, SAMPLE_RATE } from './local-stt'
 
 const TRANSCRIPTION_URL = 'https://api.groq.com/openai/v1/audio/transcriptions'
 
@@ -145,6 +145,13 @@ export async function transcribeAudio(
       // that lost its device or a corrupted cache shouldn't make Nimbus deaf.
       const message = error instanceof Error ? error.message : String(error)
       console.error(`[whisper] on-device transcription failed, falling back to Groq: ${message}`)
+      // A parse failure means the weights on disk are not a model — almost
+      // always a download cut short. Clear them so the next install actually
+      // fetches something usable, instead of reporting "installed" for ever
+      // and silently needing a cloud key on every question.
+      if (/protobuf|deserial|invalid|corrupt|failed to load model/i.test(message)) {
+        await purgeLocalStt()
+      }
     }
   }
 
