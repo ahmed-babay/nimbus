@@ -9,6 +9,7 @@ import type {
   TransitCardData
 } from '../shared/types'
 import config from '../../config.json'
+import { describeFix, deviceLocation } from './device-location'
 
 /**
  * Distances, travel times and a drawn map — the "how far is that and how long
@@ -84,8 +85,22 @@ export async function geocode(query: string, near?: Place): Promise<Place | null
   }
 }
 
-/** Where the user is, when they say "from here". */
+/**
+ * Where the user is, when they say "from here".
+ *
+ * The device first, because it is the only source that is actually about this
+ * machine. config.location.home ships inside the installer, so trusting it
+ * first means every copy of Nimbus thinks it lives at the address of whoever
+ * built it — and IP geolocation, tried last, put this machine 30km away in the
+ * wrong city.
+ */
 export async function homeLocation(): Promise<Place | null> {
+  const fix = await deviceLocation()
+  if (fix) {
+    const name = await describeFix(fix)
+    return { name: name ?? 'your location', lat: fix.lat, lon: fix.lon }
+  }
+
   const configured = config.location?.home || config.transit?.defaultOrigin
   if (configured) {
     const place = await geocode(configured)

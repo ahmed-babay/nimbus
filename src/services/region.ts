@@ -1,4 +1,5 @@
 import config from '../../config.json'
+import { describeFix, deviceLocation } from './device-location'
 
 /**
  * Where the user is, and what language the places around them are named in.
@@ -11,8 +12,42 @@ import config from '../../config.json'
  * spelling, and the intent router, to correct what still comes through wrong.
  */
 
+/**
+ * Set from the device's own position when Windows will say where it is.
+ *
+ * Kept as a plain value rather than looked up on demand because everything
+ * that wants it - the transcriber's spelling bias, the intent router's place
+ * correction - is synchronous and runs on the critical path of answering. It
+ * is refreshed in the background instead.
+ */
+let livePlace = ''
+
 export function homeRegion(): string {
-  return config.location?.region || ''
+  // The device before config.json: that file ships inside the installer, so
+  // trusting it first means every copy of Nimbus believes it is wherever the
+  // person who built it happened to be.
+  return livePlace || config.location?.region || ''
+}
+
+/**
+ * Asks the machine where it is and remembers the answer.
+ *
+ * Never throws and never blocks anything: no fix simply leaves the configured
+ * region in place, which is exactly the old behaviour.
+ */
+export async function refreshPlace(): Promise<string> {
+  try {
+    const fix = await deviceLocation()
+    if (!fix) return livePlace
+    const name = await describeFix(fix)
+    if (name) {
+      if (name !== livePlace) console.log(`[location] you appear to be in ${name}`)
+      livePlace = name
+    }
+  } catch {
+    // Location is a nicety here; the configured region still works.
+  }
+  return livePlace
 }
 
 export function placeLanguage(): string {

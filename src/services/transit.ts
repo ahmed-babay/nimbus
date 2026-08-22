@@ -1,6 +1,7 @@
 import type { TransitCardData, TransitJourney, TransitLeg } from '../shared/types'
 import { httpFetch } from './http'
 import config from '../../config.json'
+import { deviceLocation } from './device-location'
 
 const BASE_URL = 'https://api.transitous.org/api/v1'
 
@@ -133,14 +134,31 @@ function clockTime(iso: string | undefined, timeZone: string): string {
  * then reuse the id on every poll — re-geocoding "Frankfurt" every thirty
  * seconds would be both wasteful and a way to drift onto a different stop.
  */
+/**
+ * The user's own position as a place the planner can use, or null.
+ *
+ * Kept local rather than imported from maps.ts to avoid a cycle: maps already
+ * imports transit for its departures.
+ */
+async function nearestPlace(): Promise<PlaceRef | null> {
+  const fix = await deviceLocation()
+  if (!fix) return null
+  return { lat: fix.lat, lon: fix.lon, name: 'here' }
+}
+
 export async function resolveStopId(
   query: string | undefined
 ): Promise<{ id: string; name: string } | null> {
-  const target = query || config.transit?.defaultOrigin
+  // The device before the configured station, for the same reason maps does:
+  // a station name baked into config.json belongs to whoever built the app.
+  // Transitous resolves coordinates to the nearest stop itself, so "from here"
+  // means from actually here.
+  const here = query ? null : await nearestPlace()
+  const target = query || here || config.transit?.defaultOrigin
   if (!target) return null
   const stop = await resolveStop(target)
   if (!stop?.id) return null
-  return { id: stop.id, name: stop.name ?? target }
+  return { id: stop.id, name: stop.name ?? placeLabel(target) }
 }
 
 /**
@@ -209,7 +227,7 @@ export async function findJourneys(
   departAfter?: string,
   arriveBy = false
 ): Promise<TransitCardData> {
-  const origin = from || config.transit?.defaultOrigin
+  const origin = from || (await nearestPlace()) || config.transit?.defaultOrigin
   if (!origin) {
     throw new Error(
       "I don't know where you're starting from. Say the station, or set transit.defaultOrigin in config.json."

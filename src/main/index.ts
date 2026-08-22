@@ -23,6 +23,7 @@ import type { TextActionKind } from '../shared/types'
 import { transcribeAudio } from '../services/whisper'
 import { endVadSession, resetVadSession, vadProbabilities, warmVad } from '../services/vad'
 import { considerInterruption } from '../services/interruptions'
+import { refreshPlace } from '../services/region'
 import { subtitleFor, type Subtitle } from '../services/subtitles'
 import { targetLanguage } from '../services/translate'
 import { heardWakeWord, wakeWordEnabled } from '../services/wake-word'
@@ -174,6 +175,9 @@ const OVERLAY_HIDE_REPAINT_MS = 180
 // it calls. Generous enough for a slow search, short enough that a stuck
 // dependency surfaces as an error rather than a spinner that never ends.
 const TURN_DEADLINE_MS = 25000
+
+/** How often to re-ask where the machine is. Laptops move; buildings don't. */
+const PLACE_REFRESH_MS = 15 * 60 * 1000
 
 let overlayWindow: BrowserWindow | null = null
 // Held only between the capture hotkey and the question that follows it, then
@@ -603,6 +607,12 @@ app.whenReady().then(() => {
   // request that waits for it. 2.2MB, and it is deliberately not awaited —
   // voice input falls back to the energy heuristic until it is ready.
   void warmVad()
+
+  // Where this machine is, asked once at startup and kept fresh. Everything
+  // that says "from here" - trains, directions, weather, the router's place
+  // correction - reads the answer, so it must not wait for it.
+  void refreshPlace()
+  setInterval(() => void refreshPlace(), PLACE_REFRESH_MS)
 
   startReminderScheduler({
     onDue: (reminder) => {
