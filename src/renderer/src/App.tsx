@@ -139,7 +139,7 @@ export default function App() {
             }}
             // Capped to the window so a long answer scrolls instead of being
             // clipped off the bottom with no way to reach it.
-            className="relative flex max-h-[calc(100vh-1rem)] w-[492px] flex-col overflow-hidden rounded-[20px] border border-nimbus-border bg-nimbus-bg backdrop-blur-[28px] backdrop-saturate-150"
+            className="relative flex max-h-[calc(100vh-1rem)] w-[492px] flex-col overflow-hidden rounded-[20px] border border-nimbus-border bg-nimbus-bg backdrop-blur-[32px] backdrop-saturate-[1.8] backdrop-brightness-105"
             // Depth from shadow and a hairline edge rather than a neon ring.
             // A glowing outline is the single strongest "toy" signal a panel
             // can send, and this one sits next to real work all day.
@@ -148,7 +148,13 @@ export default function App() {
               // things that make a translucent panel read as a pane of glass
               // sitting above the desktop rather than a hole cut into it.
               boxShadow:
-                '0 32px 80px -20px rgba(0,0,0,0.75), 0 4px 16px -4px rgba(0,0,0,0.5), inset 0 1px 0 0 rgba(255,255,255,0.10), inset 0 -1px 0 0 rgba(255,255,255,0.03)',
+                // The last two insets are the lensing: light gathering along
+                // the inside of the rim, brighter at the top where it enters.
+                // A real pane is brightest at its edges, which is the detail
+                // that separates glass from a flat translucent fill.
+                '0 32px 80px -20px rgba(0,0,0,0.75), 0 4px 16px -4px rgba(0,0,0,0.5), ' +
+                'inset 0 1px 0 0 rgba(255,255,255,0.14), inset 0 -1px 0 0 rgba(255,255,255,0.04), ' +
+                'inset 0 0 24px -8px rgba(255,255,255,0.10)',
               // Re-points the accent tokens at the current state's hue. Every
               // accented control inside — settings, the standing list, badges,
               // buttons — is written against these variables, so the whole card
@@ -169,6 +175,19 @@ export default function App() {
                 background:
                   'radial-gradient(120% 70% at 12% 0%, color-mix(in srgb, var(--color-nimbus-accent) 11%, transparent), transparent 60%)',
                 transition: 'background 500ms ease'
+              }}
+            />
+            {/* Specular sheen across the top third.
+                What separates glass from a tinted sheet is that it *reflects*
+                as well as transmits. A soft diagonal band of light near the top
+                is the cheapest convincing version of that, and it is what makes
+                the panel look like a physical pane catching a light source
+                rather than a rectangle with opacity on it. */}
+            <div
+              className="pointer-events-none absolute inset-x-0 top-0 h-2/5"
+              style={{
+                background:
+                  'linear-gradient(168deg, rgba(255,255,255,0.09) 0%, rgba(255,255,255,0.035) 38%, transparent 72%)'
               }}
             />
             {/* A single hairline of light along the top edge — enough to

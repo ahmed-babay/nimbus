@@ -56,10 +56,19 @@ const VOICE_SWELL = 0.16
  */
 const ENTRANCE_MS = 900
 
-/** How long one ring takes to travel out and fade. */
-const RIPPLE_MS = 900
-/** Gap between the three rings, so they read as one wave. */
-const RIPPLE_STAGGER_MS = 130
+/** How long one front takes to cross the panel and fade. */
+const RIPPLE_MS = 1400
+/** Gap between the three fronts, so they read as one swell. */
+const RIPPLE_STAGGER_MS = 190
+/**
+ * How wide the wave grows, in pixels.
+ *
+ * Bigger than the card on purpose. The orb sits near the left edge, so the
+ * front has to travel the full width plus the diagonal before it leaves the
+ * glass; anything smaller stops mid-panel and reads as a ring rather than a
+ * wave passing through.
+ */
+const WAVE_SPAN = 1250
 
 /**
  * Per-state hues, as [core, mid, rim] — dark to bright.
@@ -157,7 +166,7 @@ export function Orb({ state, searching = false, levelRef, size = 52 }: OrbProps)
    */
   const mountedAt = useRef(performance.now())
   /** The expanding rings emitted when Nimbus changes what it is doing. */
-  const rippleRefs = useRef<SVGCircleElement[]>([])
+  const waveRefs = useRef<HTMLDivElement[]>([])
   /**
    * When the mode last changed, and what it changed from.
    *
@@ -274,20 +283,24 @@ export function Orb({ state, searching = false, levelRef, size = 52 }: OrbProps)
       // spreading outward, not a border being drawn. Between transitions the
       // whole thing is invisible and costs two style writes.
       const sinceRipple = now - rippleAt.current
-      rippleRefs.current.forEach((ring, i) => {
-        if (!ring) return
+      waveRefs.current.forEach((front, i) => {
+        if (!front) return
         const delayed = sinceRipple - i * RIPPLE_STAGGER_MS
         if (rippleAt.current === 0 || delayed < 0 || delayed > RIPPLE_MS) {
-          ring.style.opacity = '0'
+          front.style.opacity = '0'
           return
         }
         const t = delayed / RIPPLE_MS
-        // Fast out, slowing as it goes, which is how a real ripple travels.
-        const eased = 1 - Math.pow(1 - t, 2.2)
-        ring.setAttribute('r', (37 + eased * 30).toFixed(2))
-        // Never quite reaching full strength, so it stays a suggestion.
-        ring.style.opacity = `${((1 - t) * 0.4).toFixed(3)}`
-        ring.setAttribute('stroke-width', (1.6 * (1 - t * 0.6)).toFixed(2))
+        // Fast out of the sphere, slowing as it spreads — how a ripple in
+        // water actually travels, and the reason a linear one looks mechanical.
+        const eased = 1 - Math.pow(1 - t, 2.6)
+        // Starts smaller than the sphere so the front emerges from inside it.
+        const scale = 0.03 + eased * 0.97
+        front.style.transform = `scale(${scale.toFixed(4)})`
+        // Fades in over the first fifth, then out. A front that starts at full
+        // strength looks like it was switched on rather than sent.
+        const fade = t < 0.2 ? t / 0.2 : 1 - (t - 0.2) / 0.8
+        front.style.opacity = `${(fade * 0.26).toFixed(3)}`
       })
 
       frame = requestAnimationFrame(tick)
@@ -316,6 +329,35 @@ export function Orb({ state, searching = false, levelRef, size = 52 }: OrbProps)
           transition: 'background 500ms ease'
         }}
       />
+
+      {/* The wave, sent across the whole panel rather than around the sphere.
+          Rendered from the orb's centre and left to overflow: the card clips
+          it, so what you see is a front crossing the glass and running off the
+          edges — the sonar pulse an iPhone shows when it finds another phone,
+          not a ring drawn around an object. */}
+      {[0, 1, 2].map((i) => (
+        <div
+          key={i}
+          ref={(node) => {
+            if (node) waveRefs.current[i] = node
+          }}
+          className="pointer-events-none absolute rounded-full will-change-transform"
+          style={{
+            left: '50%',
+            top: '50%',
+            width: WAVE_SPAN,
+            height: WAVE_SPAN,
+            marginLeft: -WAVE_SPAN / 2,
+            marginTop: -WAVE_SPAN / 2,
+            opacity: 0,
+            // A band, not a disc: transparent inside and out, bright only at
+            // the front. That is what makes it a travelling wave rather than a
+            // flash filling the panel.
+            background: `radial-gradient(circle, transparent 58%, ${rim} 66%, transparent 74%)`,
+            transition: 'background 500ms ease'
+          }}
+        />
+      ))}
 
       <div ref={rootRef} className="absolute inset-0 will-change-transform">
         <svg viewBox="0 0 100 100" className="h-full w-full overflow-visible">
@@ -415,26 +457,6 @@ export function Orb({ state, searching = false, levelRef, size = 52 }: OrbProps)
               style={{ transition: 'stroke 500ms ease' }}
             />
           </g>
-
-          {/* Transition rings. Outside the clip so they can leave the sphere,
-              and behind the rim so the edge still reads as the brightest
-              thing. Sized and faded entirely from the loop above. */}
-          {[0, 1, 2].map((i) => (
-            <circle
-              key={i}
-              ref={(node) => {
-                if (node) rippleRefs.current[i] = node
-              }}
-              cx="50"
-              cy="50"
-              r="37"
-              fill="none"
-              stroke={rim}
-              strokeWidth="1.6"
-              opacity="0"
-              style={{ transition: 'stroke 500ms ease' }}
-            />
-          ))}
 
           {/* Rim last, over the interior — the edge is the brightest thing. */}
           <circle cx="50" cy="50" r="37" fill="none" stroke={`url(#${id}-rim)`} strokeWidth="1.6" />
