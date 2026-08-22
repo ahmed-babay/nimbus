@@ -189,3 +189,35 @@ export async function describeFix(fix: DeviceFix): Promise<string | null> {
 export function forgetDeviceLocation(): void {
   cached = null
 }
+
+/**
+ * Whether the user is asking where they are.
+ *
+ * Worth answering deterministically rather than letting the model do it. Asked
+ * "do you know my location", it answered from the conversation instead — the
+ * user had once looked up a train from Mainz, so it decided they lived there.
+ * Inferring where somebody lives from a place they once asked about is the
+ * kind of confident wrongness that makes an assistant untrustworthy about
+ * everything else.
+ */
+export function asksWhereTheyAre(utterance: string): boolean {
+  return /(where am i|where i am|where we are|my location|my position|where do i live|wo bin ich|mein standort)/i.test(
+    utterance
+  )
+}
+
+/** A spoken answer to "where am I", straight from the device. */
+export async function describeWhereYouAre(): Promise<string> {
+  const fix = await deviceLocation()
+  if (!fix) {
+    return (
+      "I can't tell where you are — Windows location is switched off for Nimbus. " +
+      'You can turn it on in Windows Settings under Privacy and security, Location.'
+    )
+  }
+  const name = await describeFix(fix)
+  const precision = Number.isFinite(fix.accuracy) ? ` to within about ${Math.round(fix.accuracy)} metres` : ''
+  return name
+    ? `You're in ${name}${precision}, according to your device.`
+    : `You're at ${fix.lat.toFixed(3)}, ${fix.lon.toFixed(3)}${precision}.`
+}

@@ -495,7 +495,13 @@ export async function chat(utterance: string, onChunk?: StreamHandler): Promise<
     'Keep responses to 1-3 short sentences since they will be read aloud by text-to-speech. ' +
     'Do not use markdown, bullet points, or emoji. ' +
     'You are mid-conversation — refer back to what was already said when relevant.\n\n' +
+    'Where the user is comes only from the place context below, which is the ' +
+    'real position of their device. Never infer where they live or where they ' +
+    'are from places they have asked about: someone looking up a train from ' +
+    'Mainz is not in Mainz. With no place context, say you do not know rather ' +
+    'than guessing.\n\n' +
     `${replyLanguageContext()}\n\n` +
+    `${placeContext()}\n\n` +
     `${factsContext()}\n\n` +
     currentTimeContext()
 

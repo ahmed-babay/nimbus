@@ -45,6 +45,8 @@ import { getDirections, modeFromUtterance } from './maps'
 import { findStation } from './radio'
 import { recordTurn } from './conversation'
 import { describeRoutine, noteAsk, routinesNow } from './routines'
+import { asksWhereTheyAre, describeWhereYouAre } from './device-location'
+import { learnFrom } from './learn'
 import type { MemoryCardData, NimbusIntent, NimbusResponse, TravelMode } from '../shared/types'
 import config from '../../config.json'
 
@@ -118,6 +120,10 @@ export async function handleUtterance(
   // sitting in history when chat() appends it to its own `contents`.
   recordTurn('user', utterance)
   recordTurn('model', response.speech)
+  // Deliberately not awaited. Noticing that someone works in Frankfurt is
+  // worth much less than answering them promptly, and if the extraction fails
+  // nothing about this turn should change.
+  void learnFrom(utterance)
   // The archive keeps the full answer, not the spoken truncation — the whole
   // point of looking something up again is getting all of it back.
   if (intent !== 'recall' && intent !== 'remember') {
@@ -746,6 +752,15 @@ async function runIntent(
       }
 
       default: {
+        // Answered from the device, not the model. Asked "do you know my
+        // location" it replied from the conversation instead, deciding the
+        // user lived in Mainz because they had once looked up a train from
+        // there. This is a fact the machine holds; there is nothing for a
+        // language model to work out.
+        if (asksWhereTheyAre(utterance)) {
+          return { speech: await describeWhereYouAre(), card: { type: 'text' } }
+        }
+
         // Started before the answer so the pictures are fetched while the
         // model is still writing, rather than after it finishes.
         const pictures = tryIllustrate(params.topic)
