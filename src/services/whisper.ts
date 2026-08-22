@@ -1,6 +1,7 @@
 import { httpFetch } from './http'
 import { transcriptionHint } from './region'
-import { purgeLocalStt, localSttInstalled, transcribeLocally, SAMPLE_RATE } from './local-stt'
+import { purgeLocalStt, localSttInstalled, SAMPLE_RATE } from './local-stt'
+import { localVoiceAvailable, transcribeOutOfProcess } from '../main/speech-host'
 
 const TRANSCRIPTION_URL = 'https://api.groq.com/openai/v1/audio/transcriptions'
 
@@ -137,9 +138,12 @@ export async function transcribeAudio(
     throw new Error("I didn't catch that — the recording was too short.")
   }
 
-  if (await localSttInstalled()) {
+  if (localVoiceAvailable() && (await localSttInstalled())) {
     try {
-      return await transcribeLocally(pcm, { language: options.language })
+      // Out of process: Whisper on WebGPU takes the whole process down when
+      // its GPU device is freed, which the collector can do at any moment.
+      // See main/speech-host.ts.
+      return await transcribeOutOfProcess(pcm, options.language)
     } catch (error) {
       // Falling through to the cloud is better than failing outright — a GPU
       // that lost its device or a corrupted cache shouldn't make Nimbus deaf.

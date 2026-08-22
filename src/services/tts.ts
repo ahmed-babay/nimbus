@@ -1,7 +1,7 @@
 import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts'
 import config from '../../config.json'
 import { purgeLocalTts, localTtsInstalled, localTtsSupportsLanguage, localVoiceName } from './local-tts'
-import { localVoiceAvailable, speakOutOfProcess } from '../main/tts-host'
+import { localVoiceAvailable, speakOutOfProcess } from '../main/speech-host'
 
 const VOICE = process.env.TTS_VOICE || 'en-GB-SoniaNeural'
 

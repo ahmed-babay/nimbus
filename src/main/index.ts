@@ -24,7 +24,7 @@ import { transcribeAudio } from '../services/whisper'
 import { endVadSession, resetVadSession, vadProbabilities, warmVad } from '../services/vad'
 import { considerInterruption } from '../services/interruptions'
 import { refreshPlace } from '../services/region'
-import { stopTtsHost } from './tts-host'
+import { stopSpeechHost } from './speech-host'
 import { subtitleFor, type Subtitle } from '../services/subtitles'
 import { targetLanguage } from '../services/translate'
 import { heardWakeWord, wakeWordEnabled } from '../services/wake-word'
@@ -771,5 +771,5 @@ app.on('will-quit', () => {
   unregisterHotkey()
   // Ends the voice process cleanly. Without this it is killed with the GPU
   // device still live, which is the fault this whole arrangement avoids.
-  stopTtsHost()
+  stopSpeechHost()
 })
