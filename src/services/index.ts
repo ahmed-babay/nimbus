@@ -45,7 +45,7 @@ import { getDirections, modeFromUtterance } from './maps'
 import { findStation } from './radio'
 import { recordTurn } from './conversation'
 import { describeRoutine, noteAsk, routinesNow } from './routines'
-import { asksWhereTheyAre, describeWhereYouAre } from './device-location'
+import { asksWhereTheyAre, describeWhereYouAre, meansFromHere } from './device-location'
 import { learnFrom } from './learn'
 import type { MemoryCardData, NimbusIntent, NimbusResponse, TravelMode } from '../shared/types'
 import config from '../../config.json'
@@ -153,6 +153,21 @@ async function runIntent(
   onSearching?: (active: boolean) => void
 ): Promise<NimbusResponse> {
   try {
+    // Before the switch, deliberately. "Where am I" was being classified as a
+    // memory lookup and answered "nothing saved for that", because the check
+    // for it lived inside the chat branch and chat was never reached. Where
+    // the machine is is not a question any intent should get to answer: it is
+    // a fact the operating system holds, and no router should stand between
+    // the user and it.
+    //
+    // The router's own classification comes first, so this works for any
+    // phrasing rather than the handful someone thought to list. The phrase
+    // test behind it is only a backstop for when the router drops the intent,
+    // which this one does often enough to matter.
+    if (intent === 'location' || asksWhereTheyAre(utterance)) {
+      return { speech: await describeWhereYouAre(), card: { type: 'text' } }
+    }
+
     switch (intent) {
       case 'weather': {
         if (!config.integrations.weather) {
@@ -348,13 +363,20 @@ async function runIntent(
         const destination = params.to
         if (!destination) throw new Error("I didn't catch where you're heading.")
 
+        // "From my place" means from the device, not from whichever station
+        // the router inferred from earlier conversation. Dropping the guess is
+        // what lets transit fall through to the real position. The router
+        // decides, so any wording works; the phrase test is the backstop.
+        const startsHere = params.fromHere === 'yes' || meansFromHere(utterance)
+        const origin = startsHere ? undefined : params.from
+
         // "…and keep me posted" turns a lookup into a standing watch. The
         // classifier's own flag is checked first and the phrase test is the
         // backstop: the router is better at "notify me if it's delayed" than a
         // regex can be, but the regex catches the case where it forgets.
         if (params.watch === 'yes' || wantsWatching(utterance)) {
-          const { watch, speech } = await watchJourney(params.from, destination, params.when)
-          const data = await findJourneys(params.from, destination, watch.scheduledDeparture)
+          const { watch, speech } = await watchJourney(origin, destination, params.when)
+          const data = await findJourneys(origin, destination, watch.scheduledDeparture)
           return { speech, card: { type: 'transit', data } }
         }
 
@@ -362,7 +384,7 @@ async function runIntent(
         // braces as the watch flag above: the router's own answer first, the
         // sentence itself as the backstop when it omits the enum.
         const arriveBy = params.timeMode === 'arrive' || wantsArrival(utterance)
-        const data = await findJourneys(params.from, destination, params.when, arriveBy)
+        const data = await findJourneys(origin, destination, params.when, arriveBy)
         const speech = await formatResponse('transit', utterance, data, onChunk)
         return { speech, card: { type: 'transit', data } }
       }
@@ -417,7 +439,8 @@ async function runIntent(
         const destination = params.to
         if (!destination) throw new Error("I didn't catch where you want to go.")
         const data = await getDirections(
-          params.from,
+          // Same as transit: starting where you are outranks any guess.
+          params.fromHere === 'yes' || meansFromHere(utterance) ? undefined : params.from,
           destination,
           (params.mode as TravelMode) || modeFromUtterance(utterance)
         )
@@ -472,7 +495,11 @@ async function runIntent(
           // so the two agree about what was asked.
           const deadline =
             params.timeMode === 'arrive' || wantsArrival(utterance) ? params.when : undefined
-          const alarm = await planDepartureAlarm(params.leaveFor, params.from, deadline)
+          const alarm = await planDepartureAlarm(
+            params.leaveFor,
+            params.fromHere === 'yes' || meansFromHere(utterance) ? undefined : params.from,
+            deadline
+          )
           const created = addReminder({
             at: alarm.at,
             text: alarm.text,
@@ -752,15 +779,6 @@ async function runIntent(
       }
 
       default: {
-        // Answered from the device, not the model. Asked "do you know my
-        // location" it replied from the conversation instead, deciding the
-        // user lived in Mainz because they had once looked up a train from
-        // there. This is a fact the machine holds; there is nothing for a
-        // language model to work out.
-        if (asksWhereTheyAre(utterance)) {
-          return { speech: await describeWhereYouAre(), card: { type: 'text' } }
-        }
-
         // Started before the answer so the pictures are fetched while the
         // model is still writing, rather than after it finishes.
         const pictures = tryIllustrate(params.topic)

@@ -201,7 +201,7 @@ export function forgetDeviceLocation(): void {
  * everything else.
  */
 export function asksWhereTheyAre(utterance: string): boolean {
-  return /(where am i|where i am|where we are|my location|my position|where do i live|wo bin ich|mein standort)/i.test(
+  return /\b(where am i|where i am|where we are|my location|my position|where do i live|wo bin ich|mein standort)\b/i.test(
     utterance
   )
 }
@@ -220,4 +220,19 @@ export async function describeWhereYouAre(): Promise<string> {
   return name
     ? `You're in ${name}${precision}, according to your device.`
     : `You're at ${fix.lat.toFixed(3)}, ${fix.lon.toFixed(3)}${precision}.`
+}
+
+/**
+ * Whether the user said the journey starts where they are.
+ *
+ * Needed because the router fills in a starting station from context when it
+ * has none, and a guess beats the real answer: asked to check transport "from
+ * my place", it supplied Darmstadt Hauptbahnhof and the device was never
+ * consulted. When someone says "from here" they mean here, and no amount of
+ * conversational context should be allowed to override that.
+ */
+export function meansFromHere(utterance: string): boolean {
+  return /\bfrom (here|my (place|location|position|home|house|flat|apartment|side)|where i (am|live)|my current (location|position))\b|\bvon (hier|mir|meinem (ort|standort|zuhause))\b/i.test(
+    utterance
+  )
 }

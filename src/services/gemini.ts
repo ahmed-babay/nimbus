@@ -44,6 +44,7 @@ const VALID_INTENTS: NimbusIntent[] = [
   'alarm',
   'event',
   'briefing',
+  'location',
   'chat'
 ]
 
@@ -89,7 +90,18 @@ the relevant parameter for it, leaving the others empty:
   Frankfurt", "are there trains in the next hour", "what time is the last
   S-Bahn". This is about departure times specifically.
   -> params.to (destination place or station — required)
-  -> params.from (starting station; omit if the user didn't say one)
+  -> params.from (starting station. Omit it unless the user NAMED a station in
+     this sentence. Never fill it in from earlier messages, from where you
+     think they live, or from a station mentioned in a previous question -
+     Nimbus knows where the device actually is and uses that when this is
+     empty, which is always better than a guess.)
+  -> params.fromHere ("yes" when the journey starts wherever the user
+     currently is, "no" when they named a starting place.
+     "yes" for: "from here", "from my place", "from where I am", "from my
+     location", "from my side", "from my house", "starting where I am now",
+     and for any phrasing that means their current position however they
+     word it. Also "yes" when they named no starting point at all.
+     "no" only when they named an actual place to start from.)
   -> params.when (ISO 8601 datetime if they named a time like "at 6pm" or
      "tomorrow morning"; omit for now/next departures)
   -> params.timeMode ("arrive" when the time they named is when they need to
@@ -221,6 +233,12 @@ the relevant parameter for it, leaving the others empty:
   The difference from "alarm": an alarm fires once at a minute, an event
   occupies whole days and is worth mentioning on each of them. The difference
   from "remember": a fact stays true indefinitely, an event finishes.
+- "location": asking where they are, or what Nimbus knows about their
+  position - "where am I", "do you know my location", "which city am I in",
+  "do you know where I live", "what's my current position", "wo bin ich".
+  Nimbus reads this from the device itself, so no parameters are needed.
+  This is NOT for asking where some other place is ("where is Frankfurt") -
+  that is "search" or "directions".
 - "briefing": asking for the overall picture of their day rather than one
   fact — "what does my day look like", "brief me", "catch me up", "what's
   happening today", "good morning" said as a request rather than a greeting.
@@ -276,6 +294,7 @@ const CLASSIFY_SCHEMA: GenerationConfig = {
           to: { type: SchemaType.STRING },
           when: { type: SchemaType.STRING },
           timeMode: { type: SchemaType.STRING, enum: ['depart', 'arrive'], format: 'enum' },
+          fromHere: { type: SchemaType.STRING, enum: ['yes', 'no'], format: 'enum' },
           // A real two-way choice rather than an optional "yes". The local
           // model decodes under a grammar that must emit every property, so a
           // single-value enum would make every transit question a watch.

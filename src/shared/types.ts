@@ -50,6 +50,7 @@ export type NimbusIntent =
   | 'alarm'
   | 'event'
   | 'briefing'
+  | 'location'
   | 'chat'
 
 export interface IntentClassification {
