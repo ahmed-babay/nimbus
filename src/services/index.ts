@@ -44,6 +44,7 @@ import { watchOutdoors, wantsOutdoorWatch, outdoorWatchMode } from './outdoor-wa
 import { getDirections, modeFromUtterance } from './maps'
 import { findStation } from './radio'
 import { recordTurn } from './conversation'
+import { describeRoutine, noteAsk, routinesNow } from './routines'
 import type { MemoryCardData, NimbusIntent, NimbusResponse, TravelMode } from '../shared/types'
 import config from '../../config.json'
 
@@ -131,6 +132,9 @@ async function resolveUtterance(
   onSearching?: (active: boolean) => void
 ): Promise<NimbusResponse & { intent: NimbusIntent }> {
   const { intent, params } = await classifyIntent(utterance)
+  // Noted before running it, so a question still counts even if the lookup
+  // fails. What is being learned is what you asked for, not what came back.
+  noteAsk(intent, params)
   const response = await runIntent(intent, params, utterance, onChunk, onSearching)
   return { ...response, intent }
 }
@@ -594,7 +598,12 @@ async function runIntent(
               to: data.commute?.to
             })),
             reminders: data.reminders.map((reminder) => reminder.text),
-            headlines: data.news?.articles.map((article) => article.title)
+            headlines: data.news?.articles.map((article) => article.title),
+            // What this person checks at roughly this time on most days. Given
+            // to the model as context rather than read out as a list: the
+            // useful behaviour is a briefing that already covers the usual
+            // things, not one that announces it knows your habits.
+            usuallyChecksNow: routinesNow().slice(0, 3).map(describeRoutine)
           },
           onChunk
         )

@@ -523,6 +523,11 @@ export async function formatResponse(
     'You turn structured data into a short, natural spoken sentence (1-3 sentences max) ' +
     'for a voice assistant named Nimbus. Do not use markdown, bullet points, or emoji ' +
     'since this will be spoken aloud by text-to-speech.\n\n' +
+    'If the data has "usuallyChecksNow", those are the things this person ' +
+    'looks at around this time on most days - lead with them where the data ' +
+    'covers them. Never mention noticing a habit and never read that list ' +
+    'back. Being told what you always do is irritating; knowing it should ' +
+    'only show as having the answer ready already.\n\n' +
     `${replyLanguageContext()}\n\n` +
     currentTimeContext()
 
