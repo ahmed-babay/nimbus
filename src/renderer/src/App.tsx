@@ -46,6 +46,7 @@ export default function App() {
     isOpen,
     submitText,
     onTypingStart,
+    answerSeq,
     micEnabled,
     toggleMic,
     ttsEnabled,
@@ -238,7 +239,7 @@ export default function App() {
                     to its content, so it grew past the card and got clipped
                     instead of scrolling. The orb pins itself with self-start. */}
                 <div className="mt-2.5 flex min-h-0 flex-1 gap-3.5">
-                  <Orb state={state} searching={searching} levelRef={levelRef} />
+                  <Orb state={state} searching={searching} answerSeq={answerSeq} levelRef={levelRef} />
 
                   <div className="nimbus-scroll min-h-0 min-w-0 flex-1 overflow-y-auto pr-1 pt-0.5">
                     {/* An existing answer stays on screen while listening for a

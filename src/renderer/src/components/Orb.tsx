@@ -5,6 +5,15 @@ import { STATE_THEME, orbModeFor } from '../lib/state-theme'
 interface OrbProps {
   state: NimbusState
   /**
+   * Increments whenever Nimbus answers.
+   *
+   * The swell used to key off entering the 'speaking' state, which never
+   * happens when spoken answers are muted — so turning the voice off silently
+   * removed the animation too. Answering is the event worth marking; saying it
+   * aloud is only one way of doing it.
+   */
+  answerSeq?: number
+  /**
    * True while a web search is actually in flight. Not a state of its own —
    * Nimbus is still "thinking" as far as the rest of the app is concerned —
    * but reaching out to the network reads differently from turning an
@@ -163,7 +172,7 @@ const MOTES = [
   { fx: 1, fy: 2, phase: 3.4, reach: 12, radius: 13, opacity: 0.5 }
 ]
 
-export function Orb({ state, searching = false, levelRef, size = 52 }: OrbProps) {
+export function Orb({ state, searching = false, answerSeq = 0, levelRef, size = 52 }: OrbProps) {
   const mode = orbModeFor(state, searching)
   const rootRef = useRef<HTMLDivElement>(null)
   const bloomRef = useRef<HTMLDivElement>(null)
@@ -196,21 +205,21 @@ export function Orb({ state, searching = false, levelRef, size = 52 }: OrbProps)
   const lastMode = useRef(mode)
 
   useEffect(() => {
-    const previous = lastMode.current
-    if (previous === mode) return
     lastMode.current = mode
-    // Only when Nimbus begins to answer.
-    //
-    // Firing on every transition meant a wave went out when it stopped
-    // listening too, which is the moment the user has just finished talking
-    // and is waiting — a flourish there says "something happened" when nothing
-    // has yet. Reserved for the answer, it means one thing and reads as the
-    // voice arriving.
-    if (mode === 'speaking') {
-      rippleAt.current = performance.now()
-      waveTilt.current = (Math.random() * 2 - 1) * WAVE_TILT_RANGE
-    }
   }, [mode])
+
+  // One swell per answer, spoken or not.
+  //
+  // Keyed to the answer rather than the 'speaking' state, because that state
+  // never arrives when the voice is muted - so muting the voice silently
+  // removed the animation too. And not on every transition: firing when it
+  // stopped listening put a flourish at the moment the user has just finished
+  // talking and is waiting, which says something happened when nothing has.
+  useEffect(() => {
+    if (answerSeq === 0) return
+    rippleAt.current = performance.now()
+    waveTilt.current = (Math.random() * 2 - 1) * WAVE_TILT_RANGE
+  }, [answerSeq])
 
   useEffect(() => {
     let frame = 0

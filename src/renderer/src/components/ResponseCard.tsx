@@ -924,6 +924,29 @@ function duration(minutes: number | null): string {
  * made the map unreadable.
  */
 /**
+ * How long the view must sit still before tiles are fetched.
+ *
+ * Short enough to feel immediate when you let go of a drag, long enough that
+ * the drag itself makes one request instead of sixty.
+ */
+const TILE_SETTLE_MS = 140
+
+/**
+ * Tiles kept in memory. Each is a base64 image of roughly 20KB, so this is a
+ * few megabytes at most — and without a ceiling a long session of panning
+ * accumulates them until something gives.
+ */
+const MAX_CACHED_TILES = 220
+
+/** Keeps the view inside the world vertically; longitude wraps, latitude does not. */
+function clampTop(top: number, zoom: number, height: number): number {
+  const world = TILE_SIZE * 2 ** zoom
+  // A world smaller than the viewport just centres.
+  if (world <= height) return (world - height) / 2
+  return Math.max(0, Math.min(world - height, top))
+}
+
+/**
  * A map you can actually move.
  *
  * The previous version drew a fixed set of tiles at coordinates the main
@@ -950,6 +973,9 @@ function RouteMap({ map, mode }: { map: RenderedMap; mode: TravelMode }) {
     )
   )
   const dragging = useRef<{ x: number; y: number } | null>(null)
+  /** Mirrors the cache so the fetch effect can read it without depending on it. */
+  const tilesRef = useRef(tiles)
+  tilesRef.current = tiles
   const requested = useRef(new Set<string>())
 
   // A new answer means a new route; go back to the view it was framed for.
@@ -959,34 +985,59 @@ function RouteMap({ map, mode }: { map: RenderedMap; mode: TravelMode }) {
 
   const needed = tilesCovering(view.left, view.top, map.width, map.height, view.zoom)
 
-  // Fetch whatever this view needs and we do not already hold. Asking once per
-  // key, ever, is what stops a drag turning into hundreds of duplicate calls.
+  /**
+   * Fetches what this view needs, once the view has stopped changing.
+   *
+   * Deliberately not on every view change. A drag fires pointermove about
+   * sixty times a second, and fetching on each one turned one pan into dozens
+   * of IPC round trips a second, every one of them carrying up to twenty-four
+   * base64 tiles. That is hundreds of kilobytes per frame through IPC — enough
+   * to exhaust memory and take the app down, and enough to look like abuse to
+   * a volunteer-run tile server. Waiting for the movement to settle costs a
+   * fraction of a second and turns a whole drag into one request.
+   */
   useEffect(() => {
-    const missing = needed
-      .map((tile) => ({ key: `${view.zoom}/${tile.wrapped}/${tile.row}`, tile }))
-      .filter(({ key }) => !tiles[key] && !requested.current.has(key))
-    if (missing.length === 0) return
+    const timer = setTimeout(() => {
+      const missing = tilesCovering(view.left, view.top, map.width, map.height, view.zoom)
+        .map((tile) => ({ key: `${view.zoom}/${tile.wrapped}/${tile.row}`, tile }))
+        .filter(({ key }) => !tilesRef.current[key] && !requested.current.has(key))
+      if (missing.length === 0) return
 
-    for (const { key } of missing) requested.current.add(key)
-    let cancelled = false
-    void window.nimbus
-      .mapTiles(
-        view.zoom,
-        missing.map(({ tile }) => ({ col: tile.wrapped, row: tile.row }))
-      )
-      .then((fetched) => {
-        if (cancelled || fetched.length === 0) return
-        setTiles((current) => {
-          const next = { ...current }
-          for (const tile of fetched) next[`${view.zoom}/${tile.col}/${tile.row}`] = tile.image
-          return next
+      for (const { key } of missing) requested.current.add(key)
+      void window.nimbus
+        .mapTiles(
+          view.zoom,
+          missing.map(({ tile }) => ({ col: tile.wrapped, row: tile.row }))
+        )
+        .then((fetched) => {
+          // Anything that did not come back is un-requested, or a tile that
+          // failed once would stay blank for the life of the panel.
+          const returned = new Set(fetched.map((tile) => `${view.zoom}/${tile.col}/${tile.row}`))
+          for (const { key } of missing) if (!returned.has(key)) requested.current.delete(key)
+          if (fetched.length === 0) return
+
+          setTiles((current) => {
+            const next = { ...current }
+            for (const tile of fetched) next[`${view.zoom}/${tile.col}/${tile.row}`] = tile.image
+            // Bounded. Every tile is a base64 image held in memory, and a long
+            // session of panning would otherwise accumulate them without limit.
+            const keys = Object.keys(next)
+            if (keys.length > MAX_CACHED_TILES) {
+              for (const key of keys.slice(0, keys.length - MAX_CACHED_TILES)) {
+                delete next[key]
+                requested.current.delete(key)
+              }
+            }
+            return next
+          })
         })
-      })
-    return () => {
-      cancelled = true
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view.zoom, view.left, view.top, tiles])
+        .catch(() => {
+          for (const { key } of missing) requested.current.delete(key)
+        })
+    }, TILE_SETTLE_MS)
+
+    return () => clearTimeout(timer)
+  }, [view.zoom, view.left, view.top, map.width, map.height])
 
   const project = (point: [number, number]): [number, number] => [
     worldX(point[1], view.zoom) - view.left,
@@ -1007,7 +1058,7 @@ function RouteMap({ map, mode }: { map: RenderedMap; mode: TravelMode }) {
       return {
         zoom: next,
         left: (current.left + atX) * factor - atX,
-        top: (current.top + atY) * factor - atY
+        top: clampTop((current.top + atY) * factor - atY, next, map.height)
       }
     })
   }
@@ -1026,7 +1077,15 @@ function RouteMap({ map, mode }: { map: RenderedMap; mode: TravelMode }) {
         const dx = event.clientX - from.x
         const dy = event.clientY - from.y
         dragging.current = { x: event.clientX, y: event.clientY }
-        setView((current) => ({ ...current, left: current.left - dx, top: current.top - dy }))
+        setView((current) => ({
+          ...current,
+          left: current.left - dx,
+          // Vertically the world ends; horizontally it wraps. Without this
+          // clamp a few flicks upward put the view thousands of pixels above
+          // the north pole, where every row is out of range and the map is
+          // simply blank with no way back.
+          top: clampTop(current.top - dy, current.zoom, map.height)
+        }))
       }}
       onPointerUp={(event) => {
         dragging.current = null
@@ -1046,7 +1105,10 @@ function RouteMap({ map, mode }: { map: RenderedMap; mode: TravelMode }) {
           if (!image) return null
           return (
             <img
-              key={`${tile.col}-${tile.row}`}
+              // Keyed by the wrapped column, not the raw one: the raw column
+              // grows without bound as you pan, so React saw a brand new image
+              // on every step and remounted rather than moved it.
+              key={`${tile.wrapped}-${tile.row}`}
               src={image}
               alt=""
               draggable={false}

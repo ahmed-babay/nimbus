@@ -48,6 +48,8 @@ export interface NimbusOverlayState {
   /** Call when the user starts typing, to close the mic. */
   onTypingStart: () => void
   /** Whether speech input is enabled, and its toggle. */
+  /** Increments each time Nimbus answers, spoken or not. */
+  answerSeq: number
   micEnabled: boolean
   toggleMic: () => void
   /** Whether answers are spoken aloud, and its toggle. */
@@ -121,6 +123,8 @@ export function useNimbus(): NimbusOverlayState {
    *  only this toggle does, so both input methods stay available. */
   const [micEnabled, setMicEnabled] = useState(true)
   const micEnabledRef = useRef(true)
+  /** Bumped on every answer, so the orb can react without knowing about TTS. */
+  const [answerSeq, setAnswerSeq] = useState(0)
   const [ttsEnabled, setTtsEnabled] = useState(true)
   const ttsEnabledRef = useRef(true)
   useEffect(() => {
@@ -374,6 +378,13 @@ export function useNimbus(): NimbusOverlayState {
     // room, which is exactly how ambient noise became hallucinated questions.
     (text: string, thenListen = true) => {
       if (!isOpenRef.current) return
+
+      // Marks the moment Nimbus answers, whether or not it says it out loud.
+      // The orb's swell was keyed to the 'speaking' state, which never arrives
+      // with the voice muted — so muting the voice silently removed the
+      // animation too. Answering is the event; speaking is only one way of
+      // doing it.
+      setAnswerSeq((current) => current + 1)
 
       // Muted: show the answer, skip the voice, and carry on to the next turn.
       if (!ttsEnabledRef.current) {
@@ -998,6 +1009,7 @@ export function useNimbus(): NimbusOverlayState {
     isOpen,
     submitText,
     onTypingStart: handleTypingStart,
+    answerSeq,
     micEnabled,
     toggleMic,
     ttsEnabled,
