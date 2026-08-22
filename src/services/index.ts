@@ -41,7 +41,7 @@ import { convertCurrency, currencyCode, describeConversion } from './currency'
 import { upcomingHolidays, describeHolidays } from './holidays'
 import { defineWord, describeDefinition } from './dictionary'
 import { watchOutdoors, wantsOutdoorWatch, outdoorWatchMode } from './outdoor-watch'
-import { getDirections, modeFromUtterance } from './maps'
+import { getDirections, modeFromUtterance, wantsMap } from './maps'
 import { findStation } from './radio'
 import { recordTurn } from './conversation'
 import { describeRoutine, noteAsk, routinesNow } from './routines'
@@ -357,6 +357,21 @@ async function runIntent(
       }
 
       case 'transit': {
+        // "Trains to Frankfurt and show me the map" is a departure board plus a
+        // picture, and only the directions answer carries a picture - it
+        // includes the departures too, so nothing is lost by answering there.
+        // Routed as plain transit it returned the times and no map at all,
+        // which reads as the map being broken.
+        if (config.integrations.maps && params.to && wantsMap(utterance)) {
+          const data = await getDirections(
+            params.fromHere === 'yes' || meansFromHere(utterance) ? undefined : params.from,
+            params.to,
+            'transit'
+          )
+          const speech = await formatResponse('directions', utterance, data, onChunk)
+          return { speech, card: { type: 'directions', data } }
+        }
+
         if (!config.integrations.transit) {
           throw new Error('Transit lookups are disabled in config.json.')
         }

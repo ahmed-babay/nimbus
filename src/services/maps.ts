@@ -452,3 +452,20 @@ async function transitOption(from: Place, to: Place): Promise<TransitCardData | 
     return null
   }
 }
+
+
+/**
+ * Whether the user asked to see it on a map.
+ *
+ * This decides which intent should answer, not just how it is phrased.
+ * "Trains to Frankfurt" is a departure board; "trains to Frankfurt and show me
+ * the map" is the same question with a picture, and only the directions answer
+ * carries one - it already includes the departures, so routing there loses
+ * nothing and gains the map. Asked for both, Nimbus was showing only the
+ * times, which reads as the map being broken.
+ */
+export function wantsMap(utterance: string): boolean {
+  return /\b(maps?|show me (the )?(route|way|map)|on (the|a) map|draw|visual(ly|ise|ize)?|karte)\b/i.test(
+    utterance
+  )
+}
