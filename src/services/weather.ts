@@ -13,6 +13,24 @@ interface OpenWeatherResponse {
 /**
  * OpenWeatherMap free tier: https://openweathermap.org/api
  */
+/**
+ * A place name worth reading aloud.
+ *
+ * Keeps the user's own wording when it plainly refers to the same place, so
+ * "Darmstadt" stays "Darmstadt" rather than becoming the district that
+ * contains it.
+ */
+function prettyPlace(asked: string, returned: string): string {
+  const wanted = asked.trim()
+  if (!wanted) return returned
+  const simple = returned.replace(/^(Regierungsbezirk|Landkreis|Kreis|Bezirk|Provincia di|Province of)\s+/i, '')
+  if (simple.toLowerCase() === wanted.toLowerCase()) return simple
+  // The API name still contains what was asked for - "Darmstadt" inside
+  // "Regierungsbezirk Darmstadt" - so the shorter, asked-for form wins.
+  if (simple.toLowerCase().includes(wanted.toLowerCase())) return wanted
+  return simple
+}
+
 export async function getWeather(city: string): Promise<WeatherCardData> {
   const apiKey = process.env.OPENWEATHER_API_KEY
   if (!apiKey) {
@@ -32,7 +50,12 @@ export async function getWeather(city: string): Promise<WeatherCardData> {
   const json = (await res.json()) as OpenWeatherResponse
 
   return {
-    city: json.name,
+    // OpenWeather answers with whatever administrative area contains the
+    // coordinates, which for Darmstadt is "Regierungsbezirk Darmstadt" - a
+    // government district nobody calls their home town. Prefer what the user
+    // actually asked for; fall back to the API's name only when they asked
+    // for nothing in particular.
+    city: prettyPlace(city, json.name),
     temp: Math.round(json.main.temp),
     feelsLike: Math.round(json.main.feels_like),
     condition: json.weather?.[0]?.description ?? 'unknown',
