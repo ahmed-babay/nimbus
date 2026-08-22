@@ -33,7 +33,14 @@ import { usableBackend } from './gpu-probe'
 /** Loading the model is slow; speaking is not. This covers both. */
 const REQUEST_TIMEOUT_MS = 30_000
 
-/** Consecutive crashes before the on-device voice is given up on entirely. */
+/**
+ * Consecutive crashes before the on-device models are given up on.
+ *
+ * Consecutive, not cumulative. The fault this guards against is known and
+ * occasional, so a crash after two hundred good answers is wear, not a broken
+ * install - counting those would switch the fast local path off for everyone
+ * eventually, on a machine where it was working perfectly well.
+ */
 const MAX_RESTARTS = 3
 
 interface Reply {
@@ -193,8 +200,14 @@ function start(device: string): ChildProcess | null {
         if (!entry) continue
         pending.delete(message.id)
         clearTimeout(entry.timer)
-        if (message.ok) entry.resolve({ audio: message.audio, text: message.text })
-        else entry.reject(new Error(message.error ?? 'The on-device speech model failed.'))
+        if (message.ok) {
+          // A good answer means the process is healthy again, so the crash
+          // budget starts over.
+          restarts = 0
+          entry.resolve({ audio: message.audio, text: message.text })
+        } else {
+          entry.reject(new Error(message.error ?? 'The on-device speech model failed.'))
+        }
       } catch {
         // A partial or malformed line is not worth tearing anything down for.
       }
