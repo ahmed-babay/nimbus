@@ -7,6 +7,8 @@ export const IPC = {
   TRANSCRIPT: 'nimbus:transcript',
   /** renderer -> main (invoke): recorded mic audio (ArrayBuffer + mimeType), returns the transcript string */
   TRANSCRIBE_AUDIO: 'nimbus:transcribe-audio',
+  /** renderer -> main (invoke): map tiles for a view the user panned to */
+  MAP_TILES: 'nimbus:map-tiles',
   /** renderer -> main (invoke): things Nimbus held back rather than interrupting with */
   GET_MISSED: 'nimbus:get-missed',
   /** renderer -> main (invoke): mark held items as seen */

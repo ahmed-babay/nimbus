@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion'
-import { useState, type RefObject } from 'react'
+import { useEffect, useRef, useState, type RefObject } from 'react'
+import { MAX_ZOOM, MIN_ZOOM, TILE_SIZE, tilesCovering, worldX, worldY } from '@shared/mercator'
 import type { RadioPlayerControls } from '../hooks/useRadioPlayer'
 import { ImageCarousel } from './ImageCarousel'
 import { Sparkline } from './Sparkline'
@@ -922,30 +923,142 @@ function duration(minutes: number | null): string {
  * colours — an earlier version inverted them to match the dark overlay, which
  * made the map unreadable.
  */
+/**
+ * A map you can actually move.
+ *
+ * The previous version drew a fixed set of tiles at coordinates the main
+ * process had baked in, which made it a picture of a map: correct at exactly
+ * one zoom and one position, and dead to the touch. Everything here is
+ * reprojected from latitude and longitude on every frame instead, so dragging
+ * and zooming are just changes to two numbers.
+ *
+ * Tiles still come from the main process — the overlay's CSP blocks remote
+ * images — and are cached by zoom and tile index so panning back over ground
+ * you have already seen costs nothing.
+ */
 function RouteMap({ map, mode }: { map: RenderedMap; mode: TravelMode }) {
-  const points = map.routes[mode]
-  const path = points?.map(([x, y]) => `${x},${y}`).join(' ')
+  const [view, setView] = useState({ zoom: map.zoom, left: map.left, top: map.top })
+  /** Tiles already fetched, keyed "zoom/col/row". */
+  const [tiles, setTiles] = useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      map.tiles.map((tile) => [
+        // The first render's tiles arrive as pixel offsets, so convert back to
+        // indices to seed the same cache the interactive fetches fill.
+        `${map.zoom}/${Math.round((tile.x + map.left) / TILE_SIZE)}/${Math.round((tile.y + map.top) / TILE_SIZE)}`,
+        tile.image
+      ])
+    )
+  )
+  const dragging = useRef<{ x: number; y: number } | null>(null)
+  const requested = useRef(new Set<string>())
+
+  // A new answer means a new route; go back to the view it was framed for.
+  useEffect(() => {
+    setView({ zoom: map.zoom, left: map.left, top: map.top })
+  }, [map.zoom, map.left, map.top])
+
+  const needed = tilesCovering(view.left, view.top, map.width, map.height, view.zoom)
+
+  // Fetch whatever this view needs and we do not already hold. Asking once per
+  // key, ever, is what stops a drag turning into hundreds of duplicate calls.
+  useEffect(() => {
+    const missing = needed
+      .map((tile) => ({ key: `${view.zoom}/${tile.wrapped}/${tile.row}`, tile }))
+      .filter(({ key }) => !tiles[key] && !requested.current.has(key))
+    if (missing.length === 0) return
+
+    for (const { key } of missing) requested.current.add(key)
+    let cancelled = false
+    void window.nimbus
+      .mapTiles(
+        view.zoom,
+        missing.map(({ tile }) => ({ col: tile.wrapped, row: tile.row }))
+      )
+      .then((fetched) => {
+        if (cancelled || fetched.length === 0) return
+        setTiles((current) => {
+          const next = { ...current }
+          for (const tile of fetched) next[`${view.zoom}/${tile.col}/${tile.row}`] = tile.image
+          return next
+        })
+      })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view.zoom, view.left, view.top, tiles])
+
+  const project = (point: [number, number]): [number, number] => [
+    worldX(point[1], view.zoom) - view.left,
+    worldY(point[0], view.zoom) - view.top
+  ]
+
+  const geo = map.geoRoutes?.[mode]
+  const path = geo?.map((point) => project(point).map((n) => n.toFixed(1)).join(',')).join(' ')
+  const start = map.geoStart ? project(map.geoStart) : map.start
+  const end = map.geoEnd ? project(map.geoEnd) : map.end
+
+  /** Zooms about a point, so what is under the cursor stays under it. */
+  const zoomBy = (delta: number, atX: number, atY: number): void => {
+    setView((current) => {
+      const next = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, current.zoom + delta))
+      if (next === current.zoom) return current
+      const factor = 2 ** (next - current.zoom)
+      return {
+        zoom: next,
+        left: (current.left + atX) * factor - atX,
+        top: (current.top + atY) * factor - atY
+      }
+    })
+  }
 
   return (
     <div
-      className="relative overflow-hidden rounded-lg ring-1 ring-black/25"
-      style={{ width: map.width, height: map.height }}
+      className="relative touch-none overflow-hidden rounded-lg ring-1 ring-black/25"
+      style={{ width: map.width, height: map.height, cursor: dragging.current ? 'grabbing' : 'grab' }}
+      onPointerDown={(event) => {
+        dragging.current = { x: event.clientX, y: event.clientY }
+        event.currentTarget.setPointerCapture(event.pointerId)
+      }}
+      onPointerMove={(event) => {
+        const from = dragging.current
+        if (!from) return
+        const dx = event.clientX - from.x
+        const dy = event.clientY - from.y
+        dragging.current = { x: event.clientX, y: event.clientY }
+        setView((current) => ({ ...current, left: current.left - dx, top: current.top - dy }))
+      }}
+      onPointerUp={(event) => {
+        dragging.current = null
+        event.currentTarget.releasePointerCapture(event.pointerId)
+      }}
+      onPointerCancel={() => {
+        dragging.current = null
+      }}
+      onWheel={(event) => {
+        const box = event.currentTarget.getBoundingClientRect()
+        zoomBy(event.deltaY < 0 ? 1 : -1, event.clientX - box.left, event.clientY - box.top)
+      }}
     >
       <div className="absolute inset-0">
-        {map.tiles.map((tile) => (
-          <img
-            key={`${tile.x}-${tile.y}`}
-            src={tile.image}
-            alt=""
-            draggable={false}
-            className="absolute max-w-none"
-            style={{ left: tile.x, top: tile.y, width: 256, height: 256 }}
-          />
-        ))}
+        {needed.map((tile) => {
+          const image = tiles[`${view.zoom}/${tile.wrapped}/${tile.row}`]
+          if (!image) return null
+          return (
+            <img
+              key={`${tile.col}-${tile.row}`}
+              src={image}
+              alt=""
+              draggable={false}
+              className="absolute max-w-none select-none"
+              style={{ left: tile.x, top: tile.y, width: TILE_SIZE, height: TILE_SIZE }}
+            />
+          )
+        })}
       </div>
 
       <svg
-        className="absolute inset-0"
+        className="pointer-events-none absolute inset-0"
         width={map.width}
         height={map.height}
         aria-label={`Route by ${MODE_LABEL[mode]}`}
@@ -961,24 +1074,35 @@ function RouteMap({ map, mode }: { map: RenderedMap; mode: TravelMode }) {
               strokeLinecap="round"
               strokeLinejoin="round"
             />
-            <motion.polyline
-              key={mode}
+            <polyline
               points={path}
               fill="none"
               stroke="var(--color-nimbus-accent)"
               strokeWidth={3}
               strokeLinecap="round"
               strokeLinejoin="round"
-              initial={{ pathLength: 0, opacity: 0.4 }}
-              animate={{ pathLength: 1, opacity: 1 }}
-              transition={{ duration: 0.6, ease: 'easeOut' }}
             />
           </>
         )}
-        {/* Public transport has no road geometry — the endpoints still do. */}
-        <circle cx={map.start[0]} cy={map.start[1]} r={5} fill="var(--color-nimbus-cyan)" stroke="rgba(0,0,0,0.6)" strokeWidth={2} />
-        <circle cx={map.end[0]} cy={map.end[1]} r={5} fill="var(--color-nimbus-yellow)" stroke="rgba(0,0,0,0.6)" strokeWidth={2} />
+        <circle cx={start[0]} cy={start[1]} r={5} fill="#fff" stroke="rgba(0,0,0,0.5)" strokeWidth={2} />
+        <circle cx={end[0]} cy={end[1]} r={5} fill="var(--color-nimbus-accent)" stroke="rgba(0,0,0,0.5)" strokeWidth={2} />
       </svg>
+
+      {/* Zoom controls, because a trackpad pinch is not a wheel event here and
+          not everyone reaches for one. */}
+      <div className="absolute bottom-1.5 right-1.5 flex flex-col overflow-hidden rounded-md border border-white/15 bg-black/55 backdrop-blur-sm">
+        {([1, -1] as const).map((delta) => (
+          <button
+            key={delta}
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={() => zoomBy(delta, map.width / 2, map.height / 2)}
+            aria-label={delta > 0 ? 'Zoom in' : 'Zoom out'}
+            className="h-5 w-5 text-[13px] leading-none text-white/80 transition-colors hover:bg-white/15 hover:text-white"
+          >
+            {delta > 0 ? '+' : '−'}
+          </button>
+        ))}
+      </div>
     </div>
   )
 }

@@ -263,6 +263,16 @@ const MAP_HEIGHT = 210
 const MIN_ZOOM = 3
 const MAX_ZOOM = 17
 
+/**
+ * Most tiles one pan step may request.
+ *
+ * OpenStreetMap's tile servers are donated infrastructure with a usage policy,
+ * and an interactive map is exactly the thing that can turn one user into a
+ * thousand requests a minute. The viewport needs about twelve; this leaves
+ * room for a fast drag without ever becoming a scraper.
+ */
+const MAX_TILES_PER_REQUEST = 24
+
 function worldX(lon: number, zoom: number): number {
   return ((lon + 180) / 360) * TILE_SIZE * 2 ** zoom
 }
@@ -345,6 +355,27 @@ async function fetchTiles(view: Viewport): Promise<MapTile[]> {
   return wanted
     .map((tile, index) => ({ x: tile.x, y: tile.y, image: images[index] }))
     .filter((tile): tile is MapTile => typeof tile.image === 'string')
+}
+
+/**
+ * Thins a route for the renderer, in degrees rather than pixels.
+ *
+ * The pixel version can drop points that matter once you zoom in, because it
+ * decides what is redundant at one particular scale. This keeps enough shape
+ * to stay honest at any zoom while still cutting a route of several thousand
+ * points down to something a browser can redraw every frame.
+ */
+function thinGeo(shape: Array<[number, number]>): Array<[number, number]> {
+  if (shape.length <= 2) return shape
+  const out: Array<[number, number]> = [shape[0]]
+  // Roughly 15 metres of latitude — below what any zoom here resolves.
+  const MIN_STEP = 0.00014
+  for (const point of shape.slice(1, -1)) {
+    const last = out[out.length - 1]
+    if (Math.abs(point[0] - last[0]) + Math.abs(point[1] - last[1]) >= MIN_STEP) out.push(point)
+  }
+  out.push(shape[shape.length - 1])
+  return out
 }
 
 /** Drops points that land on the same pixel — a route can carry thousands. */
@@ -436,7 +467,17 @@ export async function getDirections(
         found.map((route) => [route.option.mode, simplify(route.shape, view)])
       ),
       start: toPixel([origin.lat, origin.lon], view),
-      end: toPixel([destination.lat, destination.lon], view)
+      end: toPixel([destination.lat, destination.lon], view),
+      // The same geometry the renderer needs to reproject everything itself
+      // once the user starts moving the map.
+      zoom: view.zoom,
+      left: view.left,
+      top: view.top,
+      geoRoutes: Object.fromEntries(
+        found.map((route) => [route.option.mode, thinGeo(route.shape)])
+      ),
+      geoStart: [origin.lat, origin.lon],
+      geoEnd: [destination.lat, destination.lon]
     }
   }
 }
@@ -468,4 +509,35 @@ export function wantsMap(utterance: string): boolean {
   return /\b(maps?|show me (the )?(route|way|map)|on (the|a) map|draw|visual(ly|ise|ize)?|karte)\b/i.test(
     utterance
   )
+}
+
+
+/**
+ * Tiles for an arbitrary view, so the map can be panned and zoomed.
+ *
+ * The renderer cannot fetch these itself: the overlay's CSP blocks remote
+ * images, which is why every picture in this app arrives as a data URI. So it
+ * asks for what it needs and this fetches it.
+ *
+ * Capped per call. A map being dragged can ask for tiles faster than anyone
+ * should request them from a volunteer-run tile server, and a limit here is
+ * the one place that cannot be forgotten.
+ */
+export async function mapTilesFor(
+  zoom: number,
+  wanted: Array<{ col: number; row: number }>
+): Promise<Array<{ col: number; row: number; image: string }>> {
+  const safeZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.round(zoom)))
+  const scale = 2 ** safeZoom
+  const capped = wanted.slice(0, MAX_TILES_PER_REQUEST)
+
+  const urls = capped.map(({ col, row }) => {
+    const wrappedCol = ((col % scale) + scale) % scale
+    return row < 0 || row >= scale ? null : `${TILE_URL}/${safeZoom}/${wrappedCol}/${row}.png`
+  })
+
+  const images = await fetchImagesAsDataUris(urls)
+  return capped
+    .map((tile, index) => ({ ...tile, image: images[index] }))
+    .filter((tile): tile is { col: number; row: number; image: string } => typeof tile.image === 'string')
 }

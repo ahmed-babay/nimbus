@@ -88,6 +88,12 @@ const api = {
   /** Takes 16kHz mono float samples; the renderer decodes, main transcribes. */
   transcribeAudio: (pcm: ArrayBuffer): Promise<string> =>
     ipcRenderer.invoke(IPC.TRANSCRIBE_AUDIO, pcm),
+  /** Map tiles for a panned or zoomed view; the CSP blocks fetching them here. */
+  mapTiles: (
+    zoom: number,
+    wanted: Array<{ col: number; row: number }>
+  ): Promise<Array<{ col: number; row: number; image: string }>> =>
+    ipcRenderer.invoke(IPC.MAP_TILES, zoom, wanted),
   /** Anything raised while Nimbus was told to stay quiet. */
   getMissed: (): Promise<Interruption[]> => ipcRenderer.invoke(IPC.GET_MISSED),
   clearMissed: (): Promise<void> => ipcRenderer.invoke(IPC.CLEAR_MISSED),

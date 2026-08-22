@@ -414,6 +414,22 @@ export interface RenderedMap {
   routes: Record<string, Array<[number, number]>>
   start: [number, number]
   end: [number, number]
+  /**
+   * The view these pixels were computed for, and the same geometry in
+   * latitude/longitude.
+   *
+   * Pixels alone are only correct at one zoom and one position, so a map built
+   * from them can be looked at but not moved. Carrying the geography as well
+   * lets the renderer reproject everything itself as the user zooms and pans,
+   * which is the whole difference between a picture of a map and a map.
+   */
+  zoom: number
+  left: number
+  top: number
+  /** Route lines as [lat, lon], keyed by travel mode. */
+  geoRoutes: Record<string, Array<[number, number]>>
+  geoStart: [number, number]
+  geoEnd: [number, number]
 }
 
 export interface DirectionsCardData {

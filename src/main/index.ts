@@ -69,6 +69,7 @@ import type {
   SynthesizedSpeech
 } from '../shared/types'
 import config from '../../config.json'
+import { mapTilesFor } from '../services/maps'
 
 /**
  * Resolve names over IPv4 unless there is no IPv4 to be had.
@@ -408,6 +409,12 @@ function registerIpcHandlers(): void {
       // and the language the user thinks in is the one they ask questions in.
       return transcribeAudio(new Float32Array(pcm), { language: targetLanguage() })
     }
+  )
+
+  ipcMain.handle(
+    IPC.MAP_TILES,
+    (_event, zoom: number, wanted: Array<{ col: number; row: number }>) =>
+      mapTilesFor(zoom, wanted)
   )
 
   ipcMain.handle(IPC.GET_MISSED, (): Interruption[] => missedInterruptions())
