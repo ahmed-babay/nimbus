@@ -67,6 +67,11 @@ function voice(): string {
   return process.env.NIMBUS_LOCAL_VOICE || 'af_heart'
 }
 
+/** The voice the out-of-process host should use. */
+export function localVoiceName(): string {
+  return voice()
+}
+
 /** Unloaded on the same schedule as the speech recogniser it sits beside. */
 const IDLE_UNLOAD_MS = 15 * 60 * 1000
 

@@ -1,6 +1,7 @@
 import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts'
 import config from '../../config.json'
-import { purgeLocalTts, localTtsInstalled, localTtsSupportsLanguage, speakLocally } from './local-tts'
+import { purgeLocalTts, localTtsInstalled, localTtsSupportsLanguage, localVoiceName } from './local-tts'
+import { localVoiceAvailable, speakOutOfProcess } from '../main/tts-host'
 
 const VOICE = process.env.TTS_VOICE || 'en-GB-SoniaNeural'
 
@@ -24,9 +25,13 @@ export interface SynthesizedSpeech {
 export async function synthesizeSpeech(text: string): Promise<SynthesizedSpeech> {
   // Only when the weights are already here: downloading 330MB mid-answer
   // would look like a hang, so installing is something settings does.
-  if (localTtsSupportsLanguage() && (await localTtsInstalled())) {
+  if (localTtsSupportsLanguage() && localVoiceAvailable() && (await localTtsInstalled())) {
     try {
-      return await speakLocally(text)
+      // Out of process, deliberately. Kokoro on WebGPU takes the whole process
+      // down when the GPU device is freed - not while speaking, but whenever
+      // the collector gets round to it - so it lives somewhere its death only
+      // costs one answer. See main/tts-host.ts.
+      return { audio: await speakOutOfProcess(text, localVoiceName()), mimeType: 'audio/wav' }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       console.error(`[tts] on-device voice failed, falling back to Edge: ${message}`)
