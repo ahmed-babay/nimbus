@@ -86,6 +86,16 @@ the relevant parameter for it, leaving the others empty:
      Set to "track" when they want a *specific* song, artist, or video —
      "play Bohemian Rhapsody", "play the new Adele single", "play a video about
      sourdough". If unsure, use "track".
+  -> params.playIn: where they want it played, one of:
+       "here"    — in Nimbus. THE DEFAULT, and the right answer for almost
+                   everything: "play some lofi", "play Bohemian Rhapsody",
+                   "put on something relaxing", "play the new Adele single".
+       "youtube" — ONLY when they actually named YouTube or a browser: "play
+                   it on YouTube", "open it in YouTube", "find me the YouTube
+                   video", "open the video in my browser".
+     If YouTube and the browser were not mentioned, it is "here". Do not pick
+     "youtube" because the thing is a video, because it is a specific track,
+     or because YouTube is where it would be found — only because they said so.
 - "transit": asking when a service leaves — "when is the next train to
   Frankfurt", "are there trains in the next hour", "what time is the last
   S-Bahn". This is about departure times specifically.
@@ -289,6 +299,7 @@ const CLASSIFY_SCHEMA: GenerationConfig = {
           query: { type: SchemaType.STRING },
           entity: { type: SchemaType.STRING },
           playback: { type: SchemaType.STRING, enum: ['station', 'track'], format: 'enum' },
+          playIn: { type: SchemaType.STRING, enum: ['youtube', 'here'], format: 'enum' },
           language: { type: SchemaType.STRING },
           from: { type: SchemaType.STRING },
           to: { type: SchemaType.STRING },
@@ -382,7 +393,7 @@ const INTENT_PARAMS: Partial<Record<NimbusIntent, string[]>> = {
   crypto: ['coin'],
   news: ['query'],
   github: ['language'],
-  music: ['query', 'playback'],
+  music: ['query', 'playback', 'playIn'],
   transit: ['to', 'from', 'fromHere', 'when', 'timeMode', 'watch'],
   directions: ['to', 'from', 'fromHere', 'mode'],
   outdoors: ['city'],

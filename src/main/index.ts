@@ -276,9 +276,12 @@ function registerIpcHandlers(): void {
       card: { type: 'text' } as const
     }))
 
-    // "Play X" means play it — open the video straight away in the default
-    // browser, which uses YouTube's own player and the user's own session.
-    if (response.card.type === 'music') {
+    // Opened only when the user asked for YouTube. It used to open on every
+    // music result, so "play some lofi" could throw a browser window over
+    // whatever was on screen — and it did that most often when the radio
+    // lookup had quietly failed, which is exactly when the user had least
+    // reason to expect it. The card is a play button; that is enough.
+    if (response.card.type === 'music' && response.card.data.autoOpen) {
       void shell.openExternal(response.card.data.url)
     }
 

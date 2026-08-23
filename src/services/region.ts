@@ -79,14 +79,36 @@ export function replyLanguageContext(): string {
  * reliable correction happens in the intent router, which reads the mangled
  * transcript and writes the real name.
  */
+/**
+ * Words Whisper otherwise guesses at.
+ *
+ * Genre names are short, rare in ordinary speech and sit next to far more
+ * common words, which is exactly the shape of thing a speech model gets wrong:
+ * "lofi" came back as "Luffy", the One Piece character, because that is a
+ * vastly more frequent string in its training data. Whisper takes its prompt
+ * as preceding text, so listing the words makes them likely rather than
+ * exotic. Cheap enough to send on every transcription.
+ */
+const MUSIC_VOCABULARY =
+  'lofi, lo-fi hip hop, synthwave, drum and bass, dubstep, techno, house, trance, ' +
+  'ambient, chillhop, jazz, bossa nova, reggaeton, afrobeats, K-pop, indie rock, ' +
+  'classical, opera, metal, punk, R&B, soul, funk, disco, radio.'
+
 export function transcriptionHint(): string {
   const region = homeRegion()
   const language = placeLanguage()
   const places = (config.location?.frequentPlaces ?? []).filter(Boolean)
   const named = places.length > 0 ? places : [config.location?.home].filter(Boolean)
-  if (!region || named.length === 0) return ''
 
-  return `${language ? `${language} p` : 'P'}lace names near ${region}: ${named.join(', ')}.`
+  const parts: string[] = []
+  if (region && named.length > 0) {
+    parts.push(`${language ? `${language} p` : 'P'}lace names near ${region}: ${named.join(', ')}.`)
+  }
+  // Sent whatever the region, because music is asked for everywhere and this
+  // used to return nothing at all when no places were configured.
+  parts.push(`Music genres: ${MUSIC_VOCABULARY}`)
+
+  return parts.join(' ')
 }
 
 /**

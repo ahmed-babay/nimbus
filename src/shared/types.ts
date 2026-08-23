@@ -223,6 +223,14 @@ export interface MusicCardData {
   thumbnail: string | null
   url: string
   query: string
+  /**
+   * Whether to hand this straight to the browser.
+   *
+   * Only true when the user actually asked for YouTube. Everything else shows
+   * the card and waits to be clicked — a request to play music should not take
+   * over the screen with a browser window nobody asked to open.
+   */
+  autoOpen: boolean
 }
 
 export interface RadioCardData {

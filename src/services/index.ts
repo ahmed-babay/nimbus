@@ -33,7 +33,7 @@ import {
   searchAnswers
 } from './memory'
 import { lookupEntity } from './wikipedia'
-import { findMusic } from './music'
+import { findMusic, wantsBrowserPlayback } from './music'
 import { watchJourney, wantsWatching } from './watchers'
 import { findJourneys, wantsArrival } from './transit'
 import { outdoorConditions, describeOutdoors } from './outdoors'
@@ -330,11 +330,14 @@ async function runIntent(
           throw new Error('Music playback is disabled in config.json.')
         }
         const query = params.query || utterance
+        // Only when they asked for it. The router decides however it was
+        // phrased; the regex is a backstop for the plain wordings.
+        const toBrowser = params.playIn === 'youtube' || wantsBrowserPlayback(utterance)
 
-        // Background music by genre/mood plays *inside* Nimbus via a radio
-        // stream. A specific track can't legitimately be streamed in-app —
-        // see src/services/radio.ts — so it opens in the browser instead.
-        if (params.playback === 'station') {
+        // Background music by genre or mood plays *inside* Nimbus via a radio
+        // stream. Skipped entirely when they asked for YouTube, since handing
+        // them a radio station is not what they asked for either.
+        if (!toBrowser && params.playback !== 'track') {
           try {
             const station = await findStation(query)
             return {
@@ -347,11 +350,19 @@ async function runIntent(
           }
         }
 
-        const data = await findMusic(query)
+        const data = await findMusic(query, toBrowser)
         // Skip the model round-trip: the useful confirmation is just what's
         // playing, and this keeps "play X" feeling immediate.
+        //
+        // A specific track cannot legitimately be streamed in-app — see
+        // src/services/radio.ts — so all Nimbus can do is find it. It used to
+        // then open the browser every time, which meant asking for music threw
+        // a YouTube window over whatever you were doing. Now the card sits
+        // there with a play button and waits.
         return {
-          speech: `Playing ${data.title} by ${data.channel}.`,
+          speech: toBrowser
+            ? `Opening ${data.title} by ${data.channel}.`
+            : `I found ${data.title} by ${data.channel}. Tap it to play.`,
           card: { type: 'music', data }
         }
       }

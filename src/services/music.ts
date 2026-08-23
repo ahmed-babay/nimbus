@@ -56,7 +56,23 @@ async function searchInstance(base: string, query: string): Promise<PipedItem[] 
  * which would breach YouTube's terms (and break the moment they change a
  * response format). The browser also inherits the user's own YouTube session.
  */
-export async function findMusic(query: string): Promise<MusicCardData> {
+/**
+ * Whether the user actually asked for YouTube or a browser.
+ *
+ * A backstop under the router's own judgement, not a replacement for it — the
+ * router decides what was meant however it was phrased, and this catches the
+ * plain wordings if that call goes the wrong way. It is deliberately narrow:
+ * the cost of a false positive is a browser window taking over the screen
+ * uninvited, which is the whole complaint this exists to fix, while the cost
+ * of a false negative is one click on a card that is already on screen.
+ */
+export function wantsBrowserPlayback(utterance: string): boolean {
+  return /\b(on|in|via|open|öffne|auf)\s+(youtube|yt|the browser|browser)\b|\byoutube\s+(video|link)\b|\bopen the video\b/i.test(
+    utterance
+  )
+}
+
+export async function findMusic(query: string, autoOpen = false): Promise<MusicCardData> {
   let items: PipedItem[] | null = null
 
   for (const base of PIPED_INSTANCES) {
@@ -88,6 +104,7 @@ export async function findMusic(query: string): Promise<MusicCardData> {
     duration: formatDuration(video.duration ?? 0),
     thumbnail: await fetchImageAsDataUri(video.thumbnail),
     url: `https://www.youtube.com/watch?v=${videoId}`,
-    query
+    query,
+    autoOpen
   }
 }
