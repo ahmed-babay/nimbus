@@ -399,11 +399,20 @@ function repairJson(text: string): string {
 
 export async function localComplete(request: LlmRequest): Promise<string> {
   if (request.image) {
-    // Vision needs the mmproj projector loaded alongside the model. The
-    // weights support it; this path does not yet, and silently answering a
-    // screen question without looking at the screen would be worse than
-    // saying so.
-    throw new Error('The local model cannot read images yet. Switch to a cloud provider for that.')
+    // Vision needs the mmproj projector loaded alongside the weights. The
+    // model itself can see — Qwen3-VL is a vision model and its projector is
+    // published — but node-llama-cpp 3.20.0 has no way to load one:
+    // LlamaModelOptions has no mmproj field, and llama.cpp's vision support
+    // lives behind libmtmd, which these bindings do not expose. Running
+    // llama.cpp's own server binary as a child process would work and is how
+    // the speech models are already isolated, at the cost of shipping that
+    // binary.
+    //
+    // Until then this says so rather than answering a question about the
+    // screen without having looked at it.
+    throw new Error(
+      'The on-device model cannot read images yet. Pick a cloud provider in settings for screen questions.'
+    )
   }
 
   const { history, prompt } = buildTurns(request)
