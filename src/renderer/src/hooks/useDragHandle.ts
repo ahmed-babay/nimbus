@@ -22,8 +22,12 @@ export interface DragHandle {
   style: CSSProperties
 }
 
-export function useDragHandle(onDragChange?: (dragging: boolean) => void): DragHandle {
+export function useDragHandle(
+  onDragChange?: (dragging: boolean) => void,
+  onDragEnd?: (didMove: boolean) => void
+): DragHandle {
   const last = useRef<{ x: number; y: number } | null>(null)
+  const moved = useRef(false)
 
   const onPointerDown = useCallback(
     (event: ReactPointerEvent<HTMLElement>) => {
@@ -34,6 +38,7 @@ export function useDragHandle(onDragChange?: (dragging: boolean) => void): DragH
 
       const element = event.currentTarget
       last.current = { x: event.screenX, y: event.screenY }
+      moved.current = false
       element.setPointerCapture(event.pointerId)
       onDragChange?.(true)
 
@@ -47,24 +52,28 @@ export function useDragHandle(onDragChange?: (dragging: boolean) => void): DragH
         // the frame is the whole cost of not doing that.
         if (!Number.isFinite(dx) || !Number.isFinite(dy)) return
         if (dx === 0 && dy === 0) return
+        moved.current = true
         last.current = { x: moveEvent.screenX, y: moveEvent.screenY }
         window.nimbus.moveOverlay(dx, dy)
       }
 
       const stop = (): void => {
+        const didMove = moved.current
         last.current = null
+        moved.current = false
         element.releasePointerCapture(event.pointerId)
         element.removeEventListener('pointermove', move)
         element.removeEventListener('pointerup', stop)
         element.removeEventListener('pointercancel', stop)
         onDragChange?.(false)
+        onDragEnd?.(didMove)
       }
 
       element.addEventListener('pointermove', move)
       element.addEventListener('pointerup', stop)
       element.addEventListener('pointercancel', stop)
     },
-    [onDragChange]
+    [onDragChange, onDragEnd]
   )
 
   return { onPointerDown, style: { cursor: 'grab' } }

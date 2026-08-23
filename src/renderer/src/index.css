@@ -50,7 +50,9 @@ body,
 #root {
   height: 100%;
   margin: 0;
-  background: transparent;
+  /* Must stay fully clear. A tinted page background shows up as a rectangle
+     the size of the Electron window, around the card and the corner pills. */
+  background: transparent !important;
   overflow: hidden;
   user-select: none;
 }
@@ -65,10 +67,17 @@ body,
 *::after {
   transition:
     color 450ms ease,
-    background-color 450ms ease,
     border-color 450ms ease,
     fill 450ms ease,
     stroke 450ms ease;
+}
+
+/* Don't fade the page fill — that transition is what briefly paints a
+   window-sized rectangle over the desktop. */
+html,
+body,
+#root {
+  transition: none;
 }
 
 body {

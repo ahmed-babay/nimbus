@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { Orb } from './components/Orb'
 import { Waveform } from './components/Waveform'
 import { accentVars, orbModeFor } from './lib/state-theme'
@@ -18,7 +18,14 @@ import { useMeeting } from './hooks/useMeeting'
 import { useTypewriter } from './hooks/useTypewriter'
 import { useModelLoading } from './hooks/useModelLoading'
 import { FillBar } from './components/Motion'
-import type { NimbusConfig, NimbusState } from '@shared/types'
+import type {
+  NimbusConfig,
+  NimbusResponse,
+  NimbusState,
+  OverlayLayout,
+  TextActionKind
+} from '@shared/types'
+import type { RadioPlayerControls } from './hooks/useRadioPlayer'
 
 const STATE_LABEL: Record<NimbusState, string> = {
   idle: 'Ready',
@@ -73,9 +80,67 @@ export default function App() {
   // Without this the overlay would fade out mid-film and take the subtitles
   // with it.
   const meetingOpen = meeting.phase !== 'idle'
+  const [overlayLayout, setOverlayLayout] = useState<OverlayLayout>({
+    corner: null,
+    squeeze: 'full'
+  })
+  const overlayLayoutRef = useRef(overlayLayout)
+  overlayLayoutRef.current = overlayLayout
+  const hoveredRef = useRef(false)
+  const lastTouchRef = useRef(Date.now())
+
   useEffect(() => {
-    setHoldOpen(subtitles.active || meetingOpen)
-  }, [subtitles.active, meetingOpen, setHoldOpen])
+    void window.nimbus.getOverlayLayout().then(setOverlayLayout)
+    return window.nimbus.onOverlayLayout(setOverlayLayout)
+  }, [])
+
+  useEffect(() => {
+    setHoldOpen(subtitles.active || meetingOpen || overlayLayout.corner !== null)
+  }, [subtitles.active, meetingOpen, overlayLayout.corner, setHoldOpen])
+
+  // Settings and the watching list need the full card. Coming back to the
+  // assistant while still docked returns to the compact dock, not a full
+  // overlay covering the corner.
+  useEffect(() => {
+    if (!overlayLayout.corner) return
+    if (mode !== 'assistant' || meetingOpen) {
+      if (overlayLayout.squeeze !== 'full') window.nimbus.setOverlaySqueeze('full')
+      return
+    }
+    if (overlayLayout.squeeze === 'full') window.nimbus.setOverlaySqueeze('compact')
+  }, [overlayLayout.corner, overlayLayout.squeeze, mode, meetingOpen])
+
+  // Asking while the orb is parked as an icon should pop the compact dock
+  // back so maps, trains, music and a grabbed selection can actually show.
+  useEffect(() => {
+    if (!overlayLayout.corner) return
+    if (overlayLayout.squeeze !== 'icon') return
+    if (mode !== 'assistant') return
+    if (state === 'thinking' || state === 'speaking' || state === 'listening' || pendingSelection) {
+      lastTouchRef.current = Date.now()
+      window.nimbus.setOverlaySqueeze('compact')
+    }
+  }, [overlayLayout.corner, overlayLayout.squeeze, mode, state, pendingSelection])
+
+  // After three quiet seconds in the compact dock, shrink to a taskbar-sized
+  // orb so it stops occupying the corner. Clicking it brings the dock back.
+  // Stay open while listening or holding selected text — shrinking then would
+  // hide the Ctrl+Shift+A actions before they can be used.
+  useEffect(() => {
+    if (!overlayLayout.corner) return
+    if (overlayLayout.squeeze !== 'compact') return
+    if (mode !== 'assistant') return
+    const tick = window.setInterval(() => {
+      if (state === 'thinking' || state === 'speaking' || state === 'listening' || pendingSelection) {
+        lastTouchRef.current = Date.now()
+        return
+      }
+      if (hoveredRef.current || draggingRef.current) return
+      if (Date.now() - lastTouchRef.current < 3000) return
+      window.nimbus.setOverlaySqueeze('icon')
+    }, 250)
+    return () => window.clearInterval(tick)
+  }, [overlayLayout.corner, overlayLayout.squeeze, mode, state, pendingSelection])
 
   // Listening for its own name, when the user has turned that on. Suspended
   // whenever Nimbus is already up or talking — otherwise it competes with the
@@ -96,6 +161,16 @@ export default function App() {
     draggingRef.current = dragging
     // Re-assert interactivity the moment a drag ends under the pointer.
     if (!dragging) window.nimbus.setMouseIgnore(false)
+  }
+  const onDragEnd = (didMove: boolean): void => {
+    if (didMove) {
+      window.nimbus.snapOverlay()
+      return
+    }
+    if (overlayLayoutRef.current.squeeze === 'icon') {
+      lastTouchRef.current = Date.now()
+      window.nimbus.setOverlaySqueeze('compact')
+    }
   }
 
   const stopSubtitles = (): void => {
@@ -123,10 +198,63 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKeyDown)
   })
 
+  const squeeze = overlayLayout.squeeze
+  const shellClass =
+    squeeze === 'icon'
+      ? 'flex h-screen w-screen items-center justify-center'
+      : overlayLayout.corner?.startsWith('bottom')
+        ? 'flex h-screen w-screen items-end justify-center p-2'
+        : overlayLayout.corner
+          ? 'flex h-screen w-screen items-start justify-center p-2'
+          : 'flex h-screen w-screen items-start justify-center pt-2'
+
   return (
-    <div className="flex h-screen w-screen items-start justify-center pt-2">
+    <div className={shellClass}>
       <AnimatePresence>
-        {isVisible && (
+        {isVisible && squeeze === 'icon' && (
+          <PeekIcon
+            state={state}
+            searching={searching}
+            answerSeq={answerSeq}
+            levelRef={levelRef}
+            onDragChange={onDragChange}
+            onDragEnd={onDragEnd}
+          />
+        )}
+        {isVisible && squeeze === 'compact' && (
+          <PeekDock
+            state={state}
+            searching={searching}
+            answerSeq={answerSeq}
+            levelRef={levelRef}
+            speechProgressRef={speechProgressRef}
+            response={response}
+            error={error}
+            typedText={typedText}
+            radio={radio}
+            pendingSelection={pendingSelection}
+            onRunAction={runTextAction}
+            micEnabled={micEnabled}
+            ttsEnabled={ttsEnabled}
+            onToggleMic={toggleMic}
+            onToggleTts={toggleTts}
+            onSubmit={submitText}
+            onTypingStart={onTypingStart}
+            onReplace={replaceSelection}
+            onAsk={submitText}
+            focusKey={isVisible}
+            onDragChange={onDragChange}
+            onDragEnd={onDragEnd}
+            onTouch={() => {
+              lastTouchRef.current = Date.now()
+            }}
+            onHoverChange={(hovered) => {
+              hoveredRef.current = hovered
+              if (hovered) lastTouchRef.current = Date.now()
+            }}
+          />
+        )}
+        {isVisible && squeeze === 'full' && (
           <motion.div
             initial={{ opacity: 0, y: -14, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -134,7 +262,10 @@ export default function App() {
             transition={{ duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
             // Only the card itself captures the mouse; everything around it
             // stays click-through so the overlay never blocks the screen.
-            onMouseEnter={() => window.nimbus.setMouseIgnore(false)}
+            onMouseEnter={() => {
+              hoveredRef.current = true
+              window.nimbus.setMouseIgnore(false)
+            }}
             // Where the light gathers under the pointer. Written straight to
             // the element as custom properties: this fires with every mouse
             // move, and putting it through React would re-render the whole
@@ -153,11 +284,12 @@ export default function App() {
             // pointer leaves the card constantly mid-drag, and going
             // click-through there would drop the window out from under it.
             onMouseLeave={() => {
+              hoveredRef.current = false
               if (!draggingRef.current) window.nimbus.setMouseIgnore(true)
             }}
             // Capped to the window so a long answer scrolls instead of being
             // clipped off the bottom with no way to reach it.
-            className="relative flex max-h-[calc(100vh-1rem)] w-[492px] flex-col overflow-hidden rounded-[20px] border border-nimbus-border bg-nimbus-bg backdrop-blur-[32px] backdrop-saturate-[1.8] backdrop-brightness-105"
+            className="relative flex min-h-0 max-h-[calc(100vh-1rem)] w-[492px] flex-col overflow-hidden rounded-[20px] border border-nimbus-border bg-[#14161f]"
             // Depth from shadow and a hairline edge rather than a neon ring.
             // A glowing outline is the single strongest "toy" signal a panel
             // can send, and this one sits next to real work all day.
@@ -266,9 +398,18 @@ export default function App() {
             )}
 
             {mode === 'settings' ? (
-              <SettingsPanel config={config} onClose={closePanel} onDragChange={onDragChange} />
+              <SettingsPanel
+                config={config}
+                onClose={closePanel}
+                onDragChange={onDragChange}
+                onDragEnd={onDragEnd}
+              />
             ) : mode === 'standing' ? (
-              <StandingPanel onClose={closePanel} onDragChange={onDragChange} />
+              <StandingPanel
+                onClose={closePanel}
+                onDragChange={onDragChange}
+                onDragEnd={onDragEnd}
+              />
             ) : (
               // Header and input stay put; only the answer between them moves.
               <div className="flex min-h-0 flex-1 flex-col px-[18px] py-4">
@@ -280,9 +421,16 @@ export default function App() {
                   onToggleMic={toggleMic}
                   ttsEnabled={ttsEnabled}
                   onToggleTts={toggleTts}
-                  onStanding={openStanding}
-                  onSettings={openSettings}
+                  onStanding={() => {
+                    window.nimbus.setOverlaySqueeze('full')
+                    openStanding()
+                  }}
+                  onSettings={() => {
+                    window.nimbus.setOverlaySqueeze('full')
+                    openSettings()
+                  }}
                   onDragChange={onDragChange}
+                  onDragEnd={onDragEnd}
                 />
 
                 {/* No items-start here: it would let the scrolling child size
@@ -504,6 +652,213 @@ export default function App() {
   )
 }
 
+function PeekIcon({
+  state,
+  searching,
+  answerSeq,
+  levelRef,
+  onDragChange,
+  onDragEnd
+}: {
+  state: NimbusState
+  searching: boolean
+  answerSeq: number
+  levelRef: RefObject<number>
+  onDragChange: (dragging: boolean) => void
+  onDragEnd: (didMove: boolean) => void
+}): React.JSX.Element {
+  const drag = useDragHandle(onDragChange, onDragEnd)
+  return (
+    // A div, not a button: the drag handle ignores presses that start on a
+    // button, so a <button> here would neither drag nor fire onDragEnd — and
+    // click-to-open would do nothing.
+    <motion.div
+      role="button"
+      tabIndex={0}
+      initial={{ opacity: 0, scale: 0.72 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.8 }}
+      transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+      onMouseEnter={() => window.nimbus.setMouseIgnore(false)}
+      onMouseLeave={() => window.nimbus.setMouseIgnore(true)}
+      onPointerDown={drag.onPointerDown}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onDragEnd(false)
+        }
+      }}
+      title="Nimbus — click to open, drag to move"
+      className="grid h-full w-full cursor-grab place-items-center bg-transparent"
+      style={drag.style}
+    >
+      <Orb
+        state={state}
+        searching={searching}
+        answerSeq={answerSeq}
+        levelRef={levelRef}
+        size={48}
+        tight
+      />
+    </motion.div>
+  )
+}
+
+function PeekDock({
+  state,
+  searching,
+  answerSeq,
+  levelRef,
+  speechProgressRef,
+  response,
+  error,
+  typedText,
+  radio,
+  pendingSelection,
+  onRunAction,
+  micEnabled,
+  ttsEnabled,
+  onToggleMic,
+  onToggleTts,
+  onSubmit,
+  onTypingStart,
+  onReplace,
+  onAsk,
+  focusKey,
+  onDragChange,
+  onDragEnd,
+  onTouch,
+  onHoverChange
+}: {
+  state: NimbusState
+  searching: boolean
+  answerSeq: number
+  levelRef: RefObject<number>
+  speechProgressRef: RefObject<number>
+  response: NimbusResponse | null
+  error: string | null
+  typedText: string
+  radio: RadioPlayerControls
+  pendingSelection: string | null
+  onRunAction: (kind: TextActionKind, label: string) => void
+  micEnabled: boolean
+  ttsEnabled: boolean
+  onToggleMic: () => void
+  onToggleTts: () => void
+  onSubmit: (text: string) => void
+  onTypingStart: () => void
+  onReplace: (text: string) => void
+  onAsk: (text: string) => void
+  focusKey: unknown
+  onDragChange: (dragging: boolean) => void
+  onDragEnd: (didMove: boolean) => void
+  onTouch: () => void
+  onHoverChange: (hovered: boolean) => void
+}): React.JSX.Element {
+  const drag = useDragHandle(onDragChange, onDragEnd)
+  const showBubble = Boolean(response || error || state === 'thinking' || pendingSelection)
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.94, y: 8 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.96 }}
+      transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+      onMouseEnter={() => {
+        onTouch()
+        onHoverChange(true)
+        window.nimbus.setMouseIgnore(false)
+      }}
+      onMouseMove={onTouch}
+      onMouseLeave={() => {
+        onHoverChange(false)
+        window.nimbus.setMouseIgnore(true)
+      }}
+      onPointerDown={onTouch}
+      className="flex w-full flex-col gap-2 bg-transparent p-1"
+      style={accentVars(orbModeFor(state, searching))}
+    >
+      <div
+        className="flex shrink-0 items-center gap-2 self-stretch rounded-full border border-white/20 bg-[#14161f] px-2 py-1.5 shadow-[0_12px_32px_-12px_rgba(0,0,0,0.7),inset_0_1px_0_0_rgba(255,255,255,0.22)]"
+        onPointerDown={drag.onPointerDown}
+        style={drag.style}
+      >
+        <Orb
+          state={state}
+          searching={searching}
+          answerSeq={answerSeq}
+          levelRef={levelRef}
+          size={36}
+        />
+        <div className="min-w-0 flex-1">
+          <p className="text-[12px] font-semibold tracking-[-0.01em] text-nimbus-text">Nimbus</p>
+          <p className="truncate text-[10px] text-nimbus-text-dim">
+            {state === 'thinking' && searching ? 'Searching' : STATE_LABEL[state]}
+          </p>
+        </div>
+        <IconButton
+          onClick={onToggleMic}
+          active={micEnabled}
+          label={micEnabled ? 'Voice on — click to mute' : 'Voice off — click to enable'}
+        >
+          {micEnabled ? <MicIcon /> : <MicOffIcon />}
+        </IconButton>
+        <IconButton
+          onClick={onToggleTts}
+          active={ttsEnabled}
+          label={ttsEnabled ? 'Answers are spoken — click to mute' : 'Answers are silent — click to unmute'}
+        >
+          {ttsEnabled ? <SoundIcon /> : <SoundOffIcon />}
+        </IconButton>
+      </div>
+
+      {showBubble && (
+        <div className="relative max-w-full self-start">
+          <div
+            aria-hidden
+            className="absolute left-7 -top-1.5 h-3 w-3 rotate-45 border-l border-t border-white/15 bg-[#14161f]"
+          />
+          <div className="nimbus-scroll inline-block max-h-[min(22rem,calc(100vh-8.5rem))] max-w-full overflow-y-auto rounded-[22px] border border-white/15 bg-[#14161f] px-3 py-2.5 shadow-[0_18px_40px_-18px_rgba(0,0,0,0.7),inset_0_1px_0_0_rgba(255,255,255,0.14)]">
+            {response ? (
+              <ResponseCard
+                response={response}
+                speechProgressRef={speechProgressRef}
+                radio={radio}
+                onReplace={onReplace}
+                onAsk={onAsk}
+              />
+            ) : error ? (
+              <p className="text-[12px] leading-relaxed text-nimbus-negative">{error}</p>
+            ) : pendingSelection ? (
+              <SelectionActions
+                text={pendingSelection}
+                onRun={(kind, label) => onRunAction(kind, label)}
+                levelRef={levelRef}
+                listening={state === 'listening'}
+              />
+            ) : typedText ? (
+              <p className="text-[13px] leading-relaxed text-nimbus-text">
+                {typedText}
+                <span className="ml-0.5 inline-block h-[12px] w-[2px] translate-y-[1px] rounded-full bg-nimbus-accent" />
+              </p>
+            ) : (
+              <p className="text-[11px] text-nimbus-text-dim">Thinking…</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className="shrink-0">
+        <TextInput
+          onSubmit={onSubmit}
+          focusKey={focusKey}
+          onTypingStart={onTypingStart}
+          compact
+        />
+      </div>
+    </motion.div>
+  )
+}
+
 function Header({
   state,
   searching,
@@ -514,7 +869,8 @@ function Header({
   onToggleTts,
   onStanding,
   onSettings,
-  onDragChange
+  onDragChange,
+  onDragEnd
 }: {
   state: NimbusState
   searching: boolean
@@ -526,8 +882,9 @@ function Header({
   onStanding: () => void
   onSettings: () => void
   onDragChange: (dragging: boolean) => void
+  onDragEnd: (didMove: boolean) => void
 }) {
-  const drag = useDragHandle(onDragChange)
+  const drag = useDragHandle(onDragChange, onDragEnd)
   return (
     // The header is the grab handle. Presses that land on a button are ignored
     // by the handle, so Close still closes.
@@ -635,7 +992,7 @@ function IconButton({
       aria-label={label}
       aria-pressed={active}
       title={label}
-      className={`rounded-lg p-1.5 transition-colors ${
+      className={`rounded-full p-1.5 transition-colors ${
         active
           ? 'bg-nimbus-accent/15 text-nimbus-accent-bright'
           : 'text-nimbus-text-dim hover:bg-white/[0.07] hover:text-nimbus-text'
@@ -697,13 +1054,15 @@ function SoundOffIcon() {
 function SettingsPanel({
   config,
   onClose,
-  onDragChange
+  onDragChange,
+  onDragEnd
 }: {
   config: NimbusConfig | null
   onClose: () => void
   onDragChange: (dragging: boolean) => void
+  onDragEnd: (didMove: boolean) => void
 }) {
-  const drag = useDragHandle(onDragChange)
+  const drag = useDragHandle(onDragChange, onDragEnd)
   const rows: Array<[string, string]> = config
     ? [
         ['Hotkey', config.hotkey.enabled ? config.hotkey.accelerator : 'disabled'],

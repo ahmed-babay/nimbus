@@ -27,12 +27,14 @@ const KIND: Record<StandingItem['kind'], { icon: string; label: string; tint: st
 
 export function StandingPanel({
   onClose,
-  onDragChange
+  onDragChange,
+  onDragEnd
 }: {
   onClose: () => void
   onDragChange: (dragging: boolean) => void
+  onDragEnd?: (didMove: boolean) => void
 }) {
-  const drag = useDragHandle(onDragChange)
+  const drag = useDragHandle(onDragChange, onDragEnd)
   const [items, setItems] = useState<StandingItem[] | null>(null)
   /**
    * Things Nimbus raised while it had been told to stay quiet.

@@ -24,6 +24,12 @@ interface OrbProps {
   levelRef: RefObject<number>
   /** Overrides the default size, in pixels. */
   size?: number
+  /**
+   * Crop to the glass sphere and drop the outer bloom. The idle corner chip
+   * is a tiny square window; without this the bloom is clipped into a square
+   * and the sphere sits in a ring inside it.
+   */
+  tight?: boolean
 }
 
 /**
@@ -234,7 +240,14 @@ const MOTES = [
   { fx: 1, fy: 2, phase: 3.4, reach: 12, radius: 13, opacity: 0.5 }
 ]
 
-export function Orb({ state, searching = false, answerSeq = 0, levelRef, size = 52 }: OrbProps) {
+export function Orb({
+  state,
+  searching = false,
+  answerSeq = 0,
+  levelRef,
+  size = 52,
+  tight = false
+}: OrbProps) {
   const mode = orbModeFor(state, searching)
   const rootRef = useRef<HTMLDivElement>(null)
   const bloomRef = useRef<HTMLDivElement>(null)
@@ -708,23 +721,29 @@ export function Orb({ state, searching = false, answerSeq = 0, levelRef, size = 
 
   return (
     <div
-      className="relative shrink-0 self-start"
+      className={`relative shrink-0 ${tight ? 'overflow-hidden rounded-full' : ''}`}
       style={{ width: size, height: size }}
       aria-hidden="true"
     >
       {/* Bloom spilling onto whatever is behind the card. Sits outside the
-          sphere's bounds on purpose — light does not stop at the object. */}
-      <div
-        ref={bloomRef}
-        className="pointer-events-none absolute -inset-[45%] rounded-full blur-xl will-change-transform"
-        style={{
-          background: `radial-gradient(circle at 50% 50%, ${rim} 0%, transparent 68%)`,
-          transition: 'background 500ms ease'
-        }}
-      />
+          sphere's bounds on purpose — light does not stop at the object.
+          Hidden when tight: a 48px window would clip it into a square. */}
+      {!tight && (
+        <div
+          ref={bloomRef}
+          className="pointer-events-none absolute -inset-[45%] rounded-full blur-xl will-change-transform"
+          style={{
+            background: `radial-gradient(circle at 50% 50%, ${rim} 0%, transparent 68%)`,
+            transition: 'background 500ms ease'
+          }}
+        />
+      )}
 
       <div ref={rootRef} className="absolute inset-0 will-change-transform">
-        <svg viewBox="0 0 100 100" className="h-full w-full overflow-visible">
+        <svg
+          viewBox={tight ? '13 13 74 74' : '0 0 100 100'}
+          className="h-full w-full overflow-visible"
+        >
           <defs>
             {/* Glass body: dark at the centre, lifting toward the edge. */}
             {/* The body. Held near-black through most of the radius and lifted

@@ -12,6 +12,8 @@ interface TextInputProps {
   /** Runs a palette entry that opens a panel rather than asking something. */
   onAction?: (action: NonNullable<Capability['action']>) => void
   placeholder?: string
+  /** Drops the top margin and uses a pill field, for the squeezed dock. */
+  compact?: boolean
 }
 
 /**
@@ -29,7 +31,8 @@ export function TextInput({
   focusKey,
   onTypingStart,
   onAction,
-  placeholder = 'Type a message, or / to see what I can do…'
+  placeholder = 'Type a message, or / to see what I can do…',
+  compact = false
 }: TextInputProps) {
   const [value, setValue] = useState('')
   const [activeIndex, setActiveIndex] = useState(0)
@@ -71,7 +74,7 @@ export function TextInput({
   // No rule above the field: it has an edge of its own now, and two horizontal
   // lines a few pixels apart is how a panel starts to look busy.
   return (
-    <div className="mt-3">
+    <div className={compact ? '' : 'mt-3'}>
       {paletteOpen && (
         <CommandPalette
           matches={matches}
@@ -97,7 +100,11 @@ export function TextInput({
         // last of the arcade theme in here; a bordered well that lights on
         // focus is what every other desktop tool does, and it tells you where
         // to type without saying anything.
-        className="flex items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2 transition-colors focus-within:border-nimbus-accent/40 focus-within:bg-white/[0.05]"
+        className={`flex items-center gap-2 border px-3 py-2 shadow-[0_8px_24px_-12px_rgba(0,0,0,0.8)] transition-colors ${
+          compact
+            ? 'rounded-full border-white/25 bg-[#14161f] py-2.5 focus-within:border-nimbus-accent/55'
+            : 'rounded-xl border-white/15 bg-[#14161f]/95 focus-within:border-nimbus-accent/45'
+        }`}
       >
         <input
           ref={inputRef}
@@ -140,7 +147,7 @@ export function TextInput({
           }}
           placeholder={placeholder}
           spellCheck={false}
-          className="min-w-0 flex-1 bg-transparent text-[13px] text-nimbus-text outline-none placeholder:text-nimbus-text-dim/70"
+          className="min-w-0 flex-1 bg-transparent text-[13px] text-nimbus-text outline-none placeholder:text-nimbus-text-dim"
         />
         {paletteOpen ? (
           <span className="arcade-type shrink-0 text-[9px] text-nimbus-text-dim">↑↓ Enter</span>
