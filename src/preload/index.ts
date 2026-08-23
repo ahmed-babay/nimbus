@@ -4,6 +4,8 @@ import type {
   AiChoice,
   Interruption,
   AiProvider,
+  OverlayLayout,
+  OverlaySqueeze,
   NimbusConfig,
   NimbusResponse,
   ProviderModel,
@@ -189,6 +191,18 @@ const api = {
   },
   moveOverlay: (dx: number, dy: number): void => {
     ipcRenderer.send(IPC.MOVE_OVERLAY, dx, dy)
+  },
+  snapOverlay: (): void => {
+    ipcRenderer.send(IPC.SNAP_OVERLAY)
+  },
+  setOverlaySqueeze: (squeeze: OverlaySqueeze): void => {
+    ipcRenderer.send(IPC.SET_OVERLAY_SQUEEZE, squeeze)
+  },
+  getOverlayLayout: (): Promise<OverlayLayout> => ipcRenderer.invoke(IPC.GET_OVERLAY_LAYOUT),
+  onOverlayLayout: (callback: (layout: OverlayLayout) => void): (() => void) => {
+    const listener = (_event: unknown, layout: OverlayLayout): void => callback(layout)
+    ipcRenderer.on(IPC.OVERLAY_LAYOUT, listener)
+    return () => ipcRenderer.removeListener(IPC.OVERLAY_LAYOUT, listener)
   },
   setMouseIgnore: (ignore: boolean): void => {
     ipcRenderer.send(IPC.SET_MOUSE_IGNORE, ignore)

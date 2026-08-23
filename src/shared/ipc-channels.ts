@@ -45,6 +45,14 @@ export const IPC = {
   REPLY_IN_APP: 'nimbus:reply-in-app',
   /** renderer -> main: nudge the overlay window by a pixel delta while dragging */
   MOVE_OVERLAY: 'nimbus:move-overlay',
+  /** renderer -> main: after a drag, snap into a screen-corner peek if close enough */
+  SNAP_OVERLAY: 'nimbus:snap-overlay',
+  /** renderer -> main: full card, compact dock, or tiny orb */
+  SET_OVERLAY_SQUEEZE: 'nimbus:set-overlay-squeeze',
+  /** renderer -> main (invoke): current corner-dock / peek state */
+  GET_OVERLAY_LAYOUT: 'nimbus:get-overlay-layout',
+  /** main -> renderer: corner-dock / peek state changed */
+  OVERLAY_LAYOUT: 'nimbus:overlay-layout',
   /** renderer -> main: toggle click-through as the pointer enters/leaves the card */
   SET_MOUSE_IGNORE: 'nimbus:set-mouse-ignore',
   /** renderer -> main: put an answer on the clipboard */

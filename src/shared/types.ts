@@ -697,3 +697,21 @@ export interface QuotaLine {
   /** Shown under the bar. */
   detail: string
 }
+
+/** Screen corner the overlay can squeeze into while staying reachable. */
+export type OverlayCorner = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
+
+/**
+ * How much of the overlay is showing.
+ *
+ * - `full` — the usual card
+ * - `compact` — corner dock with composer, mic/tts, and the answer (maps,
+ *   trains, music cards included)
+ * - `icon` — a round orb the size of a taskbar icon
+ */
+export type OverlaySqueeze = 'full' | 'compact' | 'icon'
+
+export interface OverlayLayout {
+  corner: OverlayCorner | null
+  squeeze: OverlaySqueeze
+}

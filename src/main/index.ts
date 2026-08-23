@@ -3,7 +3,16 @@ import { electronApp, optimizer } from '@electron-toolkit/utils'
 import dotenv from 'dotenv'
 import dns from 'node:dns'
 import { createTray } from './tray'
-import { createOverlayWindow, showOverlay, hideOverlay, presentOverlay } from './window'
+import {
+  createOverlayWindow,
+  showOverlay,
+  hideOverlay,
+  presentOverlay,
+  moveOverlay,
+  snapOverlay,
+  setOverlaySqueeze,
+  getOverlayLayout
+} from './window'
 import { startReminderScheduler, stopReminderScheduler } from './reminder-scheduler'
 import { startWatchScheduler, stopWatchScheduler } from './watch-scheduler'
 import { applyStoredSecrets, secretStatuses, setSecret } from './secrets'
@@ -19,7 +28,7 @@ import { captureDisplayImage, encodeCapture, type ScreenCapture } from './screen
 import { pickRegion, type RegionChoice } from './region-picker'
 import { captureSelection, pasteIntoWindow, replyInWindow, type CapturedSelection } from './selection'
 import { runTextAction } from '../services/text-actions'
-import type { TextActionKind } from '../shared/types'
+import type { TextActionKind, OverlaySqueeze } from '../shared/types'
 import { transcribeAudio } from '../services/whisper'
 import { endVadSession, resetVadSession, vadProbabilities, warmVad } from '../services/vad'
 import {
@@ -312,21 +321,18 @@ function registerIpcHandlers(): void {
     // fires on this window: it is transparent and click-through, and
     // setIgnoreMouseEvents makes it invisible to input at the OS level, so
     // Chromium's own drag region is never reached.
-    const [x, y] = overlayWindow.getPosition()
-    const nextX = Math.round(x + dx)
-    const nextY = Math.round(y + dy)
-    // setPosition takes native integers and throws "conversion failure" at
-    // anything that is not one. That throw comes out of an IPC handler, where
-    // nothing is waiting to catch it, so it reached the top level and printed
-    // a stack for every pointermove of the drag that caused it. A window
-    // position arriving from the renderer is input like any other, and gets
-    // checked like any other.
-    if (!Number.isFinite(nextX) || !Number.isFinite(nextY)) {
-      console.warn(`[main] ignoring a bad overlay move (dx=${dx}, dy=${dy})`)
-      return
-    }
-    overlayWindow.setPosition(nextX, nextY)
+    moveOverlay(overlayWindow, dx, dy)
   })
+
+  ipcMain.on(IPC.SNAP_OVERLAY, () => {
+    if (overlayWindow) snapOverlay(overlayWindow)
+  })
+
+  ipcMain.on(IPC.SET_OVERLAY_SQUEEZE, (_event, squeeze: OverlaySqueeze) => {
+    if (overlayWindow) setOverlaySqueeze(overlayWindow, squeeze)
+  })
+
+  ipcMain.handle(IPC.GET_OVERLAY_LAYOUT, () => getOverlayLayout())
 
   ipcMain.on(IPC.SET_MOUSE_IGNORE, (_event, ignore: boolean) => {
     // forward:true keeps mousemove flowing to the renderer while ignoring, so
@@ -777,20 +783,27 @@ app.whenReady().then(() => {
     },
     async () => {
       if (!overlayWindow) return
+      const wasVisible = overlayWindow.isVisible()
       try {
-        // Read the selection while the other app still has focus — showing
-        // the overlay first would make Nimbus the foreground window and the
-        // Ctrl+C would go to the wrong place.
+        // The squeezed overlay can still be the foreground window. Ctrl+C
+        // would then copy from Nimbus instead of the highlighted text.
+        // Only hide when we actually have focus — otherwise the orb would
+        // blink out while the other app already owns the selection.
+        if (wasVisible && overlayWindow.isFocused()) {
+          overlayWindow.hide()
+          await new Promise((resolve) => setTimeout(resolve, OVERLAY_HIDE_REPAINT_MS))
+        }
         pendingSelection = await captureSelection()
         pendingCapture = null
-        showOverlay(overlayWindow)
-        overlayWindow.webContents.send(IPC.SELECTION_CAPTURED, pendingSelection.text)
+        // presentOverlay, not showOverlay: WAKE would treat this as a fresh
+        // question and drop the selection. Compact dock is opened when parked
+        // in a corner, so Ctrl+Shift+A still works while squeezed.
+        presentOverlay(overlayWindow, IPC.SELECTION_CAPTURED, pendingSelection.text)
       } catch (err) {
         pendingSelection = null
         const message = err instanceof Error ? err.message : 'Selection capture failed.'
         console.warn('[selection]', message)
-        showOverlay(overlayWindow)
-        overlayWindow.webContents.send(IPC.SELECTION_CAPTURED, '')
+        presentOverlay(overlayWindow, IPC.SELECTION_CAPTURED, '')
       }
     }
   )
