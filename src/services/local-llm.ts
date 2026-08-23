@@ -1,6 +1,6 @@
 import { app } from 'electron'
-import { existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, statSync } from 'node:fs'
+import { basename, join } from 'node:path'
 import type { Llama, LlamaChatSession, LlamaContext, LlamaModel } from 'node-llama-cpp'
 import type { LlmRequest } from './llm'
 
@@ -37,14 +37,64 @@ type ChatTurn =
  * returned. Set NIMBUS_LOCAL_GPU=false to force CPU on a machine where that
  * trade is wrong.
  *
- * Deep research still goes to a cloud model. A 0.8B model asked to synthesise
- * twenty thousand characters of search results produces fluent, shallow and
- * occasionally wrong answers, and that is the one task where being wrong
- * matters most.
+ * Deep research still goes to a cloud model. Synthesising twenty thousand
+ * characters of search results is the one task where a small model's fluent,
+ * shallow and occasionally wrong answer costs the most, and it is also more
+ * reading than the on-device context window holds.
  */
 
-/** Where a bundled or downloaded model lives. */
-const MODEL_FILE = 'Qwen3.5-0.8B-Q4_K_M.gguf'
+/**
+ * The models that can run on the user's own machine, best first.
+ *
+ * Measured on an RTX 3070 laptop over seventeen routing utterances, through
+ * the two-pass router with a JSON grammar:
+ *
+ *                          intent            parameters        VRAM at 8k
+ *   Qwen3-VL-4B-Instruct   17/17    543ms    15/15   1,278ms      5.5 GB
+ *   Qwen3.5-0.8B           16/17  1,404ms    12/15   1,663ms      2.7 GB
+ *
+ * The larger model is both more accurate and faster, which is not the usual
+ * trade and is worth explaining. A routed turn is dominated by reading the
+ * prompt, not writing the answer — 3,800 tokens in against about a hundred
+ * out — and on that work the 4B keeps the GPU busy while the 0.8B is
+ * latency-bound on matrices too small to fill it.
+ *
+ * Accuracy is the better reason. Asked "when is the next train to Frankfurt",
+ * the 0.8B's parameter pass set the destination to "transit", invented a
+ * starting station the user had not named — the one thing that section of the
+ * prompt explicitly forbids — and copied an example out of the prompt into
+ * params.topic. Those turns reach the right handler and then do the wrong
+ * thing, which is worse than not answering.
+ *
+ * The small model stays for machines that cannot hold the large one.
+ */
+interface LocalModel {
+  file: string
+  url: string
+  /**
+   * Dedicated VRAM the machine needs before this is the right choice. The 4B
+   * wants 5.5GB for itself at an 8k context, and Whisper and Kokoro want
+   * about 1.1GB more while it is loaded.
+   */
+  needsVramBytes: number
+  /** A file much smaller than this is a truncated download, not a model. */
+  minBytes: number
+}
+
+const LOCAL_MODELS: LocalModel[] = [
+  {
+    file: 'Qwen3-VL-4B-Instruct-Q4_K_M.gguf',
+    url: 'https://huggingface.co/unsloth/Qwen3-VL-4B-Instruct-GGUF/resolve/main/Qwen3-VL-4B-Instruct-Q4_K_M.gguf',
+    needsVramBytes: 7_000_000_000,
+    minBytes: 2_000_000_000
+  },
+  {
+    file: 'Qwen3.5-0.8B-Q4_K_M.gguf',
+    url: 'https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q4_K_M.gguf',
+    needsVramBytes: 0,
+    minBytes: 400_000_000
+  }
+]
 
 /**
  * Unloaded after this long without a question, returning both the ~1GB of RAM
@@ -87,6 +137,10 @@ export function localInputBudgetChars(): number {
  * that is a disaster for an assistant: a plain "what is the capital of
  * Germany" spent its entire token budget thinking and returned an empty
  * string. Every call here disables it.
+ *
+ * Kept for whichever model is loaded. The 4B is an instruct build and does not
+ * reason unprompted, so this is a no-op there — but it costs nothing, and the
+ * small model is still what a machine without the VRAM for the large one runs.
  */
 const NO_THINKING = { budgets: { thoughtTokens: 0 } } as const
 
@@ -108,14 +162,72 @@ let loaded: Loaded | null = null
 let loading: Promise<Loaded> | null = null
 let idleTimer: ReturnType<typeof setTimeout> | null = null
 
+function pathFor(model: LocalModel): string {
+  return join(app.getPath('userData'), 'models', model.file)
+}
+
+/**
+ * True when the file is there and large enough to be the whole model. A
+ * download cut off by a closed laptop leaves a file that loads far enough to
+ * fail confusingly, so size is checked rather than existence.
+ */
+function isInstalled(model: LocalModel): boolean {
+  try {
+    return statSync(pathFor(model)).size >= model.minBytes
+  } catch {
+    return false
+  }
+}
+
+/** The best model actually on disk, or null. */
+function installedModel(): LocalModel | null {
+  return LOCAL_MODELS.find(isInstalled) ?? null
+}
+
+/**
+ * Which model this machine should fetch.
+ *
+ * `getVramState().total` is every device summed — on this laptop it reports
+ * 16.86GB across a discrete 3070 and the shared pool the integrated Intel
+ * chip draws from, which would happily talk a 6GB card into the 4B. Taking
+ * the unified portion out leaves 8.41GB, which is the card. A machine with
+ * only integrated graphics is then correctly measured as having almost no
+ * dedicated memory of its own and gets the small model.
+ */
+export async function chooseModelToDownload(): Promise<LocalModel> {
+  const smallest = LOCAL_MODELS[LOCAL_MODELS.length - 1]
+  try {
+    const { getLlama, LlamaLogLevel } = await import('node-llama-cpp')
+    const llama = await getLlama({ gpu: 'auto', logLevel: LlamaLogLevel.error })
+    const vram = await llama.getVramState()
+    const dedicated = Math.max(0, vram.total - (vram.unifiedSize ?? 0))
+    const chosen = LOCAL_MODELS.find((model) => dedicated >= model.needsVramBytes) ?? smallest
+    console.log(
+      `[local-llm] ${(dedicated / 1e9).toFixed(1)}GB dedicated VRAM -> ${chosen.file}`
+    )
+    return chosen
+  } catch (error) {
+    // No GPU, no driver, or the binding wouldn't load. All of those mean the
+    // large model would run on the CPU, where it is the wrong choice anyway.
+    console.warn('[local-llm] could not measure VRAM, taking the small model:', error)
+    return smallest
+  }
+}
+
+/**
+ * Where the model is. The installed one if there is one, so a machine that
+ * already has the small model keeps using it rather than reporting itself
+ * empty and asking for a 2.3GB download it may not want.
+ */
 export function localModelPath(): string {
   const override = process.env.NIMBUS_LOCAL_MODEL
   if (override) return override
-  return join(app.getPath('userData'), 'models', MODEL_FILE)
+  return pathFor(installedModel() ?? LOCAL_MODELS[0])
 }
 
 export function localModelAvailable(): boolean {
-  return existsSync(localModelPath())
+  if (process.env.NIMBUS_LOCAL_MODEL) return existsSync(process.env.NIMBUS_LOCAL_MODEL)
+  return installedModel() !== null
 }
 
 function scheduleUnload(): void {
@@ -166,7 +278,7 @@ async function load(): Promise<Loaded> {
     const { LlamaChatSession } = await import('node-llama-cpp')
     const session = new LlamaChatSession({ contextSequence: context.getSequence() })
 
-    console.log(`[local-llm] ready in ${Date.now() - started}ms (${MODEL_FILE})`)
+    console.log(`[local-llm] ready in ${Date.now() - started}ms (${basename(path)})`)
     loaded = { llama, model, context, session }
     return loaded
   })()

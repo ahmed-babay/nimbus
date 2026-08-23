@@ -1,9 +1,9 @@
 import { createWriteStream } from 'node:fs'
 import { mkdir, rename, rm, stat } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { dirname, join } from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
-import { localModelPath } from '../services/local-llm'
+import { chooseModelToDownload, localModelPath } from '../services/local-llm'
 import { localSttInstalled, prepareLocalStt, sttCacheDir } from '../services/local-stt'
 import { localTtsInstalled, prepareLocalTts, ttsCacheDir } from '../services/local-tts'
 import type { LocalModelKind, LocalModelProgress, LocalModelStatus } from '../shared/types'
@@ -21,10 +21,11 @@ import type { LocalModelKind, LocalModelProgress, LocalModelStatus } from '../sh
  * working model. A half-written GGUF loads far enough to fail confusingly.
  */
 
-const MODEL_URL =
-  'https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q4_K_M.gguf'
-
-/** Sanity floor — a model file much smaller than this is a truncated download. */
+/**
+ * Sanity floor for reporting a model as installed. The real per-model floor
+ * lives with the model list in local-llm; this is only for the status call,
+ * which reports whatever path that module picked.
+ */
 const MIN_MODEL_BYTES = 400_000_000
 
 export type DownloadProgress = LocalModelProgress
@@ -118,12 +119,17 @@ export async function downloadLocalModel(
   if (inFlight) return inFlight
 
   inFlight = (async () => {
-    const target = localModelPath()
+    // Which model depends on the machine: the 4B is both faster and more
+    // accurate, and needs a card that can hold it. Measured here rather than
+    // guessed, and decided at download time so a 2.3GB fetch is only started
+    // where it will actually be used.
+    const model = await chooseModelToDownload()
+    const target = join(dirname(localModelPath()), model.file)
     const temp = `${target}.part`
     await mkdir(dirname(target), { recursive: true })
 
     try {
-      const res = await fetch(MODEL_URL)
+      const res = await fetch(model.url)
       if (!res.ok || !res.body) {
         throw new Error(`The download failed (${res.status}). Check your connection.`)
       }
@@ -147,7 +153,7 @@ export async function downloadLocalModel(
       await pipeline(body, createWriteStream(temp))
       await rename(temp, target)
       onProgress({ kind: 'llm', receivedBytes, totalBytes, done: true })
-      console.log(`[model] downloaded ${MODEL_URL} -> ${target}`)
+      console.log(`[model] downloaded ${model.url} -> ${target}`)
     } catch (error) {
       await rm(temp, { force: true }).catch(() => {})
       const message = error instanceof Error ? error.message : 'The download failed.'
