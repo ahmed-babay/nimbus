@@ -241,6 +241,27 @@ export default function App() {
                 {/* No items-start here: it would let the scrolling child size
                     to its content, so it grew past the card and got clipped
                     instead of scrolling. The orb pins itself with self-start. */}
+                {/* The release washing over the panel.
+                    Centred on where the orb actually sits rather than on the
+                    card, so the light has a source you can point at — the
+                    whole intent is that the answer comes *out of* the orb and
+                    into the interface, not that a panel-wide overlay happens
+                    to flash at the same moment. Driven by --orb-shock, which
+                    the orb writes each frame during a release and leaves at 0
+                    otherwise, so this costs nothing at rest. */}
+                <div
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 z-10 rounded-[20px]"
+                  style={{
+                    // Kept low: this is meant to be felt at the edge of
+                    // attention while reading the answer, not looked at.
+                    opacity: 'calc(var(--orb-shock, 0) * 0.22)',
+                    background:
+                      'radial-gradient(120% 90% at 42px 132px, var(--color-nimbus-accent-bright) 0%, transparent 62%)',
+                    mixBlendMode: 'screen'
+                  }}
+                />
+
                 <div className="mt-2.5 flex min-h-0 flex-1 gap-3.5">
                   <Orb state={state} searching={searching} answerSeq={answerSeq} levelRef={levelRef} />
 

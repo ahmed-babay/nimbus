@@ -103,30 +103,69 @@ const HALO_HARMONICS: Harmonic[] = [
 ]
 
 /**
- * How long the swell takes to cross the panel and leave.
+ * The turn, as the orb tells it.
  *
- * Slow on purpose. Anything under two seconds reads as something being fired
- * rather than water moving, which was the problem with the first two attempts.
+ * A question does not "load". It is taken in, held, and answered, and the orb
+ * is meant to be the place that happens rather than a widget reporting on it:
+ *
+ *   ACCUMULATING  light is drawn in from outside and gathers in the core
+ *   HOLDING       the charge sits there under tension while Nimbus works
+ *   RELEASING     the core lets go and the energy leaves as expanding waves
+ *   RESPONDING    back to the living resting state, now reacting to the voice
+ *
+ * Accumulation is deliberately not a spinner, a ring, or a pulse of opacity.
+ * All three say "wait"; none of them say "I have your message". What says it
+ * is matter arriving from off-screen and going *in*, because inward motion is
+ * something only a receiver does.
  */
-const RIPPLE_MS = 2800
 
-/** How far the crest travels, in viewBox units (the sphere is 100 across). */
-const WAVE_TRAVEL = 1500
+/** How long light takes to gather. Long enough to read, short enough to not gate the answer. */
+const CHARGE_MS = 900
 
-/** How far the crest bows out of straight. This is what makes it a wave. */
-const WAVE_AMPLITUDE = 52
-
-/** Crests along the crest's length. Few and long, like a swell, not ripples. */
-const WAVE_FREQUENCY = 0.0042
+/** The release: flash, then the waves crossing the panel. */
+const RELEASE_MS = 1600
 
 /**
- * How far the sweep can tilt from horizontal, in degrees.
+ * Motes of light falling into the sphere.
  *
- * Picked fresh each time so the swell does not arrive from the same place
- * twice — a wave that always crosses on the identical line stops looking like
- * weather and starts looking like a progress bar.
+ * They spiral rather than fall straight. A straight radial line reads as a
+ * diagram of convergence; a path that curls as it accelerates reads as
+ * something being *pulled*, which is the difference between showing the idea
+ * and giving the feeling of it. Staggered starts so they arrive as a shower
+ * rather than a synchronised ring, which would just be a closing iris.
  */
-const WAVE_TILT_RANGE = 46
+const SPARKS = [
+  { angle: 0.4, delay: 0.0, curl: 1.5, reach: 165, len: 34 },
+  { angle: 1.9, delay: 0.08, curl: -1.2, reach: 150, len: 28 },
+  { angle: 3.1, delay: 0.04, curl: 1.8, reach: 172, len: 38 },
+  { angle: 4.4, delay: 0.16, curl: -1.6, reach: 158, len: 31 },
+  { angle: 5.6, delay: 0.1, curl: 1.3, reach: 143, len: 26 },
+  { angle: 2.5, delay: 0.22, curl: -1.9, reach: 180, len: 42 },
+  { angle: 0.9, delay: 0.3, curl: 1.1, reach: 136, len: 24 },
+  { angle: 4.9, delay: 0.26, curl: -1.4, reach: 162, len: 33 },
+  { angle: 3.7, delay: 0.36, curl: 1.7, reach: 147, len: 29 }
+]
+
+/**
+ * The waves that leave on release.
+ *
+ * Three, staggered, so it reads as one event propagating rather than three
+ * separate rings — and drawn with the same harmonic machinery as the void, so
+ * their outlines breathe instead of being perfect circles. That is the whole
+ * reason they do not look like a radar sweep: a sonar ping is a circle, and
+ * nothing alive is.
+ */
+const RING_DELAYS = [0, 0.13, 0.27]
+
+/**
+ * How far the waves travel, in viewBox units.
+ *
+ * Large, because the viewBox is 100 across and renders into 52 pixels — so a
+ * unit is about half a pixel, and a reach that looked generous at 190 covered
+ * a fifth of the card and stopped. The release is supposed to reach the
+ * interface, so it has to be sized against the panel, not the sphere.
+ */
+const RING_REACH = 780
 
 /** Enough segments that the curve reads as smooth at this size, and no more. */
 const OUTLINE_POINTS = 56
@@ -186,12 +225,15 @@ export function Orb({ state, searching = false, answerSeq = 0, levelRef, size = 
    * hides, so mount is exactly "when Nimbus opens".
    */
   const mountedAt = useRef(performance.now())
-  /** The expanding rings emitted when Nimbus changes what it is doing. */
-  const crestRef = useRef<SVGPathElement>(null)
-  const washRef = useRef<SVGPathElement>(null)
-  const waveGroupRef = useRef<SVGGElement>(null)
-  /** Tilt for this particular swell, so no two arrive the same way. */
-  const waveTilt = useRef(0)
+  /** The waves that leave the sphere when the answer is released. */
+  const ringRefs = useRef<SVGPathElement[]>([])
+  /** Light falling inward while the question is being taken in. */
+  const sparkRefs = useRef<SVGPathElement[]>([])
+  const sparkHeadRefs = useRef<SVGCircleElement[]>([])
+  /** The gathered charge at the centre — bright while held, blinding on release. */
+  const coreRef = useRef<SVGCircleElement>(null)
+  /** Turned a quarter turn each time so successive waves are not identical. */
+  const ringPhase = useRef(0)
   /**
    * When the mode last changed, and what it changed from.
    *
@@ -201,24 +243,39 @@ export function Orb({ state, searching = false, answerSeq = 0, levelRef, size = 
    * A ring leaving the sphere marks the transition so it is felt rather than
    * merely noticed.
    */
-  const rippleAt = useRef(0)
+  const releaseAt = useRef(0)
+  const chargeAt = useRef(0)
   const lastMode = useRef(mode)
 
   useEffect(() => {
     lastMode.current = mode
   }, [mode])
 
-  // One swell per answer, spoken or not.
+  /**
+   * The question has been handed over — start drawing light in.
+   *
+   * Keyed to 'thinking', which is the one thing both routes into a turn have
+   * in common: the voice path sets it once a transcript is final, and the text
+   * box sets it on submit. Anything keyed to the microphone would have left
+   * typed questions with no acknowledgement at all.
+   */
+  useEffect(() => {
+    if (state !== 'thinking') return
+    chargeAt.current = performance.now()
+    releaseAt.current = 0
+  }, [state])
+
+  // One release per answer, spoken or not.
   //
   // Keyed to the answer rather than the 'speaking' state, because that state
   // never arrives when the voice is muted - so muting the voice silently
-  // removed the animation too. And not on every transition: firing when it
-  // stopped listening put a flourish at the moment the user has just finished
-  // talking and is waiting, which says something happened when nothing has.
+  // removed the animation too.
   useEffect(() => {
     if (answerSeq === 0) return
-    rippleAt.current = performance.now()
-    waveTilt.current = (Math.random() * 2 - 1) * WAVE_TILT_RANGE
+    releaseAt.current = performance.now()
+    chargeAt.current = 0
+    // Rotated so the second answer's waves do not land on the first's outline.
+    ringPhase.current += 1.7
   }, [answerSeq])
 
   useEffect(() => {
@@ -257,14 +314,47 @@ export function Orb({ state, searching = false, answerSeq = 0, levelRef, size = 
       // a beat rather than a wobble.
       const ping = searching ? Math.pow(Math.max(0, Math.sin(seconds * 2.4)), 3) : 0
 
+      // --- the turn: gather, hold, release --------------------------------
+      //
+      // `charge` is how much light has been drawn in, 0..1. It runs up over
+      // CHARGE_MS and then *stays* at 1 for as long as Nimbus is working, which
+      // is the "holding" state — the orb sitting there full rather than
+      // cycling. `release` runs 0..1 once the answer lands, and while it does
+      // the charge is spent.
+      const sinceRelease = releaseAt.current === 0 ? -1 : now - releaseAt.current
+      const releasing = sinceRelease >= 0 && sinceRelease <= RELEASE_MS
+      const release = releasing ? sinceRelease / RELEASE_MS : 0
+
+      // A charge is only legitimate while Nimbus is actually working on
+      // something. Without this a turn that ended in an error — which goes
+      // straight back to idle and never increments the answer — would leave
+      // the sphere holding a charge it is never going to spend, contracted and
+      // lit, forever.
+      if (!releasing && state !== 'thinking') chargeAt.current = 0
+      const charge = chargeAt.current === 0 ? 0 : Math.min(1, (now - chargeAt.current) / CHARGE_MS)
+
+      // Tension while the charge is held: a fast, shallow tremor that only
+      // exists once gathering has finished. Nothing is travelling, but the
+      // thing is visibly not at rest — which is what "working on it" looks
+      // like without a single rotating element.
+      const held = charge >= 1 && !releasing ? 1 : 0
+      const tremor = held * Math.sin(seconds * 11) * 0.5 + held * Math.sin(seconds * 17) * 0.3
+
+      // The flash. Very short and very bright, front-loaded into the first
+      // eighth of the release — a discharge is not a fade-in.
+      const flash = releasing ? Math.pow(Math.max(0, 1 - release / 0.12), 2) : 0
+
       if (rootRef.current) {
         rootRef.current.style.transform = `scale(${(0.72 + eased * 0.28 + arrival) * (1 + swell + breath * 0.015)})`
         rootRef.current.style.opacity = `${Math.min(1, intro * 2.2)}`
       }
       if (bloomRef.current) {
         // Flares during the entrance, then settles to the resting breath.
-        bloomRef.current.style.opacity = `${0.34 + breath * 0.14 + smoothed * 0.45 + arrival * 1.6 + ping * 0.2}`
-        bloomRef.current.style.transform = `scale(${1.1 + swell * 1.6 + breath * 0.05 + arrival + ping * 0.25})`
+        // Charge lifts it steadily as light accumulates; the release blows it
+        // out for an instant, which is what makes the discharge feel like it
+        // happened to the room and not only to the sphere.
+        bloomRef.current.style.opacity = `${0.34 + breath * 0.14 + smoothed * 0.45 + arrival * 1.6 + ping * 0.2 + charge * 0.5 + flash * 1.1}`
+        bloomRef.current.style.transform = `scale(${1.1 + swell * 1.6 + breath * 0.05 + arrival + ping * 0.25 + charge * 0.18 + flash * 0.7})`
       }
 
       // The interior's clock. Thinking churns it faster without needing a
@@ -281,11 +371,22 @@ export function Orb({ state, searching = false, answerSeq = 0, levelRef, size = 
       // Bounded so the outline stays inside the glass at full voice: the
       // harmonics sum to 0.27, so peak radius is radius * (1 + 0.27 * this),
       // and r=37 is the clip.
-      const distortion = 0.55 + breath * 0.2 + smoothed * 1.1 + ping * 0.5
+      // Charge smooths the outline as it compresses — the void is being packed
+      // in rather than sloshing about — and the tremor puts a fine edge on it
+      // while the charge is held.
+      const distortion =
+        (0.55 + breath * 0.2 + smoothed * 1.1 + ping * 0.5) * (1 - charge * 0.45) +
+        Math.abs(tremor) * 0.12 +
+        flash * 0.8
       // It swells as it talks, so it grows into the glass and pulls back.
       // The ping also reaches the bloom, not just the void, so the pulse
       // feels like it leaves the sphere rather than churning inside it.
-      const voidRadius = 19 + smoothed * 4.5 + breath * 0.8 + ping * 1.5
+      //
+      // Gathering pulls it *in*: the dark mass contracts around the growing
+      // core, which is what gives the charge somewhere to go and reads as
+      // pressure building. The release lets it fly back out.
+      const voidRadius =
+        19 + smoothed * 4.5 + breath * 0.8 + ping * 1.5 - charge * 7 + tremor * 0.4 + flash * 6
 
       voidRef.current?.setAttribute('d', blobPath(voidRadius, churn, distortion, VOID_HARMONICS))
       haloRef.current?.setAttribute(
@@ -312,62 +413,116 @@ export function Orb({ state, searching = false, answerSeq = 0, levelRef, size = 
         mote.style.opacity = `${(MOTES[i].opacity * depth).toFixed(3)}`
       })
 
-      // Rings leaving the sphere when Nimbus changes what it is doing.
+      // Light falling in.
       //
-      // Three of them, staggered, so it reads as one wave rather than three
-      // events. They expand well past the glass and fade as they go — light
-      // spreading outward, not a border being drawn. Between transitions the
-      // whole thing is invisible and costs two style writes.
-      // One swell crossing the glass.
-      //
-      // Not rings. A ring expanding from a point is a radar sweep; the sea
-      // sends a crest travelling in a direction, bowed rather than straight,
-      // and that is what this draws — a long curve that leaves the sphere,
-      // crosses the panel and runs off the far edge. The card clips it, so
-      // only the part over the glass is ever seen.
-      const sinceRipple = now - rippleAt.current
-      const running = rippleAt.current !== 0 && sinceRipple >= 0 && sinceRipple <= RIPPLE_MS
-      if (!running) {
-        if (crestRef.current) crestRef.current.style.opacity = '0'
-        if (washRef.current) washRef.current.style.opacity = '0'
-      } else {
-        const t = sinceRipple / RIPPLE_MS
-        // Eases as it goes, the way a wave slows in shallow water. A linear
-        // sweep reads as a scanner passing over the panel.
-        const travelled = (1 - Math.pow(1 - t, 2.2)) * WAVE_TRAVEL
-
-        // The crest is drawn as a long vertical curve and swept sideways; the
-        // group's rotation decides which way the swell is actually running.
-        const phase = seconds * 1.9
-        let crest = ''
-        let wash = ''
-        for (let y = -700; y <= 1100; y += 40) {
-          // Two lengths of undulation so the crest is not a clean sine — the
-          // giveaway that a wave was drawn rather than observed.
-          const bow =
-            Math.sin(y * WAVE_FREQUENCY + phase) * WAVE_AMPLITUDE +
-            Math.sin(y * WAVE_FREQUENCY * 2.7 + phase * 1.4) * WAVE_AMPLITUDE * 0.32
-          const x = 50 + travelled - WAVE_TRAVEL * 0.06 + bow
-          crest += `${y === -700 ? 'M' : 'L'}${x.toFixed(1)},${y}`
-          // The wash trails the crest, wider and fainter, like the water
-          // still moving behind the front.
-          wash += `${y === -700 ? 'M' : 'L'}${(x - 34).toFixed(1)},${y}`
+      // Each mote spirals from outside the panel to the core: the radius eases
+      // in hard so it *accelerates* as it arrives, and the angle winds forward
+      // with the square of progress so the curl tightens near the centre. Both
+      // together are what make it read as capture rather than as a line being
+      // drawn inward.
+      sparkRefs.current.forEach((spark, i) => {
+        if (!spark) return
+        const { angle, delay, curl, reach, len } = SPARKS[i]
+        // Each mote has its own slice of the window, so they shower in.
+        const local = charge <= 0 ? -1 : (charge - delay) / (1 - delay)
+        if (local <= 0 || local >= 1) {
+          spark.style.opacity = '0'
+          return
         }
-        crestRef.current?.setAttribute('d', crest)
-        washRef.current?.setAttribute('d', wash)
+        // Cubic: slow while distant, quick at the end.
+        const eased = Math.pow(local, 2.6)
+        const r = reach * (1 - eased)
+        const a = angle + curl * eased * eased + seconds * 0.15
+        // The trail is where the mote just came from, so it lies along its own
+        // path rather than pointing at the centre.
+        // *Behind* the head — where it has just come from, which is further
+        // out — and on the same easing, or the streak stops lying along the
+        // curve it is supposed to have travelled.
+        const tail = Math.max(0, local - len / reach)
+        const easedTail = Math.pow(tail, 2.6)
+        const rt = reach * (1 - easedTail)
+        const at = angle + curl * easedTail * easedTail + seconds * 0.15
+        const x = 50 + Math.cos(a) * r
+        const y = 50 + Math.sin(a) * r
+        const xt = 50 + Math.cos(at) * rt
+        const yt = 50 + Math.sin(at) * rt
+        // Curved through a control point offset along the sweep, so the streak
+        // bends the way the path does.
+        const cx = 50 + Math.cos((a + at) / 2) * ((r + rt) / 2) * 1.06
+        const cy = 50 + Math.sin((a + at) / 2) * ((r + rt) / 2) * 1.06
+        spark.setAttribute(
+          'd',
+          `M${xt.toFixed(1)},${yt.toFixed(1)} Q${cx.toFixed(1)},${cy.toFixed(1)} ${x.toFixed(1)},${y.toFixed(1)}`
+        )
+        // Fades in from nothing and dims as it enters the glass, so it looks
+        // absorbed rather than stopping dead at the rim.
+        const near = Math.max(0, 1 - r / 42)
+        const alpha = Math.min(1, local * 5) * (1 - near * 0.75)
+        spark.style.opacity = `${(alpha * 0.55).toFixed(3)}`
 
-        if (waveGroupRef.current) {
-          waveGroupRef.current.setAttribute(
-            'transform',
-            `rotate(${waveTilt.current.toFixed(1)} 50 50)`
-          )
+        // The bright head, as its own dot.
+        //
+        // A gradient along the streak would have said which way it is going
+        // for free, but an SVG linear gradient runs across the shape's
+        // bounding box rather than along the path — so the bright end lands on
+        // whichever tip happens to be further right, which on a curve that
+        // sweeps around the sphere is the wrong one half the time. A separate
+        // dot at the leading point is unambiguous and costs one more element.
+        const head = sparkHeadRefs.current[i]
+        if (head) {
+          head.setAttribute('cx', x.toFixed(1))
+          head.setAttribute('cy', y.toFixed(1))
+          head.setAttribute('r', (1.5 + local * 1.2).toFixed(2))
+          head.style.opacity = alpha.toFixed(3)
         }
+      })
 
-        // In quickly as it leaves the sphere, out slowly as it crosses.
-        const fade = t < 0.14 ? t / 0.14 : 1 - (t - 0.14) / 0.86
-        if (crestRef.current) crestRef.current.style.opacity = `${(fade * 0.34).toFixed(3)}`
-        if (washRef.current) washRef.current.style.opacity = `${(fade * 0.16).toFixed(3)}`
+      // The gathered charge, sitting where the void's darkness normally is.
+      // It grows as light arrives, trembles while held, and blows out on
+      // release before collapsing to nothing.
+      if (coreRef.current) {
+        const gathered = Math.pow(charge, 1.6)
+        const radius = releasing
+          ? 6 + flash * 26 + release * 8
+          : 2 + gathered * 7 + tremor * 0.6
+        const alpha = Math.min(1, releasing ? flash * 0.95 + (1 - release) * 0.12 : gathered * 0.75)
+        coreRef.current.setAttribute('r', Math.max(0.1, radius).toFixed(2))
+        coreRef.current.style.opacity = alpha.toFixed(3)
       }
+
+      // The waves. Blob outlines rather than circles, on the void's own
+      // harmonics, so what leaves the sphere is recognisably the same
+      // substance that was churning inside it.
+      ringRefs.current.forEach((ring, i) => {
+        if (!ring) return
+        const local = releasing ? (release - RING_DELAYS[i]) / (1 - RING_DELAYS[i]) : -1
+        if (local <= 0 || local >= 1) {
+          ring.style.opacity = '0'
+          return
+        }
+        // Fast out of the sphere, slowing as it spreads — energy losing itself
+        // to the room rather than a shape being scaled.
+        const spread = 1 - Math.pow(1 - local, 2.4)
+        const radius = 20 + spread * RING_REACH
+        // The outline relaxes toward round as it expands, the way a shockwave
+        // forgets the shape of what made it.
+        const wobble = (1 - spread) * 0.5
+        ring.setAttribute('d', blobPath(radius, churn + ringPhase.current, wobble, VOID_HARMONICS))
+        // Thinner as it grows: the same light spread over a longer front.
+        ring.setAttribute('stroke-width', (7 * (1 - spread * 0.55)).toFixed(2))
+        ring.style.opacity = `${((1 - local) * (1 - local) * 0.5).toFixed(3)}`
+      })
+
+      // The light the wave throws onto the rest of the panel.
+      //
+      // Published on the document element rather than on this component,
+      // because a custom property only reaches descendants and the card is
+      // this orb's *parent* — everything the wave should wash over is a
+      // sibling. One property on the root lets the panel light up from the
+      // orb's position without the orb holding a reference to it, and there is
+      // only ever one orb in this window.
+      const shove = releasing ? Math.sin(Math.pow(release, 0.7) * Math.PI) * (1 - release) : 0
+      document.documentElement.style.setProperty('--orb-shock', shove.toFixed(4))
 
       frame = requestAnimationFrame(tick)
     }
@@ -446,6 +601,17 @@ export function Orb({ state, searching = false, answerSeq = 0, levelRef, size = 
               <stop offset="100%" stopColor={rim} stopOpacity="0" />
             </radialGradient>
 
+            {/* The charge: white-hot at the middle falling off to the state's
+                own colour, so a full core reads as heat rather than as a
+                brighter dot of the same paint. */}
+            <radialGradient id={`${id}-core`} cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stopColor="#ffffff" stopOpacity="1" />
+              <stop offset="30%" stopColor="#ffffff" stopOpacity="0.72" />
+              <stop offset="62%" stopColor={rim} stopOpacity="0.5" />
+              <stop offset="100%" stopColor={rim} stopOpacity="0" />
+            </radialGradient>
+
+
             {/* Softens the motes so they read as light inside glass rather
                 than as circles drawn on top of it. */}
             <filter id={`${id}-soft`} x="-60%" y="-60%" width="220%" height="220%">
@@ -462,33 +628,24 @@ export function Orb({ state, searching = false, answerSeq = 0, levelRef, size = 
             </clipPath>
           </defs>
 
-          {/* The swell. Drawn here because this SVG already overflows its
-              box, so a curve far outside the viewBox still renders and the
-              card clips it — what you see is a crest crossing the glass. The
-              group is rotated per swell, which is what sends it across at a
-              different angle each time. */}
-          <g ref={waveGroupRef}>
+          {/* The waves. Drawn before the glass so they read as passing behind
+              and around the sphere rather than being painted over it, and
+              outside the viewBox on purpose — this SVG overflows, so the card
+              is what clips them as they cross the panel. */}
+          {RING_DELAYS.map((_, i) => (
             <path
-              ref={washRef}
+              key={i}
+              ref={(node) => {
+                if (node) ringRefs.current[i] = node
+              }}
               fill="none"
               stroke={rim}
-              strokeWidth="46"
-              strokeLinecap="round"
-              opacity="0"
-              filter={`url(#${id}-soft)`}
-              style={{ transition: 'stroke 500ms ease' }}
-            />
-            <path
-              ref={crestRef}
-              fill="none"
-              stroke={rim}
-              strokeWidth="7"
-              strokeLinecap="round"
+              strokeWidth="5"
               opacity="0"
               filter={`url(#${id}-edge)`}
-              style={{ transition: 'stroke 500ms ease' }}
+              style={{ transition: 'stroke 500ms ease', willChange: 'opacity' }}
             />
-          </g>
+          ))}
 
           <circle cx="50" cy="50" r="37" fill={`url(#${id}-glass)`} />
 
@@ -540,9 +697,58 @@ export function Orb({ state, searching = false, answerSeq = 0, levelRef, size = 
             />
           </g>
 
+          {/* The gathered charge. Inside the glass and additive, so it lights
+              the void from within instead of sitting on top of it — the
+              question ends up *in* the sphere, which is the whole idea. */}
+          <g clipPath={`url(#${id}-clip)`} style={{ mixBlendMode: 'screen' }}>
+            <circle
+              ref={coreRef}
+              cx="50"
+              cy="50"
+              r="0.1"
+              fill={`url(#${id}-core)`}
+              opacity="0"
+              filter={`url(#${id}-soft)`}
+              style={{ willChange: 'opacity' }}
+            />
+          </g>
+
           {/* The focused light, opposite the highlight, inside the glass. */}
           <g clipPath={`url(#${id}-clip)`} style={{ mixBlendMode: 'screen' }}>
             <ellipse cx="62" cy="66" rx="17" ry="13" fill={`url(#${id}-caustic)`} />
+          </g>
+
+          {/* Light falling in. Outside the clip and drawn last, because these
+              arrive from beyond the sphere and have to cross the rim to get
+              in — clipping them to the glass would hide the entire journey. */}
+          <g style={{ mixBlendMode: 'screen' }}>
+            {SPARKS.map((_, i) => (
+              <path
+                key={`trail-${i}`}
+                ref={(node) => {
+                  if (node) sparkRefs.current[i] = node
+                }}
+                fill="none"
+                stroke={rim}
+                strokeWidth="1.6"
+                strokeLinecap="round"
+                opacity="0"
+                filter={`url(#${id}-edge)`}
+                style={{ transition: 'stroke 500ms ease', willChange: 'opacity' }}
+              />
+            ))}
+            {SPARKS.map((_, i) => (
+              <circle
+                key={`head-${i}`}
+                ref={(node) => {
+                  if (node) sparkHeadRefs.current[i] = node
+                }}
+                r="1.5"
+                fill={`url(#${id}-mote)`}
+                opacity="0"
+                style={{ willChange: 'opacity' }}
+              />
+            ))}
           </g>
 
           {/* Rim last, over the interior — the edge is the brightest thing. */}
