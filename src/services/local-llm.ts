@@ -363,6 +363,17 @@ async function load(): Promise<Loaded> {
     })
     const model = await llama.loadModel({
       modelPath: path,
+      // Fit the layers to the VRAM that is actually free, and tell it the
+      // context we are really going to create.
+      //
+      // The default is "auto", which sizes itself against a context of "auto"
+      // — not against the one asked for a line later. Asking for 8,192 after
+      // it had planned for something smaller is how the card ends up
+      // oversubscribed, and an oversubscribed card on Windows does not fail:
+      // it starts moving GPU memory over PCIe, and the whole desktop stutters
+      // with it. Sharing 8GB with the compositor, a browser and two speech
+      // models leaves no room for that guess to be wrong.
+      gpuLayers: { fitContext: { contextSize: CONTEXT_TOKENS } },
       // Reading the weights is nearly all of the wait, so its progress is
       // most of the bar. The context that follows gets the last tenth.
       onLoadProgress: (fraction) => reportLoad(true, Math.min(0.9, fraction * 0.9))
