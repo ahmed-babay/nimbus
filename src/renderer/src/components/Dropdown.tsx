@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 export interface DropdownOption {
   value: string
@@ -40,6 +40,8 @@ export function Dropdown({
 }: DropdownProps) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
+  const [flip, setFlip] = useState(false)
+  const [menuMax, setMenuMax] = useState(168)
   const rootRef = useRef<HTMLDivElement>(null)
 
   const selected = options.find((option) => option.value === value)
@@ -52,6 +54,17 @@ export function Dropdown({
         option.label.toLowerCase().includes(needle) || option.value.toLowerCase().includes(needle)
     )
   }, [options, query])
+
+  useLayoutEffect(() => {
+    if (!open || !rootRef.current) return
+    const box = rootRef.current.getBoundingClientRect()
+    const gap = 8
+    const below = window.innerHeight - box.bottom - gap
+    const above = box.top - gap
+    const openUp = below < 120 && above > below
+    setFlip(openUp)
+    setMenuMax(Math.max(96, Math.min(220, openUp ? above : below)))
+  }, [open, visible.length])
 
   useEffect(() => {
     if (!open) return
@@ -115,7 +128,9 @@ export function Dropdown({
             transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
             // Above everything else in the panel, and anchored to the button
             // rather than the page so it travels with a scrolling form.
-            className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-lg border border-nimbus-border bg-nimbus-bg shadow-[0_16px_40px_-12px_rgba(0,0,0,0.8)] backdrop-blur-2xl"
+            className={`absolute left-0 right-0 z-50 overflow-hidden rounded-lg border border-nimbus-border bg-nimbus-bg shadow-[0_16px_40px_-12px_rgba(0,0,0,0.8)] backdrop-blur-2xl ${
+              flip ? 'bottom-full mb-1' : 'top-full mt-1'
+            }`}
           >
             {options.length > filterAbove && (
               <div className="border-b border-white/[0.06] p-1.5">
@@ -129,7 +144,10 @@ export function Dropdown({
               </div>
             )}
 
-            <div className="nimbus-scroll max-h-[168px] overflow-y-auto overscroll-contain py-1">
+            <div
+              className="nimbus-scroll overflow-y-auto overscroll-contain py-1"
+              style={{ maxHeight: menuMax }}
+            >
               {visible.length === 0 ? (
                 <p className="px-2.5 py-2 text-[10.5px] text-nimbus-text-dim">Nothing matches.</p>
               ) : (
