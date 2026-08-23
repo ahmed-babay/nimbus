@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { useEffect, useRef, useState, type RefObject } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { MAX_ZOOM, MIN_ZOOM, TILE_SIZE, tilesCovering, worldX, worldY } from '@shared/mercator'
 import type { RadioPlayerControls } from '../hooks/useRadioPlayer'
 import { ImageCarousel } from './ImageCarousel'
@@ -964,12 +964,16 @@ function RouteMap({ map, mode }: { map: RenderedMap; mode: TravelMode }) {
   /** Tiles already fetched, keyed "zoom/col/row". */
   const [tiles, setTiles] = useState<Record<string, string>>(() =>
     Object.fromEntries(
-      map.tiles.map((tile) => [
+      map.tiles.map((tile) => {
         // The first render's tiles arrive as pixel offsets, so convert back to
-        // indices to seed the same cache the interactive fetches fill.
-        `${map.zoom}/${Math.round((tile.x + map.left) / TILE_SIZE)}/${Math.round((tile.y + map.top) / TILE_SIZE)}`,
-        tile.image
-      ])
+        // indices to seed the same cache the interactive fetches fill. Wrapped
+        // the same way the lookups are, or none of them are ever found again
+        // and the opening view is fetched a second time.
+        const scale = 2 ** map.zoom
+        const col = Math.round((tile.x + map.left) / TILE_SIZE)
+        const row = Math.round((tile.y + map.top) / TILE_SIZE)
+        return [`${map.zoom}/${((col % scale) + scale) % scale}/${row}`, tile.image]
+      })
     )
   )
   const dragging = useRef<{ x: number; y: number } | null>(null)
@@ -1039,13 +1043,23 @@ function RouteMap({ map, mode }: { map: RenderedMap; mode: TravelMode }) {
     return () => clearTimeout(timer)
   }, [view.zoom, view.left, view.top, map.width, map.height])
 
-  const project = (point: [number, number]): [number, number] => [
-    worldX(point[1], view.zoom) - view.left,
-    worldY(point[0], view.zoom) - view.top
-  ]
+  const project = useCallback(
+    (point: [number, number]): [number, number] => [
+      worldX(point[1], view.zoom) - view.left,
+      worldY(point[0], view.zoom) - view.top
+    ],
+    [view.zoom, view.left, view.top]
+  )
 
+  // Memoised because it is the expensive part. Building this string means a
+  // projection and two toFixed calls per point, and a drag re-renders sixty
+  // times a second — without this, moving the map spent all its time
+  // rebuilding a path that had not changed shape.
   const geo = map.geoRoutes?.[mode]
-  const path = geo?.map((point) => project(point).map((n) => n.toFixed(1)).join(',')).join(' ')
+  const path = useMemo(
+    () => geo?.map((point) => project(point).map((n) => n.toFixed(1)).join(',')).join(' '),
+    [geo, project]
+  )
   const start = map.geoStart ? project(map.geoStart) : map.start
   const end = map.geoEnd ? project(map.geoEnd) : map.end
 

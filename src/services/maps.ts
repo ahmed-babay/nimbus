@@ -273,6 +273,18 @@ const MAX_ZOOM = 17
  */
 const MAX_TILES_PER_REQUEST = 24
 
+/**
+ * Most points kept in a route handed to the renderer.
+ *
+ * The map is 352 pixels wide, so anything beyond a few hundred is detail no
+ * one can see — bought at the cost of reprojecting every one of them on every
+ * frame while the map is being dragged.
+ */
+const MAX_GEO_POINTS = 400
+
+/** Never thin below this, or a short trip across town loses its shape. */
+const MIN_GEO_STEP = 0.00012
+
 function worldX(lon: number, zoom: number): number {
   return ((lon + 180) / 360) * TILE_SIZE * 2 ** zoom
 }
@@ -367,12 +379,22 @@ async function fetchTiles(view: Viewport): Promise<MapTile[]> {
  */
 function thinGeo(shape: Array<[number, number]>): Array<[number, number]> {
   if (shape.length <= 2) return shape
+
+  // The step scales with how long the route is, rather than being a fixed
+  // distance. A fixed one is fine for a trip across town and useless for a
+  // trip across the country: measured on Darmstadt to Dresden it kept 6,640
+  // points, and reprojecting those on every frame of a drag is what made the
+  // map unusable. A viewport 352 pixels wide cannot show more than a few
+  // hundred distinct points however far the journey is.
+  const lats = shape.map((p) => p[0])
+  const lons = shape.map((p) => p[1])
+  const span = Math.max(...lats) - Math.min(...lats) + (Math.max(...lons) - Math.min(...lons))
+  const step = Math.max(MIN_GEO_STEP, span / MAX_GEO_POINTS)
+
   const out: Array<[number, number]> = [shape[0]]
-  // Roughly 15 metres of latitude — below what any zoom here resolves.
-  const MIN_STEP = 0.00014
   for (const point of shape.slice(1, -1)) {
     const last = out[out.length - 1]
-    if (Math.abs(point[0] - last[0]) + Math.abs(point[1] - last[1]) >= MIN_STEP) out.push(point)
+    if (Math.abs(point[0] - last[0]) + Math.abs(point[1] - last[1]) >= step) out.push(point)
   }
   out.push(shape[shape.length - 1])
   return out
