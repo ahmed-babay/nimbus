@@ -96,7 +96,20 @@ export function transcriptionHint(): string {
  */
 export function placeContext(): string {
   const region = homeRegion()
-  if (!region) return ''
+  // Saying nothing is not the same as saying "unknown", and the difference is
+  // a model that makes something up. Asked for trains in the first seconds
+  // after a restart — before the location fix has come back — one answered
+  // "You're in Berlin, and it's 16:31 local time", having been given the time
+  // and nothing at all about the place. An empty prompt is a hole, and a
+  // language model fills holes with whatever is plausible.
+  if (!region) {
+    return (
+      'You do not know where the user is yet — the location has not come back. ' +
+      'Never state or guess where they are, and never fill in a starting place ' +
+      'from anything except what they actually said. If where they are matters ' +
+      'to the answer, say you are still working it out.'
+    )
+  }
   const language = placeLanguage() || 'the local language'
 
   return (
