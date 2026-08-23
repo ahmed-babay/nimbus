@@ -170,6 +170,11 @@ const RING_REACH = 780
 /** Enough segments that the curve reads as smooth at this size, and no more. */
 const OUTLINE_POINTS = 56
 
+/** How far the ripples have lengthened, 0..1 — long swell rather than chop. */
+function spreadFreq(release: number, releasing: boolean): number {
+  return releasing ? 1 - Math.pow(1 - release, 2) : 0
+}
+
 /**
  * A closed blob whose radius varies with angle and time.
  *
@@ -225,10 +230,27 @@ export function Orb({ state, searching = false, answerSeq = 0, levelRef, size = 
    * hides, so mount is exactly "when Nimbus opens".
    */
   const mountedAt = useRef(performance.now())
-  /** The waves that leave the sphere when the answer is released. */
-  const ringRefs = useRef<SVGPathElement[]>([])
+  /**
+   * The waves that leave the sphere. Three layers each — wash, band, crest —
+   * because a single stroke can only ever look like a line.
+   */
+  const ringGlowRefs = useRef<SVGPathElement[]>([])
+  const ringBandRefs = useRef<SVGPathElement[]>([])
+  const ringCrestRefs = useRef<SVGPathElement[]>([])
+  /** The turbulence that makes the surface behave like water. */
+  const turbRef = useRef<SVGFETurbulenceElement>(null)
+  const dispRef = useRef<SVGFEDisplacementMapElement>(null)
+  /**
+   * The sphere, so the water filter can be taken off it entirely when nothing
+   * is disturbing it. feTurbulence is regenerated on every repaint, and the
+   * void's outline repaints every frame — leaving it attached would mean
+   * paying for noise the whole time the overlay is open, to displace by zero.
+   */
+  const waterGroupRef = useRef<SVGGElement>(null)
   /** Light falling inward while the question is being taken in. */
   const sparkRefs = useRef<SVGPathElement[]>([])
+  const sparkHaloRefs = useRef<SVGPathElement[]>([])
+  const sparkGlowRefs = useRef<SVGCircleElement[]>([])
   const sparkHeadRefs = useRef<SVGCircleElement[]>([])
   /** The gathered charge at the centre — bright while held, blinding on release. */
   const coreRef = useRef<SVGCircleElement>(null)
@@ -458,7 +480,18 @@ export function Orb({ state, searching = false, answerSeq = 0, levelRef, size = 
         // absorbed rather than stopping dead at the rim.
         const near = Math.max(0, 1 - r / 42)
         const alpha = Math.min(1, local * 5) * (1 - near * 0.75)
-        spark.style.opacity = `${(alpha * 0.55).toFixed(3)}`
+        // Brightens as it accelerates inward, so the last stretch before it is
+        // swallowed is the most intense part of the journey.
+        const heat = 0.35 + local * 0.65
+        spark.style.opacity = `${(alpha * heat * 0.9).toFixed(3)}`
+
+        // The halo shares the geometry and just sits wider and softer, which
+        // is what gives the filament something to be bright against.
+        const halo = sparkHaloRefs.current[i]
+        if (halo) {
+          halo.setAttribute('d', spark.getAttribute('d') ?? '')
+          halo.style.opacity = `${(alpha * heat * 0.3).toFixed(3)}`
+        }
 
         // The bright head, as its own dot.
         //
@@ -468,12 +501,21 @@ export function Orb({ state, searching = false, answerSeq = 0, levelRef, size = 
         // whichever tip happens to be further right, which on a curve that
         // sweeps around the sphere is the wrong one half the time. A separate
         // dot at the leading point is unambiguous and costs one more element.
+        const glow = sparkGlowRefs.current[i]
+        if (glow) {
+          glow.setAttribute('cx', x.toFixed(1))
+          glow.setAttribute('cy', y.toFixed(1))
+          glow.setAttribute('r', (3 + local * 4).toFixed(2))
+          glow.style.opacity = (alpha * heat * 0.75).toFixed(3)
+        }
         const head = sparkHeadRefs.current[i]
         if (head) {
           head.setAttribute('cx', x.toFixed(1))
           head.setAttribute('cy', y.toFixed(1))
-          head.setAttribute('r', (1.5 + local * 1.2).toFixed(2))
-          head.style.opacity = alpha.toFixed(3)
+          // Small and white-hot. The halo around it does the size; a big white
+          // disc just reads as a dot travelling, which was the cheap version.
+          head.setAttribute('r', (0.9 + local * 0.9).toFixed(2))
+          head.style.opacity = (alpha * heat).toFixed(3)
         }
       })
 
@@ -490,39 +532,108 @@ export function Orb({ state, searching = false, answerSeq = 0, levelRef, size = 
         coreRef.current.style.opacity = alpha.toFixed(3)
       }
 
-      // The waves. Blob outlines rather than circles, on the void's own
-      // harmonics, so what leaves the sphere is recognisably the same
-      // substance that was churning inside it.
-      ringRefs.current.forEach((ring, i) => {
-        if (!ring) return
-        const local = releasing ? (release - RING_DELAYS[i]) / (1 - RING_DELAYS[i]) : -1
+      // The waves.
+      //
+      // Each one is three paths sharing an outline, not a single stroke: a
+      // wide blurred wash underneath, a mid band, and a thin bright crest on
+      // top. That layering is the whole difference between a line moving
+      // outward and a body of water with a lit edge — one stroke, however
+      // carefully tuned, can only ever be a line.
+      RING_DELAYS.forEach((delay, i) => {
+        const glow = ringGlowRefs.current[i]
+        const band = ringBandRefs.current[i]
+        const crest = ringCrestRefs.current[i]
+        const local = releasing ? (release - delay) / (1 - delay) : -1
         if (local <= 0 || local >= 1) {
-          ring.style.opacity = '0'
+          if (glow) glow.style.opacity = '0'
+          if (band) band.style.opacity = '0'
+          if (crest) crest.style.opacity = '0'
           return
         }
         // Fast out of the sphere, slowing as it spreads — energy losing itself
         // to the room rather than a shape being scaled.
         const spread = 1 - Math.pow(1 - local, 2.4)
         const radius = 20 + spread * RING_REACH
-        // The outline relaxes toward round as it expands, the way a shockwave
-        // forgets the shape of what made it.
+        // The outline relaxes toward round as it expands, the way a swell
+        // forgets the shape of whatever made it.
         const wobble = (1 - spread) * 0.5
-        ring.setAttribute('d', blobPath(radius, churn + ringPhase.current, wobble, VOID_HARMONICS))
-        // Thinner as it grows: the same light spread over a longer front.
-        ring.setAttribute('stroke-width', (7 * (1 - spread * 0.55)).toFixed(2))
-        ring.style.opacity = `${((1 - local) * (1 - local) * 0.5).toFixed(3)}`
+        const d = blobPath(radius, churn + ringPhase.current, wobble, VOID_HARMONICS)
+        const fade = (1 - local) * (1 - local)
+
+        // The wash sits behind and slightly wider, and keeps its width as it
+        // travels: water carries a body behind the crest.
+        if (glow) {
+          glow.setAttribute('d', d)
+          glow.setAttribute('stroke-width', (26 * (1 - spread * 0.3)).toFixed(2))
+          glow.style.opacity = (fade * 0.2).toFixed(3)
+        }
+        if (band) {
+          band.setAttribute('d', d)
+          band.setAttribute('stroke-width', (9 * (1 - spread * 0.45)).toFixed(2))
+          band.style.opacity = (fade * 0.34).toFixed(3)
+        }
+        // The lit edge. Thin, near-white, and the last thing to fade.
+        if (crest) {
+          crest.setAttribute('d', d)
+          crest.setAttribute('stroke-width', (2.4 * (1 - spread * 0.5)).toFixed(2))
+          crest.style.opacity = (fade * 0.85).toFixed(3)
+        }
       })
 
-      // The light the wave throws onto the rest of the panel.
+      // Water, not a ring of light.
+      //
+      // The surface is displaced by turbulence whose strength rides the wave:
+      // strongest as the front leaves, dying out as it spreads. Driving the
+      // filter rather than the geometry is what makes the glass itself look
+      // like it is being disturbed — the highlights and the rim smear with the
+      // ripple instead of sitting still behind it, which is the thing that was
+      // missing when this was outlines on top of a static sphere.
+      if (turbRef.current && dispRef.current) {
+        const churnWave = releasing ? Math.sin(release * Math.PI) * (1 - release * 0.5) : 0
+        // Also disturbed, faintly, while a charge is being gathered — the
+        // surface tightening as pressure builds.
+        const agitation = churnWave * 13 + charge * 1.6 + flash * 9
+
+        // Attached only while there is something to disturb the surface, and
+        // taken off the moment there isn't. Turbulence is regenerated on every
+        // repaint and the void repaints every frame, so leaving it on would be
+        // a permanent cost for a displacement of zero.
+        const water = waterGroupRef.current
+        if (water) {
+          const wanted = agitation > 0.05 ? `url(#${id}-water)` : ''
+          if (water.getAttribute('filter') !== (wanted || null)) {
+            if (wanted) water.setAttribute('filter', wanted)
+            else water.removeAttribute('filter')
+          }
+        }
+        // Only written while the filter is actually attached — setting filter
+        // primitives invalidates the whole chain, so touching them at rest
+        // would undo the point of detaching it.
+        if (agitation > 0.05) {
+          dispRef.current.setAttribute('scale', agitation.toFixed(2))
+          // The ripples lengthen as the wave spreads, the way real ones do.
+          const freq = 0.055 - spreadFreq(release, releasing) * 0.03
+          turbRef.current.setAttribute(
+            'baseFrequency',
+            `${freq.toFixed(4)} ${(freq * 1.6).toFixed(4)}`
+          )
+          // Re-seeded per turn so no two disturbances are the same water.
+          turbRef.current.setAttribute('seed', String(1 + (ringPhase.current | 0)))
+        }
+      }
+
+      // What the wave does to the rest of the panel.
       //
       // Published on the document element rather than on this component,
       // because a custom property only reaches descendants and the card is
-      // this orb's *parent* — everything the wave should wash over is a
-      // sibling. One property on the root lets the panel light up from the
-      // orb's position without the orb holding a reference to it, and there is
-      // only ever one orb in this window.
+      // this orb's *parent* — everything the wave should cross is a sibling.
+      // `--orb-shock` is how hard it is hitting, `--orb-wave` is how far it has
+      // got, and the card uses both to sweep a band of real distortion over
+      // its own contents.
       const shove = releasing ? Math.sin(Math.pow(release, 0.7) * Math.PI) * (1 - release) : 0
-      document.documentElement.style.setProperty('--orb-shock', shove.toFixed(4))
+      const root = document.documentElement.style
+      root.setProperty('--orb-shock', shove.toFixed(4))
+      root.setProperty('--orb-wave', releasing ? release.toFixed(4) : '0')
 
       frame = requestAnimationFrame(tick)
     }
@@ -623,6 +734,33 @@ export function Orb({ state, searching = false, answerSeq = 0, levelRef, size = 
               <feGaussianBlur stdDeviation="1.1" />
             </filter>
 
+            {/* Water.
+                Turbulence used as a displacement map, which is the only way to
+                get a surface that genuinely bends what is drawn on it rather
+                than having a ripple pasted over the top. `scale` is driven per
+                frame and sits at 0 at rest, so this costs nothing until a wave
+                is actually running. The region is deliberately enormous: the
+                waves travel far outside the sphere, and a filter clips to its
+                own box, so a tight one would cut the crests off mid-flight. */}
+            <filter id={`${id}-water`} x="-25%" y="-25%" width="150%" height="150%">
+              <feTurbulence
+                ref={turbRef}
+                type="fractalNoise"
+                baseFrequency="0.055 0.088"
+                numOctaves="2"
+                seed="1"
+                result="churn"
+              />
+              <feDisplacementMap
+                ref={dispRef}
+                in="SourceGraphic"
+                in2="churn"
+                scale="0"
+                xChannelSelector="R"
+                yChannelSelector="G"
+              />
+            </filter>
+
             <clipPath id={`${id}-clip`}>
               <circle cx="50" cy="50" r="37" />
             </clipPath>
@@ -632,22 +770,57 @@ export function Orb({ state, searching = false, answerSeq = 0, levelRef, size = 
               and around the sphere rather than being painted over it, and
               outside the viewBox on purpose — this SVG overflows, so the card
               is what clips them as they cross the panel. */}
-          {RING_DELAYS.map((_, i) => (
-            <path
-              key={i}
-              ref={(node) => {
-                if (node) ringRefs.current[i] = node
-              }}
-              fill="none"
-              stroke={rim}
-              strokeWidth="5"
-              opacity="0"
-              filter={`url(#${id}-edge)`}
-              style={{ transition: 'stroke 500ms ease', willChange: 'opacity' }}
-            />
-          ))}
+          <g>
+            {RING_DELAYS.map((_, i) => (
+              <path
+                key={`wash-${i}`}
+                ref={(node) => {
+                  if (node) ringGlowRefs.current[i] = node
+                }}
+                fill="none"
+                stroke={mid}
+                strokeWidth="26"
+                strokeLinecap="round"
+                opacity="0"
+                filter={`url(#${id}-soft)`}
+                style={{ transition: 'stroke 500ms ease', willChange: 'opacity' }}
+              />
+            ))}
+            {RING_DELAYS.map((_, i) => (
+              <path
+                key={`band-${i}`}
+                ref={(node) => {
+                  if (node) ringBandRefs.current[i] = node
+                }}
+                fill="none"
+                stroke={rim}
+                strokeWidth="9"
+                opacity="0"
+                filter={`url(#${id}-edge)`}
+                style={{ transition: 'stroke 500ms ease', willChange: 'opacity' }}
+              />
+            ))}
+            {RING_DELAYS.map((_, i) => (
+              <path
+                key={`crest-${i}`}
+                ref={(node) => {
+                  if (node) ringCrestRefs.current[i] = node
+                }}
+                fill="none"
+                stroke="#ffffff"
+                strokeWidth="2.4"
+                opacity="0"
+                style={{ willChange: 'opacity' }}
+              />
+            ))}
+          </g>
 
-          <circle cx="50" cy="50" r="37" fill={`url(#${id}-glass)`} />
+          {/* The sphere itself, disturbed by the same water. Putting the glass
+              inside the filter is what makes the rim and the highlights smear
+              as the wave passes, rather than the ripple sliding over a surface
+              that is plainly still underneath it. */}
+          <g ref={waterGroupRef}>
+            <circle cx="50" cy="50" r="37" fill={`url(#${id}-glass)`} />
 
           {/* Interior. Blended additively so crossings brighten. */}
           <g clipPath={`url(#${id}-clip)`} style={{ mixBlendMode: 'screen' }}>
@@ -718,39 +891,6 @@ export function Orb({ state, searching = false, answerSeq = 0, levelRef, size = 
             <ellipse cx="62" cy="66" rx="17" ry="13" fill={`url(#${id}-caustic)`} />
           </g>
 
-          {/* Light falling in. Outside the clip and drawn last, because these
-              arrive from beyond the sphere and have to cross the rim to get
-              in — clipping them to the glass would hide the entire journey. */}
-          <g style={{ mixBlendMode: 'screen' }}>
-            {SPARKS.map((_, i) => (
-              <path
-                key={`trail-${i}`}
-                ref={(node) => {
-                  if (node) sparkRefs.current[i] = node
-                }}
-                fill="none"
-                stroke={rim}
-                strokeWidth="1.6"
-                strokeLinecap="round"
-                opacity="0"
-                filter={`url(#${id}-edge)`}
-                style={{ transition: 'stroke 500ms ease', willChange: 'opacity' }}
-              />
-            ))}
-            {SPARKS.map((_, i) => (
-              <circle
-                key={`head-${i}`}
-                ref={(node) => {
-                  if (node) sparkHeadRefs.current[i] = node
-                }}
-                r="1.5"
-                fill={`url(#${id}-mote)`}
-                opacity="0"
-                style={{ willChange: 'opacity' }}
-              />
-            ))}
-          </g>
-
           {/* Rim last, over the interior — the edge is the brightest thing. */}
           <circle cx="50" cy="50" r="37" fill="none" stroke={`url(#${id}-rim)`} strokeWidth="1.15" />
           {/* Fresnel: every sphere is brighter right at its silhouette, all the
@@ -783,6 +923,73 @@ export function Orb({ state, searching = false, answerSeq = 0, levelRef, size = 
             strokeWidth="1.1"
             strokeLinecap="round"
           />
+          </g>
+
+          {/* Light falling in, drawn last and *outside* the water filter.
+              These arrive from beyond the sphere and have to cross the rim to
+              get in, so clipping them to the glass would hide the whole
+              journey — and rippling them along with the surface would make
+              them look like part of it rather than something reaching it.
+              Three layers each: a wide halo, a bright filament, and a hot
+              head, which is what stops a travelling line reading as a scratch
+              on the screen. */}
+          <g style={{ mixBlendMode: 'screen' }}>
+            {SPARKS.map((_, i) => (
+              <path
+                key={`halo-${i}`}
+                ref={(node) => {
+                  if (node) sparkHaloRefs.current[i] = node
+                }}
+                fill="none"
+                stroke={mid}
+                strokeWidth="7"
+                strokeLinecap="round"
+                opacity="0"
+                filter={`url(#${id}-soft)`}
+                style={{ transition: 'stroke 500ms ease', willChange: 'opacity' }}
+              />
+            ))}
+            {SPARKS.map((_, i) => (
+              <path
+                key={`trail-${i}`}
+                ref={(node) => {
+                  if (node) sparkRefs.current[i] = node
+                }}
+                fill="none"
+                stroke={rim}
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                opacity="0"
+                filter={`url(#${id}-edge)`}
+                style={{ transition: 'stroke 500ms ease', willChange: 'opacity' }}
+              />
+            ))}
+            {SPARKS.map((_, i) => (
+              <circle
+                key={`glow-${i}`}
+                ref={(node) => {
+                  if (node) sparkGlowRefs.current[i] = node
+                }}
+                r="4"
+                fill={`url(#${id}-mote)`}
+                opacity="0"
+                filter={`url(#${id}-soft)`}
+                style={{ willChange: 'opacity' }}
+              />
+            ))}
+            {SPARKS.map((_, i) => (
+              <circle
+                key={`head-${i}`}
+                ref={(node) => {
+                  if (node) sparkHeadRefs.current[i] = node
+                }}
+                r="1.5"
+                fill="#ffffff"
+                opacity="0"
+                style={{ willChange: 'opacity' }}
+              />
+            ))}
+          </g>
         </svg>
       </div>
     </div>

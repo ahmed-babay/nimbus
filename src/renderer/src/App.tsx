@@ -262,6 +262,48 @@ export default function App() {
                   }}
                 />
 
+                {/* The front itself, crossing the panel.
+                    This is the part that actually touches what is in its way.
+                    It is a ring-shaped window with a backdrop-filter, so the
+                    answer text, the cards and the chrome *behind* it are
+                    genuinely blurred, brightened and pushed as the band sweeps
+                    over them — a drawn ring would have passed in front of the
+                    content without disturbing a pixel of it, which is what
+                    made the first version look like a sticker.
+
+                    Centred on the orb, scaled by how far the wave has got, and
+                    masked to a band so only the crest region filters. At rest
+                    --orb-wave is 0 and the whole thing is invisible and
+                    unscaled, which keeps the compositor out of it. */}
+                <div
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 z-20 rounded-[20px]"
+                  style={
+                    {
+                      // The band's radius, in pixels from the orb's centre.
+                      // Far enough at full travel to clear the bottom corner.
+                      '--band': 'calc(var(--orb-wave, 0) * 780px)',
+                      opacity: 'calc(var(--orb-shock, 0) * 0.95)',
+                      // The mask moves, not the element.
+                      //
+                      // Scaling a transformed element would have been simpler
+                      // and completely wrong: a backdrop-filter is evaluated in
+                      // the element's own coordinates and *then* transformed,
+                      // so blur(1.4px) inside scale(760) is a thousand-pixel
+                      // blur and the card disappears. Animating the mask's
+                      // radii leaves the element still and the filter honest.
+                      maskImage:
+                        'radial-gradient(circle at 42px 132px, transparent calc(var(--band) - 30px), #000 calc(var(--band) - 9px), #000 calc(var(--band) + 9px), transparent calc(var(--band) + 34px))',
+                      WebkitMaskImage:
+                        'radial-gradient(circle at 42px 132px, transparent calc(var(--band) - 30px), #000 calc(var(--band) - 9px), #000 calc(var(--band) + 9px), transparent calc(var(--band) + 34px))',
+                      // What the crest does to whatever it is passing over.
+                      backdropFilter: 'blur(1.6px) brightness(1.24) saturate(1.4)',
+                      WebkitBackdropFilter: 'blur(1.6px) brightness(1.24) saturate(1.4)',
+                      willChange: 'opacity'
+                    } as React.CSSProperties
+                  }
+                />
+
                 <div className="mt-2.5 flex min-h-0 flex-1 gap-3.5">
                   <Orb state={state} searching={searching} answerSeq={answerSeq} levelRef={levelRef} />
 
