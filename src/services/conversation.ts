@@ -69,6 +69,23 @@ export function resetConversation(): void {
 export function getHistorySummary(maxTurns = 6): string {
   return fresh()
     .slice(-maxTurns)
-    .map((turn) => `${turn.role === 'user' ? 'User' : 'Nimbus'}: ${turn.text}`)
+    .map((turn) => `${turn.role === 'user' ? 'User' : 'Nimbus'}: ${clip(turn.text)}`)
     .join('\n')
+}
+
+/**
+ * How much of one past turn the router is shown.
+ *
+ * This summary exists so "what about tomorrow?" and "who is he?" resolve, and
+ * the subject of a turn is in its first line. The whole of a turn is not: a
+ * researched answer runs to thousands of characters, and six of those would be
+ * larger than the router prompt they are appended to. Harmless against a cloud
+ * model's window, and on-device it is the difference between a prompt that
+ * fits and one that does not.
+ */
+const HISTORY_TURN_CHARS = 240
+
+function clip(text: string): string {
+  const flat = text.replace(/\s+/g, ' ').trim()
+  return flat.length <= HISTORY_TURN_CHARS ? flat : `${flat.slice(0, HISTORY_TURN_CHARS)}…`
 }
