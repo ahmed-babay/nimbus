@@ -22,6 +22,7 @@ import type {
   NimbusConfig,
   NimbusResponse,
   NimbusState,
+  OverlayCorner,
   OverlayLayout,
   TextActionKind
 } from '@shared/types'
@@ -34,6 +35,16 @@ const STATE_LABEL: Record<NimbusState, string> = {
   speaking: 'Speaking',
   playing: 'Playing'
 }
+
+/** Shrinks the dock into the parked corner, and unfolds from it on click. */
+function peekOrigin(corner: OverlayCorner | null): string {
+  if (corner === 'top-right') return 'top right'
+  if (corner === 'bottom-left') return 'bottom left'
+  if (corner === 'bottom-right') return 'bottom right'
+  return 'top left'
+}
+
+const PEEK_SPRING = { type: 'spring' as const, stiffness: 420, damping: 28, mass: 0.75 }
 
 export default function App() {
   const {
@@ -88,11 +99,25 @@ export default function App() {
   overlayLayoutRef.current = overlayLayout
   const hoveredRef = useRef(false)
   const lastTouchRef = useRef(Date.now())
+  // The dock unmounts (and plays its collapse) before the window actually
+  // becomes the icon, so the spring can finish in the large window rather
+  // than getting clipped to 48px mid-motion.
+  const [compactVisible, setCompactVisible] = useState(true)
+  const compactVisibleRef = useRef(true)
+  const pendingIconRef = useRef(false)
 
   useEffect(() => {
     void window.nimbus.getOverlayLayout().then(setOverlayLayout)
     return window.nimbus.onOverlayLayout(setOverlayLayout)
   }, [])
+
+  useEffect(() => {
+    if (overlayLayout.squeeze === 'compact') {
+      pendingIconRef.current = false
+      compactVisibleRef.current = true
+      setCompactVisible(true)
+    }
+  }, [overlayLayout.squeeze])
 
   useEffect(() => {
     setHoldOpen(subtitles.active || meetingOpen || overlayLayout.corner !== null)
@@ -136,8 +161,11 @@ export default function App() {
         return
       }
       if (hoveredRef.current || draggingRef.current) return
+      if (!compactVisibleRef.current) return
       if (Date.now() - lastTouchRef.current < 3000) return
-      window.nimbus.setOverlaySqueeze('icon')
+      pendingIconRef.current = true
+      compactVisibleRef.current = false
+      setCompactVisible(false)
     }, 250)
     return () => window.clearInterval(tick)
   }, [overlayLayout.corner, overlayLayout.squeeze, mode, state, pendingSelection])
@@ -210,9 +238,16 @@ export default function App() {
 
   return (
     <div className={shellClass}>
-      <AnimatePresence>
+      <AnimatePresence
+        onExitComplete={() => {
+          if (!pendingIconRef.current) return
+          pendingIconRef.current = false
+          window.nimbus.setOverlaySqueeze('icon')
+        }}
+      >
         {isVisible && squeeze === 'icon' && (
           <PeekIcon
+            key="peek-icon"
             state={state}
             searching={searching}
             answerSeq={answerSeq}
@@ -221,8 +256,10 @@ export default function App() {
             onDragEnd={onDragEnd}
           />
         )}
-        {isVisible && squeeze === 'compact' && (
+        {isVisible && squeeze === 'compact' && compactVisible && (
           <PeekDock
+            key="peek-dock"
+            corner={overlayLayout.corner}
             state={state}
             searching={searching}
             answerSeq={answerSeq}
@@ -239,7 +276,10 @@ export default function App() {
             onToggleMic={toggleMic}
             onToggleTts={toggleTts}
             onSubmit={submitText}
-            onTypingStart={onTypingStart}
+            onTypingStart={() => {
+              lastTouchRef.current = Date.now()
+              onTypingStart()
+            }}
             onReplace={replaceSelection}
             onAsk={submitText}
             focusKey={isVisible}
@@ -675,10 +715,10 @@ function PeekIcon({
     <motion.div
       role="button"
       tabIndex={0}
-      initial={{ opacity: 0, scale: 0.72 }}
+      initial={{ opacity: 0, scale: 0.4 }}
       animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.8 }}
-      transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+      exit={{ opacity: 0, scale: 0.5 }}
+      transition={PEEK_SPRING}
       onMouseEnter={() => window.nimbus.setMouseIgnore(false)}
       onMouseLeave={() => window.nimbus.setMouseIgnore(true)}
       onPointerDown={drag.onPointerDown}
@@ -705,6 +745,7 @@ function PeekIcon({
 }
 
 function PeekDock({
+  corner,
   state,
   searching,
   answerSeq,
@@ -730,6 +771,7 @@ function PeekDock({
   onTouch,
   onHoverChange
 }: {
+  corner: OverlayCorner | null
   state: NimbusState
   searching: boolean
   answerSeq: number
@@ -757,12 +799,13 @@ function PeekDock({
 }): React.JSX.Element {
   const drag = useDragHandle(onDragChange, onDragEnd)
   const showBubble = Boolean(response || error || state === 'thinking' || pendingSelection)
+  const origin = peekOrigin(corner)
   return (
     <motion.div
-      initial={{ opacity: 0, scale: 0.94, y: 8 }}
-      animate={{ opacity: 1, scale: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.96 }}
-      transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+      initial={{ opacity: 0, scale: 0.18 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.14 }}
+      transition={PEEK_SPRING}
       onMouseEnter={() => {
         onTouch()
         onHoverChange(true)
@@ -774,8 +817,8 @@ function PeekDock({
         window.nimbus.setMouseIgnore(true)
       }}
       onPointerDown={onTouch}
-      className="flex w-full flex-col gap-2 bg-transparent p-1"
-      style={accentVars(orbModeFor(state, searching))}
+      className="flex w-full min-w-0 flex-col gap-2 overflow-visible bg-transparent p-1"
+      style={{ ...accentVars(orbModeFor(state, searching)), transformOrigin: origin }}
     >
       <div
         className="flex shrink-0 items-center gap-2 self-stretch rounded-full border border-white/20 bg-[#14161f] px-2 py-1.5 shadow-[0_12px_32px_-12px_rgba(0,0,0,0.7),inset_0_1px_0_0_rgba(255,255,255,0.22)]"
@@ -812,12 +855,18 @@ function PeekDock({
       </div>
 
       {showBubble && (
-        <div className="relative max-w-full self-start">
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.05, duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+          className="relative w-full min-w-0 self-stretch"
+        >
           <div
             aria-hidden
             className="absolute left-7 -top-1.5 h-3 w-3 rotate-45 border-l border-t border-white/15 bg-[#14161f]"
           />
-          <div className="nimbus-scroll inline-block max-h-[min(22rem,calc(100vh-8.5rem))] max-w-full overflow-y-auto rounded-[22px] border border-white/15 bg-[#14161f] px-3 py-2.5 shadow-[0_18px_40px_-18px_rgba(0,0,0,0.7),inset_0_1px_0_0_rgba(255,255,255,0.14)]">
+          <div className="overflow-hidden rounded-[22px] border border-white/15 bg-[#14161f] shadow-[0_18px_40px_-18px_rgba(0,0,0,0.7),inset_0_1px_0_0_rgba(255,255,255,0.14)]">
+            <div className="nimbus-scroll max-h-[min(22rem,calc(100vh-8.5rem))] overflow-y-auto px-3.5 py-3.5">
             {response ? (
               <ResponseCard
                 response={response}
@@ -843,8 +892,9 @@ function PeekDock({
             ) : (
               <p className="text-[11px] text-nimbus-text-dim">Thinking…</p>
             )}
+            </div>
           </div>
-        </div>
+        </motion.div>
       )}
 
       <div className="shrink-0">

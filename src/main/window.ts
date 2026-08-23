@@ -124,11 +124,53 @@ function applyBounds(window: BrowserWindow, bounds: Electron.Rectangle): void {
   })
 }
 
+let boundsAnim: ReturnType<typeof setInterval> | null = null
+
+function stopBoundsAnim(): void {
+  if (!boundsAnim) return
+  clearInterval(boundsAnim)
+  boundsAnim = null
+}
+
+/** Ease the window into a new size so icon ↔ dock doesn't pop. */
+function animateBounds(window: BrowserWindow, to: Electron.Rectangle, ms: number): void {
+  stopBoundsAnim()
+  const from = window.getBounds()
+  const started = Date.now()
+  const tick = (): void => {
+    if (window.isDestroyed()) {
+      stopBoundsAnim()
+      return
+    }
+    const t = Math.min(1, (Date.now() - started) / ms)
+    const e = 1 - (1 - t) ** 3
+    window.setBounds({
+      x: Math.round(from.x + (to.x - from.x) * e),
+      y: Math.round(from.y + (to.y - from.y) * e),
+      width: Math.round(from.width + (to.width - from.width) * e),
+      height: Math.round(from.height + (to.height - from.height) * e)
+    })
+    if (t >= 1) {
+      stopBoundsAnim()
+      applyBounds(window, to)
+    }
+  }
+  boundsAnim = setInterval(tick, 12)
+  tick()
+}
+
 function applyDock(window: BrowserWindow, corner: OverlayCorner, squeeze: OverlaySqueeze): void {
+  const previous = dock.squeeze
   dock.corner = corner
   dock.squeeze = squeeze
   const area = workAreaNear(window)
-  applyBounds(window, boundsFor(corner, squeeze, area))
+  const next = boundsFor(corner, squeeze, area)
+  if (previous === 'icon' || squeeze === 'icon') {
+    animateBounds(window, next, squeeze === 'icon' ? 300 : 340)
+  } else {
+    stopBoundsAnim()
+    applyBounds(window, next)
+  }
   emitLayout(window)
 }
 
