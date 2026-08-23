@@ -97,10 +97,19 @@ const LOCAL_MODELS: LocalModel[] = [
 ]
 
 /**
- * Unloaded after this long without a question, returning both the ~1GB of RAM
- * and the VRAM. Short, because holding VRAM is the expensive part: the cost of
- * being wrong is one ~4s reload on the next question, and the cost of holding
- * on is a game that stutters.
+ * Unloaded after this long without a question, returning the RAM and the VRAM.
+ *
+ * Measured with the 4B on an RTX 3070 laptop: resident it holds 4.02GB of VRAM
+ * and 2.6GB of RAM, and disposing gives back 4.00GB of that — so the unload is
+ * real, not nominal. Answering costs nothing beyond being resident (5.51GB
+ * loaded, 5.53GB mid-answer), so the whole cost is occupancy.
+ *
+ * The reload is the other side, and it is dearer than it was: 12.8s for the
+ * 4B against roughly 4s for the 0.8B this once held, and a warm page cache
+ * barely helps because the time goes on uploading weights to the GPU rather
+ * than reading them from disk. Five minutes is the compromise — long enough
+ * that a conversation never pays it, short enough that a game started after
+ * lunch finds the card empty.
  */
 const IDLE_UNLOAD_MS = 5 * 60 * 1000
 
