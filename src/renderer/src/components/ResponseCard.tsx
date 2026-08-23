@@ -972,8 +972,8 @@ function clampTop(top: number, zoom: number, height: number): number {
  */
 function PlaceBody({ data }: { data: PlaceCardData }) {
   return (
-    <div>
-      <div className="mb-2 text-[13px] font-medium text-nimbus-text">{data.name}</div>
+    <div className="min-w-0">
+      <div className="mb-2 text-[13px] font-medium leading-snug text-nimbus-text">{data.name}</div>
       <RouteMap map={data.map} mode="driving" />
     </div>
   )
@@ -1099,8 +1099,12 @@ function RouteMap({ map, mode }: { map: RenderedMap; mode: TravelMode }) {
 
   return (
     <div
-      className="relative touch-none overflow-hidden rounded-lg ring-1 ring-black/25"
-      style={{ width: map.width, height: map.height, cursor: dragging.current ? 'grabbing' : 'grab' }}
+      className="relative w-full max-w-full touch-none overflow-hidden rounded-xl ring-1 ring-black/25"
+      style={{
+        aspectRatio: `${map.width} / ${map.height}`,
+        maxWidth: map.width,
+        cursor: dragging.current ? 'grabbing' : 'grab'
+      }}
       onPointerDown={(event) => {
         dragging.current = { x: event.clientX, y: event.clientY }
         event.currentTarget.setPointerCapture(event.pointerId)
@@ -1108,8 +1112,11 @@ function RouteMap({ map, mode }: { map: RenderedMap; mode: TravelMode }) {
       onPointerMove={(event) => {
         const from = dragging.current
         if (!from) return
-        const dx = event.clientX - from.x
-        const dy = event.clientY - from.y
+        const box = event.currentTarget.getBoundingClientRect()
+        const sx = box.width > 0 ? map.width / box.width : 1
+        const sy = box.height > 0 ? map.height / box.height : 1
+        const dx = (event.clientX - from.x) * sx
+        const dy = (event.clientY - from.y) * sy
         dragging.current = { x: event.clientX, y: event.clientY }
         setView((current) => ({
           ...current,
@@ -1130,7 +1137,9 @@ function RouteMap({ map, mode }: { map: RenderedMap; mode: TravelMode }) {
       }}
       onWheel={(event) => {
         const box = event.currentTarget.getBoundingClientRect()
-        zoomBy(event.deltaY < 0 ? 1 : -1, event.clientX - box.left, event.clientY - box.top)
+        const atX = box.width > 0 ? ((event.clientX - box.left) / box.width) * map.width : map.width / 2
+        const atY = box.height > 0 ? ((event.clientY - box.top) / box.height) * map.height : map.height / 2
+        zoomBy(event.deltaY < 0 ? 1 : -1, atX, atY)
       }}
     >
       <div className="absolute inset-0">
@@ -1147,16 +1156,21 @@ function RouteMap({ map, mode }: { map: RenderedMap; mode: TravelMode }) {
               alt=""
               draggable={false}
               className="absolute max-w-none select-none"
-              style={{ left: tile.x, top: tile.y, width: TILE_SIZE, height: TILE_SIZE }}
+              style={{
+                left: `${(tile.x / map.width) * 100}%`,
+                top: `${(tile.y / map.height) * 100}%`,
+                width: `${(TILE_SIZE / map.width) * 100}%`,
+                height: `${(TILE_SIZE / map.height) * 100}%`
+              }}
             />
           )
         })}
       </div>
 
       <svg
-        className="pointer-events-none absolute inset-0"
-        width={map.width}
-        height={map.height}
+        className="pointer-events-none absolute inset-0 h-full w-full"
+        viewBox={`0 0 ${map.width} ${map.height}`}
+        preserveAspectRatio="xMidYMid meet"
         aria-label={`Route by ${MODE_LABEL[mode]}`}
       >
         {path && (
