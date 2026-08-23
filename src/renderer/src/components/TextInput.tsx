@@ -72,27 +72,8 @@ export function TextInput({
     inputRef.current?.focus()
   }
 
-  // Palette sits above the field, not in document flow — so in the squeezed
-  // dock it grows upward from the composer instead of pushing the map aside
-  // and listing commands from the top of the window.
   return (
     <div className={`relative ${compact ? 'z-20' : 'mt-3'}`}>
-      {paletteOpen && (
-        <motion.div
-          initial={{ opacity: 0, y: 8, scale: 0.98 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-          className="absolute bottom-full left-0 right-0 z-30 mb-2"
-        >
-          <CommandPalette
-            matches={matches}
-            activeIndex={activeIndex}
-            onPick={pick}
-            onHover={setActiveIndex}
-          />
-        </motion.div>
-      )}
-
       <form
         onSubmit={(event) => {
           event.preventDefault()
@@ -171,6 +152,21 @@ export function TextInput({
           )
         )}
       </form>
+      {paletteOpen && (
+        <motion.div
+          initial={{ opacity: 0, y: -8, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
+          className="mt-2"
+        >
+          <CommandPalette
+            matches={matches}
+            activeIndex={activeIndex}
+            onPick={pick}
+            onHover={setActiveIndex}
+          />
+        </motion.div>
+      )}
     </div>
   )
 }

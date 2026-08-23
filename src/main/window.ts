@@ -23,7 +23,7 @@ const WINDOW_HEIGHT = 720
 const ICON_SIZE = 48
 /** Compact dock: composer + answer, still a corner chip rather than the full card. */
 const COMPACT_WIDTH = 372
-const COMPACT_HEIGHT = 528
+const COMPACT_HEIGHT = 760
 const DOCK_INSET = 10
 /** How close the card has to be to a work-area corner before it parks there. */
 const SNAP_DISTANCE = 160
