@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { motion } from 'framer-motion'
 import { matchCapabilities, type Capability } from '@shared/capabilities'
 import { CommandPalette } from './CommandPalette'
 
@@ -71,17 +72,25 @@ export function TextInput({
     inputRef.current?.focus()
   }
 
-  // No rule above the field: it has an edge of its own now, and two horizontal
-  // lines a few pixels apart is how a panel starts to look busy.
+  // Palette sits above the field, not in document flow — so in the squeezed
+  // dock it grows upward from the composer instead of pushing the map aside
+  // and listing commands from the top of the window.
   return (
-    <div className={compact ? '' : 'mt-3'}>
+    <div className={`relative ${compact ? 'z-20' : 'mt-3'}`}>
       {paletteOpen && (
-        <CommandPalette
-          matches={matches}
-          activeIndex={activeIndex}
-          onPick={pick}
-          onHover={setActiveIndex}
-        />
+        <motion.div
+          initial={{ opacity: 0, y: 8, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
+          className="absolute bottom-full left-0 right-0 z-30 mb-2"
+        >
+          <CommandPalette
+            matches={matches}
+            activeIndex={activeIndex}
+            onPick={pick}
+            onHover={setActiveIndex}
+          />
+        </motion.div>
       )}
 
       <form

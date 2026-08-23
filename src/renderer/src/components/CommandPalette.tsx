@@ -13,6 +13,9 @@ interface CommandPaletteProps {
  * listed. Picking an entry types its example into the input instead of running
  * a hidden command, so the palette teaches the phrasing and then becomes
  * unnecessary — next time you just say it.
+ *
+ * Anchored above the composer (see TextInput) so it grows upward from the
+ * field, including in the squeezed corner dock.
  */
 export function CommandPalette({ matches, activeIndex, onPick, onHover }: CommandPaletteProps) {
   const listRef = useRef<HTMLUListElement>(null)
@@ -25,7 +28,7 @@ export function CommandPalette({ matches, activeIndex, onPick, onHover }: Comman
 
   if (matches.length === 0) {
     return (
-      <div className="mb-2 rounded-lg border border-white/[0.07] bg-nimbus-bg-raised px-3 py-2 text-[11px] text-nimbus-text-dim">
+      <div className="rounded-xl border border-white/15 bg-[#1a1c28] px-3 py-2.5 text-[12px] text-[#d5d8e4] shadow-[0_16px_40px_-16px_rgba(0,0,0,0.85)]">
         Nothing matches — but you can just ask in your own words.
       </div>
     )
@@ -36,7 +39,7 @@ export function CommandPalette({ matches, activeIndex, onPick, onHover }: Comman
   return (
     <ul
       ref={listRef}
-      className="nimbus-scroll mb-2 max-h-[210px] overflow-y-auto rounded-lg border border-white/[0.07] bg-nimbus-bg-raised py-1"
+      className="nimbus-scroll max-h-[min(220px,42vh)] overflow-y-auto rounded-xl border border-white/15 bg-[#1a1c28] py-1.5 shadow-[0_16px_40px_-16px_rgba(0,0,0,0.85)]"
     >
       {matches.map((capability, index) => {
         const showGroup = capability.group !== lastGroup
@@ -46,7 +49,7 @@ export function CommandPalette({ matches, activeIndex, onPick, onHover }: Comman
         return (
           <li key={capability.title}>
             {showGroup && (
-              <div className="px-2.5 pb-0.5 pt-1.5 text-[9px] uppercase tracking-wider text-nimbus-accent/70">
+              <div className="px-2.5 pb-0.5 pt-1.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-[#ffb198]">
                 {capability.group}
               </div>
             )}
@@ -60,20 +63,22 @@ export function CommandPalette({ matches, activeIndex, onPick, onHover }: Comman
                 onPick(capability)
               }}
               onMouseEnter={() => onHover(index)}
-              className={`flex w-full items-baseline gap-2 px-2.5 py-1 text-left transition-colors ${
-                active ? 'bg-nimbus-accent/20' : 'hover:bg-white/[0.05]'
+              className={`flex w-full items-baseline gap-2 px-2.5 py-1.5 text-left transition-colors ${
+                active ? 'bg-[#ff7a5c] text-white' : 'hover:bg-white/[0.08]'
               }`}
             >
-              <span
-                className={`shrink-0 text-[11.5px] ${active ? 'text-nimbus-text' : 'text-nimbus-text-dim'}`}
-              >
+              <span className={`shrink-0 text-[12px] font-medium ${active ? 'text-white' : 'text-[#f2f4fa]'}`}>
                 {capability.title}
               </span>
-              <span className="min-w-0 flex-1 truncate text-[10px] italic text-nimbus-text-dim/80">
+              <span
+                className={`min-w-0 flex-1 truncate text-[11px] italic ${
+                  active ? 'text-white/85' : 'text-[#c4c8d6]'
+                }`}
+              >
                 “{capability.example}”
               </span>
               {capability.requires && (
-                <span className="shrink-0 text-[9px] text-nimbus-yellow">
+                <span className={`shrink-0 text-[9px] ${active ? 'text-white/80' : 'text-nimbus-yellow'}`}>
                   {capability.requires}
                 </span>
               )}
