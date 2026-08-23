@@ -3,7 +3,7 @@ import type { NimbusConfig, NimbusResponse, NimbusState, TextActionKind } from '
 import { useVoiceInput, type VoiceEndReason } from './useVoiceInput'
 import { playOpenChime, playCloseChime } from '../lib/chime'
 import { useRadioPlayer, type RadioPlayerControls } from './useRadioPlayer'
-import { isStopPhrase, isStopPlaybackPhrase } from '../lib/stop-phrases'
+import { isStopPhrase, isStopPlaybackPhrase, isMediaStopRequest } from '../lib/stop-phrases'
 
 const DEFAULT_AUTO_FADE_MS = 8000
 // When an answer is on screen it needs reading time — headlines, a photo and
@@ -562,18 +562,25 @@ export function useNimbus(): NimbusOverlayState {
         console.log('[nimbus] ignoring input for a closed overlay')
         return
       }
-      // While something is playing, "stop" means "stop the music" — not
-      // "close Nimbus". Checked first so playback commands win.
-      if (radioActiveRef.current && isStopPlaybackPhrase(finalTranscript)) {
-        console.log(`[nimbus] stop-playback heard ("${finalTranscript}")`)
-        radioActiveRef.current = false
-        pausedForListeningRef.current = false
-        radioRef.current.stop()
-        setResponse(null)
-        setTranscript(null)
-        setState('listening')
-        startVoiceInputRef.current?.()
-        return
+      // "stop the music" is never a song title here. Intercept it even when
+      // the player flag has drifted, so it cannot fall through to YouTube and
+      // put on a track called Stop the Music.
+      if (isStopPlaybackPhrase(finalTranscript)) {
+        const playing = radioActiveRef.current
+        // Bare "stop" still closes the overlay when nothing is playing.
+        // "stop the music" never searches for a song, playing or not.
+        if (playing || isMediaStopRequest(finalTranscript)) {
+          console.log(`[nimbus] stop-playback heard ("${finalTranscript}")`)
+          radioActiveRef.current = false
+          pausedForListeningRef.current = false
+          radioRef.current.stop()
+          setResponse({ speech: 'Stopped.', card: { type: 'text' } })
+          setStreamingText('')
+          setSearching(false)
+          setState('listening')
+          startVoiceInputRef.current?.()
+          return
+        }
       }
 
       // "stop", "that's it for today", etc. close the overlay rather than

@@ -34,6 +34,7 @@ import {
 } from './memory'
 import { lookupEntity } from './wikipedia'
 import { findMusic, wantsBrowserPlayback } from './music'
+import { isStopPlaybackPhrase, isMediaStopRequest } from '../shared/stop-phrases'
 import { watchJourney, wantsWatching } from './watchers'
 import { findJourneys, wantsArrival } from './transit'
 import { outdoorConditions, describeOutdoors } from './outdoors'
@@ -150,6 +151,12 @@ async function resolveUtterance(
   onChunk?: StreamHandler,
   onSearching?: (active: boolean) => void
 ): Promise<NimbusResponse & { intent: NimbusIntent }> {
+  // Before the router: "stop the music" is silence, not a YouTube search
+  // for a song of that name. The renderer also intercepts this; this is the
+  // backstop if a transcript still arrives here.
+  if (isMediaStopRequest(utterance)) {
+    return { speech: 'Stopped.', card: { type: 'text' }, intent: 'music' }
+  }
   const { intent, params } = await classifyIntent(utterance)
   // Noted before running it, so a question still counts even if the lookup
   // fails. What is being learned is what you asked for, not what came back.
@@ -379,6 +386,9 @@ async function runIntent(
       case 'music': {
         if (!config.integrations.music) {
           throw new Error('Music playback is disabled in config.json.')
+        }
+        if (isStopPlaybackPhrase(utterance)) {
+          return { speech: 'Stopped.', card: { type: 'text' } }
         }
         const query = params.query || utterance
         // Only when they asked for it. The router decides however it was

@@ -79,6 +79,9 @@ the relevant parameter for it, leaving the others empty:
 - "news": asking for news headlines, optionally about a topic -> params.query (omit for top headlines)
 - "github": asking about trending GitHub repos, optionally in a language -> params.language (omit for none)
 - "music": asking to play music or a video.
+  NEVER use this for "stop the music", "stop the radio", "turn the music off",
+  "pause the song", or any request to halt playback — those are not a search
+  for a track titled "Stop the Music".
   -> params.query (what to search for, e.g. "Bohemian Rhapsody Queen")
   -> params.playback: set to "station" when the user wants background music by
      genre, mood or activity rather than one particular recording — "play some
