@@ -16,6 +16,8 @@ import { useWakeWord } from './hooks/useWakeWord'
 import { useSubtitles } from './hooks/useSubtitles'
 import { useMeeting } from './hooks/useMeeting'
 import { useTypewriter } from './hooks/useTypewriter'
+import { useModelLoading } from './hooks/useModelLoading'
+import { FillBar } from './components/Motion'
 import type { NimbusConfig, NimbusState } from '@shared/types'
 
 const STATE_LABEL: Record<NimbusState, string> = {
@@ -60,6 +62,7 @@ export default function App() {
   // Paced reveal: the model streams in a few big chunks, which otherwise
   // lands as the whole answer at once.
   const typedText = useTypewriter(streamingText)
+  const modelLoading = useModelLoading()
   const subtitles = useSubtitles()
   const meeting = useMeeting()
   // Driven by one explicit flag rather than inferred from state and content.
@@ -273,6 +276,20 @@ export default function App() {
                               className="ml-0.5 inline-block h-[14px] w-[2px] translate-y-[2px] rounded-full bg-nimbus-accent"
                             />
                           </p>
+                        ) : modelLoading.active ? (
+                          // Say what the wait actually is. Twelve seconds of
+                          // "Thinking…" reads as a hang; twelve seconds of a
+                          // bar that is visibly filling reads as a machine
+                          // doing something, and only happens on the first
+                          // question after a cold start.
+                          <div className="mt-1.5">
+                            <p className="text-[11px] text-nimbus-text-dim">
+                              Starting the on-device model…
+                            </p>
+                            <div className="mt-1.5">
+                              <FillBar fraction={Math.max(0.04, modelLoading.progress)} />
+                            </div>
+                          </div>
                         ) : (
                           <p className="mt-1.5 text-[11px] text-nimbus-text-dim">Thinking…</p>
                         )}

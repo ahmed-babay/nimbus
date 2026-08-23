@@ -125,8 +125,28 @@ const IDLE_UNLOAD_MS = 5 * 60 * 1000
  *
  * Callers ask for the budget rather than assuming one — see
  * `localInputBudgetChars`.
+ *
+ * Sized against the router prompt, which is the largest thing sent on a normal
+ * turn at about 3,800 tokens, plus history and the answer. Every extra 1,024
+ * tokens costs real VRAM on a card shared with the desktop — measured on the
+ * 4B, 8,192 wanted 4.03GB against 3.73GB at 6,144 — and nothing in a routed
+ * turn used the difference.
  */
-const CONTEXT_TOKENS = 8192
+const CONTEXT_TOKENS = 6144
+
+/**
+ * Flash attention, which is smaller *and* faster here — not the usual trade.
+ *
+ * Measured on the 4B at an 8k context: 4.31GB of VRAM and 2,674ms per intent
+ * without it, 4.03GB and 1,656ms with. The KV cache is never materialised in
+ * full, so the memory it would have occupied is never allocated and the reads
+ * that would have walked it never happen.
+ *
+ * "auto" rather than true: llama.cpp turns it off for the few model
+ * architectures whose attention it cannot fuse, and a model that refuses to
+ * load is worse than one that uses more memory.
+ */
+const FLASH_ATTENTION = 'auto' as const
 
 /**
  * Characters of *input* a caller may send in one turn.
@@ -259,6 +279,65 @@ export async function unloadLocalModel(): Promise<void> {
   console.log('[local-llm] unloaded after idle')
 }
 
+/**
+ * Told how far along a load is, so the overlay can say so.
+ *
+ * Loading takes seconds, not milliseconds, and it happens on the first
+ * question after a cold start or an idle unload. Without this the overlay sat
+ * silent through all of it and then — if the rest of the turn pushed past the
+ * 25-second deadline — blamed the network. A bar is the honest version.
+ */
+export type LoadListener = (state: { active: boolean; progress: number }) => void
+
+let loadListener: LoadListener | null = null
+
+export function onLocalModelLoad(listener: LoadListener | null): void {
+  loadListener = listener
+}
+
+function reportLoad(active: boolean, progress: number): void {
+  try {
+    loadListener?.({ active, progress })
+  } catch {
+    // A listener that throws must not take the load down with it.
+  }
+}
+
+/**
+ * True while weights are being read, so a caller can decide whether to wait.
+ * `warmLocalModel` uses it to avoid stacking a second load on the first.
+ */
+export function localModelLoading(): boolean {
+  return loading !== null
+}
+
+export function localModelReady(): boolean {
+  return loaded !== null
+}
+
+/**
+ * Starts loading without asking anything, and resolves when it is usable.
+ *
+ * Called when the overlay opens rather than when the first question arrives:
+ * the user then spends a second or two speaking and another being transcribed,
+ * and the load happens underneath that instead of after it. On a warm model
+ * this returns immediately and costs nothing.
+ */
+export async function warmLocalModel(): Promise<void> {
+  // Read straight from the environment rather than calling activeProvider,
+  // which lives in llm.ts and imports this module — a value import back would
+  // make the cycle real rather than type-only.
+  if (process.env.NIMBUS_PROVIDER !== 'local') return
+  if (loaded || loading || !localModelAvailable()) return
+  try {
+    await load()
+  } catch (error) {
+    // Nothing is waiting on this yet — the real question will report the
+    // failure properly when it arrives.
+    console.warn('[local-llm] warm-up failed:', error)
+  }
+}
+
 async function load(): Promise<Loaded> {
   if (loaded) return loaded
   if (loading) return loading
@@ -275,14 +354,24 @@ async function load(): Promise<Loaded> {
     // provider is actually used — a cloud-only setup never pays for it.
     const { getLlama, LlamaLogLevel } = await import('node-llama-cpp')
     const started = Date.now()
+    reportLoad(true, 0)
 
     const llama = await getLlama({
       // CPU deliberately — see the note at the top of this file.
       gpu: process.env.NIMBUS_LOCAL_GPU === 'false' ? false : 'auto',
       logLevel: LlamaLogLevel.error
     })
-    const model = await llama.loadModel({ modelPath: path })
-    const context = await model.createContext({ contextSize: CONTEXT_TOKENS })
+    const model = await llama.loadModel({
+      modelPath: path,
+      // Reading the weights is nearly all of the wait, so its progress is
+      // most of the bar. The context that follows gets the last tenth.
+      onLoadProgress: (fraction) => reportLoad(true, Math.min(0.9, fraction * 0.9))
+    })
+    const context = await model.createContext({
+      contextSize: CONTEXT_TOKENS,
+      flashAttention: FLASH_ATTENTION
+    })
+    reportLoad(true, 1)
 
     const { LlamaChatSession } = await import('node-llama-cpp')
     const session = new LlamaChatSession({ contextSequence: context.getSequence() })
@@ -296,6 +385,7 @@ async function load(): Promise<Loaded> {
     return await loading
   } finally {
     loading = null
+    reportLoad(false, 1)
   }
 }
 

@@ -71,11 +71,19 @@ export async function httpFetch(url: string, options: HttpOptions = {}): Promise
 /**
  * Hard ceiling on any operation, so a dependency without its own timeout
  * still can't leave the UI waiting forever.
+ *
+ * This lives in http.ts but it is not only used for HTTP, and it used to say
+ * "Check your connection and try again" whatever it wrapped. That sent people
+ * to look at their wifi over a first question on the on-device model, where
+ * the whole 25 seconds had gone on loading twelve seconds of weights onto the
+ * GPU with the network never touched. Blaming the network for local work is
+ * worse than saying nothing, so the advice is now the caller's to give.
  */
 export async function withDeadline<T>(
   work: Promise<T>,
   ms: number,
-  label: string
+  label: string,
+  advice = 'Check your connection and try again.'
 ): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
@@ -83,7 +91,7 @@ export async function withDeadline<T>(
       work,
       new Promise<never>((_, reject) => {
         timer = setTimeout(
-          () => reject(new Error(`${label} took too long. Check your connection and try again.`)),
+          () => reject(new Error(`${label} took too long. ${advice}`.trim())),
           ms
         )
       })

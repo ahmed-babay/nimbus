@@ -53,6 +53,8 @@ import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { synthesizeSpeech } from '../services/tts'
 import { withDeadline } from '../services/http'
+import { onLocalModelLoad } from '../services/local-llm'
+import { activeProvider } from '../services/llm'
 import { IPC } from '../shared/ipc-channels'
 import type {
   AiChoice,
@@ -264,7 +266,11 @@ function registerIpcHandlers(): void {
     const response = await withDeadline(
       handleUtterance(utterance, stream, setSearching),
       TURN_DEADLINE_MS,
-      'That'
+      'That',
+      // On the on-device model a slow turn is usually the weights still being
+      // read, and telling someone to check their wifi over that sends them
+      // looking in entirely the wrong place.
+      activeProvider() === 'local' ? 'Try again in a moment.' : undefined
     ).catch((err: unknown) => ({
       speech: err instanceof Error ? err.message : 'Something went wrong.',
       card: { type: 'text' } as const
@@ -641,6 +647,15 @@ app.whenReady().then(() => {
 
   overlayWindow = createOverlayWindow()
   registerIpcHandlers()
+
+  // The on-device model takes seconds to read into memory. Telling the overlay
+  // while it happens is the difference between a visible "loading" bar and a
+  // window that appears to have hung.
+  onLocalModelLoad((state) => {
+    if (overlayWindow && !overlayWindow.isDestroyed()) {
+      overlayWindow.webContents.send(IPC.LOCAL_MODEL_LOADING, state)
+    }
+  })
 
   // Fetched and loaded in the background so the first thing said isn't the
   // request that waits for it. 2.2MB, and it is deliberately not awaited —

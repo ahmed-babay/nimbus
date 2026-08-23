@@ -143,6 +143,15 @@ const api = {
     ipcRenderer.on(IPC.LOCAL_MODEL_PROGRESS, listener)
     return () => ipcRenderer.removeListener(IPC.LOCAL_MODEL_PROGRESS, listener)
   },
+  /** The seconds-long read into memory, not the one-off download. */
+  onLocalModelLoading: (
+    callback: (state: { active: boolean; progress: number }) => void
+  ): (() => void) => {
+    const listener = (_event: unknown, state: { active: boolean; progress: number }): void =>
+      callback(state)
+    ipcRenderer.on(IPC.LOCAL_MODEL_LOADING, listener)
+    return () => ipcRenderer.removeListener(IPC.LOCAL_MODEL_LOADING, listener)
+  },
   meetingPiece: (pcm: ArrayBuffer, previous: string, language: string): Promise<string | null> =>
     ipcRenderer.invoke(IPC.MEETING_PIECE, pcm, previous, language),
   saveMeeting: (

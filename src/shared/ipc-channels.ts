@@ -66,6 +66,12 @@ export const IPC = {
   DOWNLOAD_LOCAL_MODEL: 'nimbus:download-local-model',
   /** main -> renderer: download progress for the on-device model */
   LOCAL_MODEL_PROGRESS: 'nimbus:local-model-progress',
+  /**
+   * main -> renderer: the on-device model is being read into memory. Distinct
+   * from LOCAL_MODEL_PROGRESS, which is the one-off download — this is the
+   * seconds-long load that happens on the first question after a cold start.
+   */
+  LOCAL_MODEL_LOADING: 'nimbus:local-model-loading',
   /** renderer -> main (invoke): re-fetch one stock for a chart range / live tick */
   GET_QUOTE: 'nimbus:get-quote',
   /** renderer -> main (invoke): the user's saved stock watchlist, priced */

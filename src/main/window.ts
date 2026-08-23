@@ -2,6 +2,7 @@ import { BrowserWindow, screen, shell } from 'electron'
 import { is } from '@electron-toolkit/utils'
 import { join } from 'path'
 import { IPC } from '../shared/ipc-channels'
+import { warmLocalModel } from '../services/local-llm'
 
 const WINDOW_WIDTH = 520
 // Tall enough for the largest response card (news hero image + three
@@ -101,6 +102,14 @@ export function showOverlay(window: BrowserWindow, extraChannel?: string): void 
   window.focus()
   window.webContents.send(IPC.WAKE)
   if (extraChannel) window.webContents.send(extraChannel)
+
+  // Start reading the weights now rather than when the question arrives. The
+  // user is about to spend a second or two speaking and another being
+  // transcribed, and the load runs underneath that instead of after it — which
+  // is the difference between a pause they never notice and twelve seconds of
+  // apparently nothing happening. A no-op when the model is already warm or
+  // the provider is a cloud one.
+  void warmLocalModel()
 }
 
 /**
