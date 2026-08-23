@@ -600,6 +600,27 @@ function registerIpcHandlers(): void {
   })
 }
 
+/**
+ * One Nimbus at a time.
+ *
+ * Without this a second launch runs alongside the first, and the two fight
+ * over everything that is single by nature: the global hotkey, the microphone,
+ * and every file in userData — including the scripts the speech and GPU
+ * processes are written to and then executed. One instance rewriting a script
+ * while the other is running it is a crash with no sensible explanation.
+ *
+ * The second copy hands its turn to the first and exits, which is also what
+ * someone double-clicking the icon actually wants.
+ */
+if (!app.requestSingleInstanceLock()) {
+  console.log('[main] another Nimbus is already running; handing over to it')
+  app.quit()
+}
+
+app.on('second-instance', () => {
+  if (overlayWindow) showOverlay(overlayWindow)
+})
+
 app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.nimbus.assistant')
 
