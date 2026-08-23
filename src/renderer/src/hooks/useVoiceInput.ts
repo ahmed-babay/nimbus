@@ -330,10 +330,18 @@ export function useVoiceInput({
                 ? `only ${metrics.voicedMs}ms of voiced audio`
                 : `only ${blob.size} bytes`
             console.log(`[voice] skipping transcription (${why})`)
-            // Nothing was said at all only when no speech was ever detected.
-            // A turn cut short for too little voiced audio still had a person
-            // in it, so it doesn't count as an empty room.
-            onEnd?.(spoke ? 'empty' : 'silence')
+            // 'empty' means a person spoke and it came back unusable; the
+            // caller leaves the microphone switched on for that, because
+            // turning someone's mic off mid-sentence would be maddening.
+            //
+            // So a blip must not be reported as a person. Sixty milliseconds
+            // of Nimbus's own voice echoing back was enough to claim someone
+            // had spoken, which left the toggle showing the microphone on
+            // while the orb had already gone red — the interface saying two
+            // different things about the one thing it must not lie about. The
+            // same bar as everywhere else decides it: below MIN_VOICED_MS
+            // nobody was there, and the mic is genuinely off.
+            onEnd?.(spoke && metrics.voicedMs >= MIN_VOICED_MS ? 'empty' : 'silence')
             return
           }
 
@@ -582,7 +590,24 @@ export function useVoiceInput({
 
           const quietFor = now - lastLoudAt
 
-          if (speech.detected) {
+          // A single frame is not a person.
+          //
+          // `speech.detected` flips on one 60ms frame, which is right for
+          // deciding to keep listening and quite wrong for deciding to stop.
+          // The mic opens the instant Nimbus stops talking, so the tail of its
+          // own voice coming back through the speakers was enough to arm the
+          // short end-of-turn window — and then the natural pause before the
+          // user actually starts speaking ran out that window and closed the
+          // turn after about a second and a half. It read as the microphone
+          // cutting out the moment you went to reply.
+          //
+          // MIN_VOICED_MS is already the bar for "was a person really there"
+          // when deciding whether to transcribe. Using the same bar here is
+          // what makes the two agree: below it, the turn keeps its full
+          // patience and waits for someone to speak.
+          const reallySpoke = speech.detected && metrics.voicedMs >= MIN_VOICED_MS
+
+          if (reallySpoke) {
             // Someone a few seconds into a sentence who goes quiet is very
             // likely finished; someone who just started may still be
             // assembling it. Shortening the window once they're settled is

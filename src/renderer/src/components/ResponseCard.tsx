@@ -13,6 +13,7 @@ import type {
   CalendarEvent,
   CryptoCardData,
   DirectionsCardData,
+  PlaceCardData,
   EntityCardData,
   EventCardData,
   ExplainerCardData,
@@ -155,6 +156,8 @@ function CardBody({
       return <CurrencyBody data={card.data} />
     case 'directions':
       return <DirectionsBody data={card.data} />
+    case 'place':
+      return <PlaceBody data={card.data} />
     case 'memory':
       return <MemoryBody data={card.data} />
     case 'reminder':
@@ -959,6 +962,23 @@ function clampTop(top: number, zoom: number, height: number): number {
  * images — and are cached by zoom and tile index so panning back over ground
  * you have already seen costs nothing.
  */
+/**
+ * One place on a map, with no journey to it.
+ *
+ * Reuses RouteMap rather than drawing its own: panning, zooming, tile caching
+ * and reprojection all already live there, and a place map differs only in
+ * having no route to draw. The mode is arbitrary because `map.routes` is
+ * empty — there is no line to pick.
+ */
+function PlaceBody({ data }: { data: PlaceCardData }) {
+  return (
+    <div>
+      <div className="mb-2 text-[13px] font-medium text-nimbus-text">{data.name}</div>
+      <RouteMap map={data.map} mode="driving" />
+    </div>
+  )
+}
+
 function RouteMap({ map, mode }: { map: RenderedMap; mode: TravelMode }) {
   const [view, setView] = useState({ zoom: map.zoom, left: map.left, top: map.top })
   /** Tiles already fetched, keyed "zoom/col/row". */

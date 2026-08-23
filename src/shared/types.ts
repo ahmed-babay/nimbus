@@ -440,6 +440,13 @@ export interface RenderedMap {
   geoEnd: [number, number]
 }
 
+/** One place, shown on a map, with no journey to it. */
+export interface PlaceCardData {
+  /** What to call it above the map — a street for "where am I", a city name otherwise. */
+  name: string
+  map: RenderedMap
+}
+
 export interface DirectionsCardData {
   from: string
   to: string
@@ -509,6 +516,7 @@ export type ResponseCardData =
   | { type: 'paperwork'; data: PaperworkCardData }
   | { type: 'selection'; data: SelectionCardData }
   | { type: 'directions'; data: DirectionsCardData }
+  | { type: 'place'; data: PlaceCardData }
   | { type: 'memory'; data: MemoryCardData }
   | { type: 'reminder'; data: ReminderCardData }
   | { type: 'briefing'; data: BriefingCardData }

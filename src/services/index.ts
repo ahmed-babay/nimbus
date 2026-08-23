@@ -41,11 +41,24 @@ import { convertCurrency, currencyCode, describeConversion } from './currency'
 import { upcomingHolidays, describeHolidays } from './holidays'
 import { defineWord, describeDefinition } from './dictionary'
 import { watchOutdoors, wantsOutdoorWatch, outdoorWatchMode } from './outdoor-watch'
-import { getDirections, modeFromUtterance, wantsMap } from './maps'
+import {
+  geocode,
+  getDirections,
+  mapForPlace,
+  modeFromUtterance,
+  wantsMap,
+  PLACE_ZOOM_STREET,
+  PLACE_ZOOM_TOWN
+} from './maps'
 import { findStation } from './radio'
 import { recordTurn } from './conversation'
 import { describeRoutine, noteAsk, routinesNow } from './routines'
-import { asksWhereTheyAre, describeWhereYouAre, meansFromHere } from './device-location'
+import {
+  asksWhereTheyAre,
+  describeWhereYouAre,
+  deviceLocation,
+  meansFromHere
+} from './device-location'
 import { learnFrom } from './learn'
 import type { MemoryCardData, NimbusIntent, NimbusResponse, TravelMode } from '../shared/types'
 import config from '../../config.json'
@@ -165,7 +178,45 @@ async function runIntent(
     // test behind it is only a backstop for when the router drops the intent,
     // which this one does often enough to matter.
     if (intent === 'location' || asksWhereTheyAre(utterance)) {
-      return { speech: await describeWhereYouAre(), card: { type: 'text' } }
+      const speech = await describeWhereYouAre()
+      // "Where am I" wants telling; "show me where I am on the map" wants
+      // showing. Every map in Nimbus used to be a by-product of working out a
+      // journey, so asking to see your own position — which is not a journey —
+      // returned a sentence and nothing else, however plainly you asked for a
+      // map.
+      if (config.integrations.maps && wantsMap(utterance)) {
+        const fix = await deviceLocation()
+        if (fix) {
+          const map = await mapForPlace(
+            { name: speech, lat: fix.lat, lon: fix.lon },
+            PLACE_ZOOM_STREET
+          )
+          return { speech, card: { type: 'place', data: { name: speech, map } } }
+        }
+      }
+      return { speech, card: { type: 'text' } }
+    }
+
+    // "Show me Munich on the map" is a place, not a search and not a journey.
+    //
+    // The router sends it to `search`, which is right for "what is Munich" and
+    // useless for this: it answered a request to see a city with a list of web
+    // links. Handled before the switch because it is the same question
+    // whichever intent the router picked for it — what matters is that they
+    // named somewhere and asked to see it.
+    if (
+      config.integrations.maps &&
+      wantsMap(utterance) &&
+      (intent === 'search' || intent === 'chat') &&
+      (params.entity || params.topic)
+    ) {
+      const place = await geocode(params.entity || params.topic)
+      if (place) {
+        return {
+          speech: `${place.name}.`,
+          card: { type: 'place', data: { name: place.name, map: await mapForPlace(place, PLACE_ZOOM_TOWN) } }
+        }
+      }
     }
 
     switch (intent) {

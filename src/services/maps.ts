@@ -4,6 +4,7 @@ import { findJourneys } from './transit'
 import type {
   DirectionsCardData,
   MapTile,
+  RenderedMap,
   RouteOption,
   TravelMode,
   TransitCardData
@@ -527,6 +528,53 @@ async function transitOption(from: Place, to: Place): Promise<TransitCardData | 
  * nothing and gains the map. Asked for both, Nimbus was showing only the
  * times, which reads as the map being broken.
  */
+/**
+ * How close in a map of one place sits.
+ *
+ * Framing a single point with `viewportFor` picks the maximum zoom, because a
+ * lone point has no extent to fit — right for "where am I", far too close for
+ * "where is Munich", which wants the city in its surroundings rather than one
+ * street in the middle of it.
+ */
+export const PLACE_ZOOM_STREET = 16
+export const PLACE_ZOOM_TOWN = 11
+
+/**
+ * A map centred on one place, with no route on it.
+ *
+ * Every map in Nimbus used to be a by-product of working out a journey, so
+ * "show me where I am on the map" and "show me Munich on the map" — neither of
+ * which is a journey — could not produce one at all. This is the same
+ * rendering path with the route left out: same tiles, same projection, same
+ * interactive panning, one marker instead of two.
+ */
+export async function mapForPlace(place: Place, zoom: number): Promise<RenderedMap> {
+  const view = {
+    zoom,
+    left: worldX(place.lon, zoom) - MAP_WIDTH / 2,
+    top: worldY(place.lat, zoom) - MAP_HEIGHT / 2
+  }
+  const point = toPixel([place.lat, place.lon], view)
+
+  return {
+    width: MAP_WIDTH,
+    height: MAP_HEIGHT,
+    tiles: await fetchTiles(view),
+    // No journey, so nothing to draw between the markers. The renderer treats
+    // an absent route as "just show the place", and start and end being the
+    // same point puts one marker on it rather than two.
+    routes: {},
+    start: point,
+    end: point,
+    zoom: view.zoom,
+    left: view.left,
+    top: view.top,
+    geoRoutes: {},
+    geoStart: [place.lat, place.lon],
+    geoEnd: [place.lat, place.lon]
+  }
+}
+
 export function wantsMap(utterance: string): boolean {
   return /\b(maps?|show me (the )?(route|way|map)|on (the|a) map|draw|visual(ly|ise|ize)?|karte)\b/i.test(
     utterance
