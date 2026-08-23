@@ -384,14 +384,18 @@ const INTENT_PARAMS: Partial<Record<NimbusIntent, string[]>> = {
   github: ['language'],
   music: ['query', 'playback'],
   transit: ['to', 'from', 'fromHere', 'when', 'timeMode', 'watch'],
-  directions: ['to', 'from', 'fromHere', 'mode', 'when'],
+  directions: ['to', 'from', 'fromHere', 'mode'],
   outdoors: ['city'],
   convert: ['amount', 'fromCurrency', 'toCurrency'],
-  define: ['word'],
+  // The handler falls back to params.query when params.word is empty.
+  define: ['word', 'query'],
   search: ['query', 'entity'],
   remember: ['fact', 'forget'],
   recall: ['query'],
-  alarm: ['task', 'when', 'leaveFor', 'cancel', 'fromHere'],
+  // from and timeMode are for "tell me when to leave for the office by nine",
+  // which plans against a timetable and so needs the journey as well as the
+  // reminder.
+  alarm: ['task', 'when', 'leaveFor', 'cancel', 'fromHere', 'from', 'timeMode'],
   event: ['eventTitle', 'eventStart', 'eventEnd', 'eventPlace', 'cancel']
 }
 
