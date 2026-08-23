@@ -55,6 +55,34 @@ const MODEL_FILE = 'Qwen3.5-0.8B-Q4_K_M.gguf'
 const IDLE_UNLOAD_MS = 5 * 60 * 1000
 
 /**
+ * How much the local model is given to read and write in one turn.
+ *
+ * A cloud model's limit is so far above anything this app sends that callers
+ * were written as though there were none. The local model's is not, and it is
+ * the one number that turns a working feature into a failing one: a
+ * forty-minute meeting summarised in 24,000-character sections is roughly
+ * 7,000 English tokens, or nearer 10,000 in German, against a window that has
+ * to hold the system prompt and the answer as well.
+ *
+ * Callers ask for the budget rather than assuming one — see
+ * `localInputBudgetChars`.
+ */
+const CONTEXT_TOKENS = 8192
+
+/**
+ * Characters of *input* a caller may send in one turn.
+ *
+ * Deliberately pessimistic on both counts. Three characters per token is
+ * roughly what German with compound nouns and place names costs — English is
+ * nearer four, so English simply gets extra headroom rather than a different
+ * rule. A third of the window is then held back for the system prompt and the
+ * model's own answer, which for a summary is not small.
+ */
+export function localInputBudgetChars(): number {
+  return Math.floor(CONTEXT_TOKENS * 3 * 0.66)
+}
+
+/**
  * Qwen3.5 reasons before answering unless told not to, and on a 0.8B model
  * that is a disaster for an assistant: a plain "what is the capital of
  * Germany" spent its entire token budget thinking and returned an empty
@@ -133,10 +161,7 @@ async function load(): Promise<Loaded> {
       logLevel: LlamaLogLevel.error
     })
     const model = await llama.loadModel({ modelPath: path })
-    // 4096 is enough for a routed turn with conversation history and a
-    // screenshot description. Larger contexts cost memory that this app has
-    // already decided it would rather not hold.
-    const context = await model.createContext({ contextSize: 4096 })
+    const context = await model.createContext({ contextSize: CONTEXT_TOKENS })
 
     const { LlamaChatSession } = await import('node-llama-cpp')
     const session = new LlamaChatSession({ contextSequence: context.getSequence() })

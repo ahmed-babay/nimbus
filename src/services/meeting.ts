@@ -1,4 +1,4 @@
-import { complete } from './llm'
+import { complete, inputBudgetChars } from './llm'
 import { transcribeAudio } from './whisper'
 import { buildDocx, buildPptx, type Slide } from './office'
 import config from '../../config.json'
@@ -90,6 +90,17 @@ export function formatTranscript(lines: MeetingLine[], startedAt: number): strin
 
 /** Kept well inside a request limit while still covering a long meeting. */
 const MAX_SUMMARY_CHARS = 24000
+
+/**
+ * The section size actually used, which is the smaller of what reads well and
+ * what the chosen model can hold. On a cloud provider this is 24,000 and the
+ * behaviour is unchanged; on the on-device model it is whatever fits, so a
+ * long meeting is read in more, smaller passes instead of overflowing the
+ * context and losing the sections that did not fit.
+ */
+function sectionChars(): number {
+  return Math.min(MAX_SUMMARY_CHARS, inputBudgetChars())
+}
 
 const SUMMARY_PROMPT = `You are summarising a meeting transcript for someone who was in the room
 and needs to remember what actually came out of it.
@@ -188,8 +199,10 @@ export async function summarizeMeeting(
 
   const transcript = formatTranscript(lines, startedAt)
 
+  const budget = sectionChars()
+
   // Short enough to summarise whole — the common case.
-  if (transcript.length <= MAX_SUMMARY_CHARS) {
+  if (transcript.length <= budget) {
     return parseSummary(
       await complete({
         system: SUMMARY_PROMPT,
@@ -205,7 +218,7 @@ export async function summarizeMeeting(
   // the first half — including everything agreed early on. Read it in
   // sections, then summarise the notes: slower, and it actually covers the
   // meeting that happened.
-  const chunks = chunkTranscript(transcript, MAX_SUMMARY_CHARS)
+  const chunks = chunkTranscript(transcript, budget)
   console.log(`[meeting] ${transcript.length} chars, summarising in ${chunks.length} passes`)
 
   const notes: string[] = []
@@ -223,6 +236,10 @@ export async function summarizeMeeting(
 
   const combined = notes.map((note, i) => `--- Section ${i + 1} ---\n${note}`).join('\n\n')
 
+  // Notes are already condensed, so the merge is allowed twice a section's
+  // worth — still capped by what the model can actually read.
+  const mergeChars = Math.min(MAX_SUMMARY_CHARS * 2, inputBudgetChars())
+
   return parseSummary(
     await complete({
       system: `${SUMMARY_PROMPT}
@@ -230,7 +247,7 @@ export async function summarizeMeeting(
 What follows is not a transcript but section-by-section notes from one long meeting,
 in order. Merge them into one account of the whole meeting. Where the same thread runs
 through several sections, report where it ended up rather than listing each mention.`,
-      messages: [{ role: 'user', text: combined.slice(-MAX_SUMMARY_CHARS * 2) }],
+      messages: [{ role: 'user', text: combined.slice(-mergeChars) }],
       jsonSchema: SUMMARY_SCHEMA,
       temperature: 0
     })

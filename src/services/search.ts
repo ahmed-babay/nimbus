@@ -1,5 +1,6 @@
 import type { SearchCardData, SearchResult } from '../shared/types'
 import { httpFetch } from './http'
+import { inputBudgetChars } from './llm'
 
 const SEARCH_URL = 'https://api.tavily.com/search'
 
@@ -174,7 +175,11 @@ export async function deepSearch(
   }
 
   const evidence: Evidence[] = []
-  let budget = MAX_TOTAL_CHARS
+  // Capped by what the answering model can actually read: on a cloud provider
+  // this is the full reading budget, on the on-device model it is its window.
+  // Gathering evidence the model then has to drop is worse than gathering
+  // less, because what gets dropped is chosen by truncation rather than rank.
+  let budget = Math.min(MAX_TOTAL_CHARS, inputBudgetChars())
   for (const result of top) {
     const text = readable(result)
     if (!text) continue

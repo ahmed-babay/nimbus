@@ -1,6 +1,6 @@
 import { buildModel, withModelFallback } from './gemini-client'
 import { httpFetch } from './http'
-import { localComplete, localStreamComplete } from './local-llm'
+import { localComplete, localInputBudgetChars, localStreamComplete } from './local-llm'
 import type { AiProvider } from '../shared/types'
 
 /**
@@ -266,6 +266,20 @@ async function providerError(label: string, res: Response): Promise<string> {
 // ---------------------------------------------------------------------------
 // Public surface
 // ---------------------------------------------------------------------------
+
+/**
+ * How many characters of input the active provider will accept in one turn.
+ *
+ * Every cloud provider here takes far more than this app has any reason to
+ * send, so they report a limit that is really "don't worry about it". The
+ * local model has a real window, and a caller that splits a long document
+ * into fixed-size pieces has to split it into pieces *this* provider can
+ * actually read — otherwise the same code silently works on Gemini and
+ * overflows on-device.
+ */
+export function inputBudgetChars(): number {
+  return activeProvider() === 'local' ? localInputBudgetChars() : 200_000
+}
 
 /** A complete answer, as text. */
 export async function complete(request: LlmRequest): Promise<string> {
