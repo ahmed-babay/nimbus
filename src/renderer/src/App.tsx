@@ -135,6 +135,20 @@ export default function App() {
             // Only the card itself captures the mouse; everything around it
             // stays click-through so the overlay never blocks the screen.
             onMouseEnter={() => window.nimbus.setMouseIgnore(false)}
+            // Where the light gathers under the pointer. Written straight to
+            // the element as custom properties: this fires with every mouse
+            // move, and putting it through React would re-render the whole
+            // card at pointer rate for a decoration.
+            onPointerMove={(event) => {
+              const box = event.currentTarget.getBoundingClientRect()
+              const style = event.currentTarget.style
+              style.setProperty('--cursor-x', `${event.clientX - box.left}px`)
+              style.setProperty('--cursor-y', `${event.clientY - box.top}px`)
+              style.setProperty('--cursor-in', '1')
+            }}
+            onPointerLeave={(event) => {
+              event.currentTarget.style.setProperty('--cursor-in', '0')
+            }}
             // Not while dragging: the window chases the pointer, so the
             // pointer leaves the card constantly mid-drag, and going
             // click-through there would drop the window out from under it.
@@ -194,6 +208,11 @@ export default function App() {
                   'linear-gradient(168deg, rgba(255,255,255,0.09) 0%, rgba(255,255,255,0.035) 38%, transparent 72%)'
               }}
             />
+            {/* The bloom that follows the cursor. Above the panel's own
+                lighting so it reads as light on the surface, below everything
+                you can actually click. */}
+            <div aria-hidden="true" className="nimbus-sheen pointer-events-none absolute inset-0" />
+
             {/* A single hairline of light along the top edge — enough to
                 separate the panel from whatever is behind it, and nothing
                 more. */}

@@ -208,3 +208,46 @@ body {
 .nimbus-scroll::-webkit-scrollbar-thumb:hover {
   background: var(--color-nimbus-accent);
 }
+
+/* --- Touch ---------------------------------------------------------------
+   The panel is glass, and glass responds to being touched. Two very small
+   behaviours, both deliberately under the threshold of "an animation": the
+   point is that the surface feels physical, not that anything is performing.
+   Kept in CSS rather than in components so every button in the app gets them
+   without each one having to remember. */
+
+/* Buttons give under the press and come back. 40ms down is about as fast as a
+   transition can be and still be seen; the release is slower because a
+   surface returning to rest is not as sudden as a finger landing on it. */
+button:not(:disabled),
+[role='button']:not([aria-disabled='true']) {
+  transition:
+    transform 160ms cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease;
+}
+
+button:not(:disabled):active,
+[role='button']:not([aria-disabled='true']):active {
+  transform: scale(0.955);
+  transition-duration: 40ms;
+}
+
+/* The light under the cursor.
+   A pane of glass catches the light differently where you touch it, and this
+   is that: a soft bloom that follows the pointer across the card. Positioned
+   from --cursor-x/--cursor-y, which the card writes on pointermove — custom
+   properties rather than React state, because this updates with the mouse and
+   re-rendering the overlay at that rate would cost far more than the effect is
+   worth. Fades out on leaving, so it never sits abandoned in a corner. */
+.nimbus-sheen {
+  background: radial-gradient(
+    220px circle at var(--cursor-x, -1000px) var(--cursor-y, -1000px),
+    color-mix(in srgb, var(--color-nimbus-accent-bright) 13%, transparent),
+    transparent 70%
+  );
+  opacity: var(--cursor-in, 0);
+  transition: opacity 420ms ease;
+  mix-blend-mode: screen;
+}
