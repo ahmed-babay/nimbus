@@ -170,6 +170,24 @@ const RING_REACH = 780
 /** Enough segments that the curve reads as smooth at this size, and no more. */
 const OUTLINE_POINTS = 56
 
+/**
+ * How hard the surface shakes with the sound, at full level.
+ *
+ * Well under the release wave's 13: the wave is an event and is allowed to be
+ * violent, whereas this runs for the whole of a spoken answer and has to sit
+ * behind reading the text without pulling the eye off it.
+ */
+const VOICE_RIPPLE = 4.5
+
+/**
+ * A finer, tighter field than the release wave's.
+ *
+ * Sound shakes a surface in short ripples; a swell rolls in long ones. Held
+ * constant while speaking so the turbulence is generated once and only the
+ * displacement strength changes — see the note where this is used.
+ */
+const VOICE_RIPPLE_FREQUENCY = 0.085
+
 /** How far the ripples have lengthened, 0..1 — long swell rather than chop. */
 function spreadFreq(release: number, releasing: boolean): number {
   return releasing ? 1 - Math.pow(1 - release, 2) : 0
@@ -247,6 +265,9 @@ export function Orb({ state, searching = false, answerSeq = 0, levelRef, size = 
    * paying for noise the whole time the overlay is open, to displace by zero.
    */
   const waterGroupRef = useRef<SVGGElement>(null)
+  /** What was last written to the filter, so unchanged values are not rewritten. */
+  const lastFreq = useRef(-1)
+  const lastSeed = useRef('')
   /** Light falling inward while the question is being taken in. */
   const sparkRefs = useRef<SVGPathElement[]>([])
   const sparkHaloRefs = useRef<SVGPathElement[]>([])
@@ -590,9 +611,29 @@ export function Orb({ state, searching = false, answerSeq = 0, levelRef, size = 
       // missing when this was outlines on top of a static sphere.
       if (turbRef.current && dispRef.current) {
         const churnWave = releasing ? Math.sin(release * Math.PI) * (1 - release * 0.5) : 0
+
+        // The surface trembling with the voice.
+        //
+        // Same displacement that carries the release wave, driven by the live
+        // audio level instead of by the wave's own clock — so the glass shakes
+        // to what is being said rather than only when an answer lands. The
+        // floor keeps a trace of movement through the gaps between words,
+        // because a surface that goes perfectly still between syllables reads
+        // as dropped audio.
+        //
+        // Speech only, deliberately, not 'playing'. Radio runs through a plain
+        // <audio> element with no analyser, so there is no level to shake to —
+        // and measuring one would mean routing the stream through an
+        // AudioContext, which silences any station that does not send CORS
+        // headers. Measured across three: SomaFM and SRG allow it, laut.fm
+        // does not. Including 'playing' here would therefore buy a constant
+        // static distortion and the cost of an attached turbulence filter, in
+        // exchange for no vibration at all.
+        const voice = state === 'speaking' ? (0.12 + smoothed * 0.88) * VOICE_RIPPLE : 0
+
         // Also disturbed, faintly, while a charge is being gathered — the
         // surface tightening as pressure builds.
-        const agitation = churnWave * 13 + charge * 1.6 + flash * 9
+        const agitation = churnWave * 13 + charge * 1.6 + flash * 9 + voice
 
         // Attached only while there is something to disturb the surface, and
         // taken off the moment there isn't. Turbulence is regenerated on every
@@ -610,15 +651,35 @@ export function Orb({ state, searching = false, answerSeq = 0, levelRef, size = 
         // primitives invalidates the whole chain, so touching them at rest
         // would undo the point of detaching it.
         if (agitation > 0.05) {
+          // `scale` is the cheap one: it re-runs the displacement but reuses
+          // the noise. Safe to write every frame, and it is what carries both
+          // the wave and the voice.
           dispRef.current.setAttribute('scale', agitation.toFixed(2))
-          // The ripples lengthen as the wave spreads, the way real ones do.
-          const freq = 0.055 - spreadFreq(release, releasing) * 0.03
-          turbRef.current.setAttribute(
-            'baseFrequency',
-            `${freq.toFixed(4)} ${(freq * 1.6).toFixed(4)}`
-          )
+
+          // `baseFrequency` is the expensive one — changing it regenerates the
+          // whole turbulence field. During a release that is worth paying for,
+          // because the ripples lengthening as the wave spreads is most of
+          // what makes it read as water. While talking it is not: a spoken
+          // answer runs for many seconds, and regenerating noise sixty times a
+          // second for the whole of it would be the single most expensive
+          // thing this component does. So speech holds one fixed, finer field
+          // and only shakes it harder or softer.
+          const freq = releasing
+            ? 0.055 - spreadFreq(release, releasing) * 0.03
+            : VOICE_RIPPLE_FREQUENCY
+          if (Math.abs(freq - lastFreq.current) > 0.0015) {
+            lastFreq.current = freq
+            turbRef.current.setAttribute(
+              'baseFrequency',
+              `${freq.toFixed(4)} ${(freq * 1.6).toFixed(4)}`
+            )
+          }
           // Re-seeded per turn so no two disturbances are the same water.
-          turbRef.current.setAttribute('seed', String(1 + (ringPhase.current | 0)))
+          const seed = String(1 + (ringPhase.current | 0))
+          if (lastSeed.current !== seed) {
+            lastSeed.current = seed
+            turbRef.current.setAttribute('seed', seed)
+          }
         }
       }
 
