@@ -4,6 +4,15 @@ import { join } from 'path'
 import { IPC } from '../shared/ipc-channels'
 import { warmLocalModel } from '../services/local-llm'
 
+/**
+ * How long after the overlay appears before the model starts loading.
+ *
+ * Long enough for the entrance animation to land, short enough that it is
+ * still loading while the user speaks — which is the whole point of warming
+ * up on open rather than on the question.
+ */
+const WARM_UP_DELAY_MS = 350
+
 const WINDOW_WIDTH = 520
 // Tall enough for the largest response card (news hero image + three
 // headlines, or an entity photo + extract) plus the follow-up strip and drop
@@ -109,7 +118,13 @@ export function showOverlay(window: BrowserWindow, extraChannel?: string): void 
   // is the difference between a pause they never notice and twelve seconds of
   // apparently nothing happening. A no-op when the model is already warm or
   // the provider is a cloud one.
-  void warmLocalModel()
+  //
+  // Held back for a beat so the overlay's entrance finishes first. Loading
+  // does not block the main thread — measured, the worst stall across a twelve
+  // second load is 78ms — but it does hand several gigabytes to the GPU, and
+  // starting that in the same frame as the window appearing put the contention
+  // exactly where it is most visible: on the animation the user is looking at.
+  setTimeout(() => void warmLocalModel(), WARM_UP_DELAY_MS)
 }
 
 /**

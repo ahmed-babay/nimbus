@@ -313,7 +313,19 @@ function registerIpcHandlers(): void {
     // setIgnoreMouseEvents makes it invisible to input at the OS level, so
     // Chromium's own drag region is never reached.
     const [x, y] = overlayWindow.getPosition()
-    overlayWindow.setPosition(Math.round(x + dx), Math.round(y + dy))
+    const nextX = Math.round(x + dx)
+    const nextY = Math.round(y + dy)
+    // setPosition takes native integers and throws "conversion failure" at
+    // anything that is not one. That throw comes out of an IPC handler, where
+    // nothing is waiting to catch it, so it reached the top level and printed
+    // a stack for every pointermove of the drag that caused it. A window
+    // position arriving from the renderer is input like any other, and gets
+    // checked like any other.
+    if (!Number.isFinite(nextX) || !Number.isFinite(nextY)) {
+      console.warn(`[main] ignoring a bad overlay move (dx=${dx}, dy=${dy})`)
+      return
+    }
+    overlayWindow.setPosition(nextX, nextY)
   })
 
   ipcMain.on(IPC.SET_MOUSE_IGNORE, (_event, ignore: boolean) => {

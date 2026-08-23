@@ -204,6 +204,34 @@ export default function App() {
                   'linear-gradient(90deg, transparent, rgba(255,255,255,0.18) 30%, rgba(255,255,255,0.18) 70%, transparent)'
               }}
             />
+
+            {/* The model coming up, on the panel's own edge.
+                Shown whatever Nimbus is doing, which is the point: the weights
+                start loading when the overlay opens, so the wait happens while
+                the state is still 'listening' and the message inside the card
+                — which only appears once you have asked something — was not
+                reachable yet. Twelve seconds with nothing moving is what made
+                the app feel frozen on opening. This is the same hairline,
+                filling. */}
+            {modelLoading.active && (
+              <div className="pointer-events-none absolute inset-x-0 top-0 z-30 h-[2px] overflow-hidden">
+                <motion.div
+                  className="h-full"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  style={{
+                    // Never zero-width: a bar that starts invisible reads as
+                    // nothing happening for the first second of the longest
+                    // wait in the app.
+                    width: `${Math.max(5, modelLoading.progress * 100)}%`,
+                    background:
+                      'linear-gradient(90deg, transparent, var(--color-nimbus-accent) 40%, var(--color-nimbus-accent-bright))',
+                    boxShadow: '0 0 8px 0 var(--color-nimbus-accent)',
+                    transition: 'width 220ms ease-out'
+                  }}
+                />
+              </div>
+            )}
             {/* Indeterminate progress while working, in the accent rather than
                 a white strobe. */}
             {state === 'thinking' && (

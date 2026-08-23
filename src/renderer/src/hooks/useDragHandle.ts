@@ -41,6 +41,11 @@ export function useDragHandle(onDragChange?: (dragging: boolean) => void): DragH
         if (!last.current) return
         const dx = moveEvent.screenX - last.current.x
         const dy = moveEvent.screenY - last.current.y
+        // A pointer event without usable screen coordinates produces NaN here,
+        // and the main process cannot turn NaN into a window position — it
+        // throws out of the IPC handler, where nothing catches it. Dropping
+        // the frame is the whole cost of not doing that.
+        if (!Number.isFinite(dx) || !Number.isFinite(dy)) return
         if (dx === 0 && dy === 0) return
         last.current = { x: moveEvent.screenX, y: moveEvent.screenY }
         window.nimbus.moveOverlay(dx, dy)
