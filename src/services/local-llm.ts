@@ -190,6 +190,8 @@ interface Loaded {
 let loaded: Loaded | null = null
 let loading: Promise<Loaded> | null = null
 let idleTimer: ReturnType<typeof setTimeout> | null = null
+/** In flight while the model is being handed back, so no load starts on top of it. */
+let unloading: Promise<void> | null = null
 
 function pathFor(model: LocalModel): string {
   return join(app.getPath('userData'), 'models', model.file)
@@ -269,14 +271,36 @@ export async function unloadLocalModel(): Promise<void> {
     clearTimeout(idleTimer)
     idleTimer = null
   }
+  if (unloading) return unloading
+
+  // Never while the model is working. A turn can begin in the instant before
+  // the timer fires, and disposing underneath it kills the process.
+  if (inFlight > 0) {
+    scheduleUnload()
+    return
+  }
+
+  // A load in flight owns the model it is building. Let it finish and unload
+  // what it produced, rather than tearing down half-built native objects.
+  if (loading) await loading.catch(() => {})
+
   const current = loaded
   loaded = null
   if (!current) return
-  // Disposed innermost first; a context outliving its model crashes the
-  // native side rather than throwing.
-  await current.context.dispose().catch(() => {})
-  await current.model.dispose().catch(() => {})
-  console.log('[local-llm] unloaded after idle')
+
+  unloading = (async () => {
+    // Disposed innermost first; a context outliving its model crashes the
+    // native side rather than throwing.
+    await current.context.dispose().catch(() => {})
+    await current.model.dispose().catch(() => {})
+    console.log('[local-llm] unloaded after idle')
+  })()
+
+  try {
+    await unloading
+  } finally {
+    unloading = null
+  }
 }
 
 /**
@@ -339,6 +363,18 @@ export async function warmLocalModel(): Promise<void> {
 }
 
 async function load(): Promise<Loaded> {
+  // Let any teardown finish first.
+  //
+  // `unloadLocalModel` clears `loaded` immediately and then spends the best
+  // part of a second actually handing four gigabytes of VRAM back. In that
+  // window the module reads as "nothing loaded" while the old weights are
+  // still resident, so starting here would put a second copy of the model
+  // alongside the first — eight gigabytes on a card that has eight, plus the
+  // desktop. Vulkan does not fail politely when it runs out; it takes the
+  // process down. A loop rather than a single await, because another unload
+  // can be queued behind the first.
+  while (unloading) await unloading.catch(() => {})
+
   if (loaded) return loaded
   if (loading) return loading
 
@@ -458,8 +494,37 @@ function buildTurns(request: LlmRequest): { history: ChatTurn[]; prompt: string 
  */
 let queue: Promise<unknown> = Promise.resolve()
 
+/**
+ * How many evaluations are running right now.
+ *
+ * The idle unload must not fire while one is, and "the model is loaded" is not
+ * enough to know that — see `unloadLocalModel`.
+ */
+let inFlight = 0
+
 function enqueue<T>(work: () => Promise<T>): Promise<T> {
-  const result = queue.then(work, work)
+  const run = async (): Promise<T> => {
+    // Cancel the pending unload as the turn *starts*, not only when it ends.
+    //
+    // The timer is armed when a turn finishes, so a turn beginning at four
+    // minutes fifty-nine seconds runs straight into the unload armed by the
+    // previous one. Disposing a context out from under a running evaluation is
+    // not an exception that can be caught — it is a native crash that takes
+    // the whole app with it, and it needs several minutes and a second
+    // question to reproduce, which is exactly what "it crashes later on"
+    // looks like.
+    if (idleTimer) {
+      clearTimeout(idleTimer)
+      idleTimer = null
+    }
+    inFlight++
+    try {
+      return await work()
+    } finally {
+      inFlight--
+    }
+  }
+  const result = queue.then(run, run)
   // Keeps the chain alive after a rejection, so one failed turn cannot wedge
   // every turn after it.
   queue = result.catch(() => undefined)
