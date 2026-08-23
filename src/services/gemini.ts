@@ -1,5 +1,5 @@
 import { SchemaType, type GenerationConfig } from '@google/generative-ai'
-import { complete, streamComplete } from './llm'
+import { activeProvider, complete, streamComplete } from './llm'
 import type { IntentClassification, NimbusIntent } from '../shared/types'
 import { getHistoryAsContents, getHistorySummary } from './conversation'
 import { currentTimeContext } from './now'
@@ -338,6 +338,205 @@ const CLASSIFY_SCHEMA: GenerationConfig = {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Routing on the on-device model
+// ---------------------------------------------------------------------------
+
+/**
+ * The router prompt above is written for a model that can read four thousand
+ * tokens without anyone noticing. On-device that assumption is the entire
+ * latency budget, and the schema makes it worse: llama.cpp's JSON grammar
+ * makes every property mandatory, so one classification generates all
+ * thirty-one parameters whether or not the chosen intent has any use for them.
+ *
+ * Measured on an RTX 3070 laptop with a 4B model under that grammar, over
+ * seventeen utterances: one call for intent and every parameter took 6,764ms.
+ * Asking for the intent alone took 543ms. The parameters nobody asked for were
+ * most of the wait.
+ *
+ * So on-device the routing is split. First the intent, against the prompt in
+ * full. Then, only when that intent actually carries parameters, a second pass
+ * with a schema holding just that intent's fields and a prompt trimmed to just
+ * that intent's section of the text above — 1,278ms, and it fills them in as
+ * accurately as the single call did. "briefing", "location", "holidays" and
+ * "chat" carry none and never make the second call at all.
+ *
+ * 6.8 seconds to 1.8, with routing accuracy unchanged at 17/17.
+ *
+ * Cloud providers keep the single call. They are fast, their JSON mode leaves
+ * absent fields absent rather than forcing them, and a second round trip there
+ * would cost more than it saves.
+ */
+
+/**
+ * What each intent can carry, which is what the second pass asks for.
+ *
+ * An intent missing from this map takes no parameters and skips the pass. The
+ * cost of listing a field here that the handler never reads is a few tokens;
+ * the cost of omitting one it does read is a parameter that is silently always
+ * empty, so where a field was ambiguous it is listed.
+ */
+const INTENT_PARAMS: Partial<Record<NimbusIntent, string[]>> = {
+  weather: ['city'],
+  stocks: ['symbol', 'stockAction', 'alertPrice', 'alertDirection'],
+  crypto: ['coin'],
+  news: ['query'],
+  github: ['language'],
+  music: ['query', 'playback'],
+  transit: ['to', 'from', 'fromHere', 'when', 'timeMode', 'watch'],
+  directions: ['to', 'from', 'fromHere', 'mode', 'when'],
+  outdoors: ['city'],
+  convert: ['amount', 'fromCurrency', 'toCurrency'],
+  define: ['word'],
+  search: ['query', 'entity'],
+  remember: ['fact', 'forget'],
+  recall: ['query'],
+  alarm: ['task', 'when', 'leaveFor', 'cancel', 'fromHere'],
+  event: ['eventTitle', 'eventStart', 'eventEnd', 'eventPlace', 'cancel']
+}
+
+/** The router prompt taken apart into the pieces each pass needs. */
+interface RouterSections {
+  /** What the model is, and what it is being asked to do. */
+  preamble: string
+  /** One entry per intent, keyed by intent name, headline first. */
+  blocks: Map<string, string>
+  /** The params.topic guidance, which applies whatever the intent. */
+  tail: string
+}
+
+let sections: RouterSections | null | undefined
+
+/**
+ * Splits CLASSIFY_SYSTEM_PROMPT rather than keeping a second, shorter copy of
+ * it.
+ *
+ * A trimmed duplicate would drift the first time someone tunes the wording of
+ * an intent, and drift between the prompt that picks an intent and the prompt
+ * that fills it in shows up as one phrasing quietly routing wrong. Parsing
+ * prose is the lesser risk, and it is checked: if the prompt is ever
+ * restructured into a shape this does not recognise, it returns null and
+ * routing falls back to the single call.
+ */
+function routerSections(): RouterSections | null {
+  if (sections !== undefined) return sections
+  sections = parseRouterPrompt()
+  if (!sections) {
+    console.warn('[router] prompt not in the expected shape, using the single-pass route')
+  }
+  return sections
+}
+
+function parseRouterPrompt(): RouterSections | null {
+  const lines = CLASSIFY_SYSTEM_PROMPT.split('\n')
+  const starts: number[] = []
+  lines.forEach((line, index) => {
+    if (/^- "[a-z]+":/.test(line)) starts.push(index)
+  })
+
+  const tailAt = lines.findIndex((line) => line.startsWith('Separately, for ANY intent'))
+  if (starts.length !== VALID_INTENTS.length) return null
+  if (tailAt <= starts[starts.length - 1]) return null
+
+  const blocks = new Map<string, string>()
+  for (const [n, start] of starts.entries()) {
+    const end = n + 1 < starts.length ? starts[n + 1] : tailAt
+    const name = /^- "([a-z]+)":/.exec(lines[start])?.[1]
+    if (!name) return null
+    blocks.set(name, lines.slice(start, end).join('\n').trimEnd())
+  }
+  // Every intent the app can act on needs a section, or one could be chosen
+  // and then have nothing to fill its parameters in from.
+  for (const intent of VALID_INTENTS) if (!blocks.has(intent)) return null
+
+  return {
+    preamble: lines.slice(0, starts[0]).join('\n').trimEnd(),
+    blocks,
+    tail: lines.slice(tailAt).join('\n').trimEnd()
+  }
+}
+
+/** The parameter definitions from the full schema, so there is one source. */
+function paramDefinitions(): Record<string, unknown> {
+  const schema = CLASSIFY_SCHEMA.responseSchema as unknown as {
+    properties: { params: { properties: Record<string, unknown> } }
+  }
+  return schema.properties.params.properties
+}
+
+const INTENT_ONLY_SCHEMA = {
+  type: SchemaType.OBJECT,
+  properties: {
+    intent: { type: SchemaType.STRING, enum: VALID_INTENTS, format: 'enum' }
+  },
+  required: ['intent']
+}
+
+/**
+ * Routes on-device in two passes. Returns null when the prompt could not be
+ * split, leaving the caller to make its single call.
+ */
+async function classifyLocally(
+  utterance: string,
+  context: string
+): Promise<IntentClassification | null> {
+  const parts = routerSections()
+  if (!parts) return null
+
+  // Deliberately the whole prompt, not a trimmed menu of the intent headlines.
+  // Cutting it to one line per intent was tried: 451 tokens instead of 3,714,
+  // and 340ms instead of 543ms — but 15/17 instead of 17/17. Both misses were
+  // the same kind: "I need to be in Mainz by 9" and "keep me posted on the
+  // 8:15 to Frankfurt" both became "alarm", because what separates them from
+  // an alarm is written in the body of the transit section, not its headline.
+  // The 200ms was not worth routing two plausible sentences to the wrong
+  // handler.
+  const chosen = await complete({
+    system: [CLASSIFY_SYSTEM_PROMPT, context].filter((piece) => piece !== '').join('\n'),
+    messages: [{ role: 'user', text: utterance }],
+    jsonSchema: INTENT_ONLY_SCHEMA as unknown as Record<string, unknown>,
+    temperature: 0
+  })
+
+  let intent: NimbusIntent = 'chat'
+  try {
+    const parsed = JSON.parse(stripFences(chosen))
+    if (VALID_INTENTS.includes(parsed.intent)) intent = parsed.intent
+  } catch {
+    return { intent: 'chat', params: {} }
+  }
+
+  const fields = INTENT_PARAMS[intent]
+  if (!fields || fields.length === 0) return { intent, params: {} }
+
+  const definitions = paramDefinitions()
+  const properties: Record<string, unknown> = {}
+  for (const field of fields) {
+    if (definitions[field]) properties[field] = definitions[field]
+  }
+  // Asked for whatever the intent, so a picture can accompany any answer.
+  if (definitions.topic) properties.topic = definitions.topic
+
+  const filled = await complete({
+    system: [parts.preamble, parts.blocks.get(intent) ?? '', parts.tail, context]
+      .filter((piece) => piece !== '')
+      .join('\n\n'),
+    messages: [{ role: 'user', text: utterance }],
+    jsonSchema: { type: SchemaType.OBJECT, properties } as unknown as Record<string, unknown>,
+    temperature: 0
+  })
+
+  try {
+    const parsed = JSON.parse(stripFences(filled))
+    const raw: Record<string, string> = parsed && typeof parsed === 'object' ? parsed : {}
+    return { intent, params: cleanParams(raw, utterance) }
+  } catch {
+    // The intent is still good. A turn routed correctly with nothing filled in
+    // beats one thrown away because the second pass stumbled.
+    return { intent, params: {} }
+  }
+}
+
 export async function classifyIntent(utterance: string): Promise<IntentClassification> {
   // Recent turns are prepended so follow-ups resolve: "what about tomorrow?"
   // or "how about Berlin?" only make sense against what was just discussed.
@@ -352,6 +551,21 @@ export async function classifyIntent(utterance: string): Promise<IntentClassific
   ]
     .filter((part) => part !== '')
     .join('\n')
+
+  if (activeProvider() === 'local') {
+    const routed = await classifyLocally(
+      utterance,
+      [
+        currentTimeContext(),
+        placeContext(),
+        factsContext(),
+        context ? `\nRecent conversation (for resolving pronouns and follow-ups):\n${context}` : ''
+      ]
+        .filter((part) => part !== '')
+        .join('\n')
+    )
+    if (routed) return routed
+  }
 
   const text = await complete({
     system: systemInstruction,
