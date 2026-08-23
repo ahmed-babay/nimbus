@@ -397,23 +397,34 @@ function repairJson(text: string): string {
   return trimmed
 }
 
+/**
+ * Refuses a request carrying an image, for both entry points.
+ *
+ * Vision needs the mmproj projector loaded alongside the weights. The model
+ * itself can see — Qwen3-VL is a vision model and its projector is published —
+ * but node-llama-cpp 3.20.0 has no way to load one: LlamaModelOptions has no
+ * mmproj field, and llama.cpp's vision support lives behind libmtmd, which
+ * these bindings do not expose. Running llama.cpp's own server binary as a
+ * child process would work, and is how the speech models are already isolated,
+ * at the cost of shipping that binary.
+ *
+ * This lived only in `localComplete` and that was the whole bug: screen
+ * questions are asked with a stream handler, so they went through
+ * `localStreamComplete`, which dropped the image and answered from the
+ * question text alone. Asked "what does this say", the model replied "Yes, I
+ * can see the screenshot you sent" and invented an error dialog, while the
+ * actual capture was a flight itinerary. A confident answer about a screen
+ * nobody looked at is far worse than a refusal, so both paths refuse.
+ */
+function refuseImages(request: LlmRequest): void {
+  if (!request.image) return
+  throw new Error(
+    'The on-device model cannot read images yet. Pick a cloud provider in settings for screen questions.'
+  )
+}
+
 export async function localComplete(request: LlmRequest): Promise<string> {
-  if (request.image) {
-    // Vision needs the mmproj projector loaded alongside the weights. The
-    // model itself can see — Qwen3-VL is a vision model and its projector is
-    // published — but node-llama-cpp 3.20.0 has no way to load one:
-    // LlamaModelOptions has no mmproj field, and llama.cpp's vision support
-    // lives behind libmtmd, which these bindings do not expose. Running
-    // llama.cpp's own server binary as a child process would work and is how
-    // the speech models are already isolated, at the cost of shipping that
-    // binary.
-    //
-    // Until then this says so rather than answering a question about the
-    // screen without having looked at it.
-    throw new Error(
-      'The on-device model cannot read images yet. Pick a cloud provider in settings for screen questions.'
-    )
-  }
+  refuseImages(request)
 
   const { history, prompt } = buildTurns(request)
 
@@ -446,6 +457,8 @@ export async function localStreamComplete(
   request: LlmRequest,
   onChunk: (text: string) => void
 ): Promise<string> {
+  refuseImages(request)
+
   const { history, prompt } = buildTurns(request)
 
   return enqueue(async () => {
