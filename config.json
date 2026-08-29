@@ -5,6 +5,8 @@
     "crypto": true,
     "news": true,
     "github": true,
+    "tv": true,
+    "flights": true,
     "search": true,
     "music": true,
     "transit": true,

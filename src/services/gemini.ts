@@ -38,6 +38,8 @@ const VALID_INTENTS: NimbusIntent[] = [
   'outdoors',
   'convert',
   'holidays',
+  'episode',
+  'flights',
   'define',
   'remember',
   'recall',
@@ -178,6 +180,16 @@ the relevant parameter for it, leaving the others empty:
 - "holidays": asking about public/bank holidays -- "is Monday a holiday",
   "when is the next public holiday", "are the shops open on Thursday", "what
   holidays are coming up". No params.
+- "episode": asking when a TV show is next on, or where it is up to -- "when
+  is the next episode of Severance", "is there a new Simpsons this week",
+  "has The Bear come back yet", "when does season 3 start".
+  -> params.query (just the show's name, e.g. "Severance")
+  For a film, or for what a show is about, use "search" instead.
+- "flights": asking what aircraft are in the sky nearby -- "what's that plane
+  overhead", "any planes above me", "what's flying over Frankfurt right now".
+  -> params.city (only when they named a place; omit for where they are)
+  This is live positions, not schedules. A question about a *particular*
+  flight's status -- "is LH400 delayed", "when does BA912 land" -- is "search".
 - "define": asking what an ENGLISH word means or how it is used -- "what does
   resilient mean", "define concede", "how do you use 'albeit'".
   -> params.word (just the single word, lowercase)
@@ -396,6 +408,8 @@ const INTENT_PARAMS: Partial<Record<NimbusIntent, string[]>> = {
   crypto: ['coin'],
   news: ['query'],
   github: ['language'],
+  episode: ['query'],
+  flights: ['city'],
   music: ['query', 'playback', 'playIn'],
   transit: ['to', 'from', 'fromHere', 'when', 'timeMode', 'watch'],
   directions: ['to', 'from', 'fromHere', 'mode'],

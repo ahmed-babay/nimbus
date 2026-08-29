@@ -35,12 +35,7 @@ async function weatherSection(): Promise<BriefingCardData['weather']> {
   const city = homeCity()
   if (!city) return null
   try {
-    const weather = await getWeather(city)
-    // OpenWeatherMap labels this location "Regierungsbezirk Darmstadt" — the
-    // administrative district, not the city. The coordinates it used are the
-    // right ones, so the configured name is the more accurate label of the
-    // two, and far more readable on a card.
-    return { ...weather, city }
+    return await getWeather(city)
   } catch {
     return null
   }

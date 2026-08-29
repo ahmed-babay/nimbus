@@ -30,7 +30,6 @@ export const SECRET_NAMES = [
   'ANTHROPIC_API_KEY',
   'GROQ_API_KEY',
   'TAVILY_API_KEY',
-  'OPENWEATHER_API_KEY',
   'GNEWS_API_KEY',
   'GITHUB_TOKEN',
   // Stocks quietly used a slower path without this, and Settings had no way

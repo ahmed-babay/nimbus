@@ -1,5 +1,7 @@
 import { motion } from 'framer-motion'
 
+import type { WeatherKind } from '@shared/types'
+
 /**
  * Weather as a moving picture rather than a word.
  *
@@ -13,41 +15,6 @@ import { motion } from 'framer-motion'
  * the card does, and anything quick becomes a distraction on the second
  * viewing.
  */
-
-/** OpenWeather's icon codes end in `d` or `n`; the prefix is the condition. */
-export type WeatherKind =
-  | 'clear'
-  | 'partly'
-  | 'cloudy'
-  | 'rain'
-  | 'drizzle'
-  | 'storm'
-  | 'snow'
-  | 'mist'
-
-/** Maps OpenWeather's icon code to something we can draw. */
-export function weatherKind(icon: string): WeatherKind {
-  const code = icon.slice(0, 2)
-  switch (code) {
-    case '01':
-      return 'clear'
-    case '02':
-      return 'partly'
-    case '03':
-    case '04':
-      return 'cloudy'
-    case '09':
-      return 'drizzle'
-    case '10':
-      return 'rain'
-    case '11':
-      return 'storm'
-    case '13':
-      return 'snow'
-    default:
-      return 'mist'
-  }
-}
 
 const SUN = 'var(--color-nimbus-yellow)'
 const CLOUD = 'rgba(255,255,255,0.82)'
@@ -153,8 +120,7 @@ function Flakes({ count, y }: { count: number; y: number }) {
   )
 }
 
-export function WeatherGlyph({ icon, size = 56 }: { icon: string; size?: number }) {
-  const kind = weatherKind(icon)
+export function WeatherGlyph({ kind, size = 56 }: { kind: WeatherKind; size?: number }) {
 
   return (
     <svg width={size} height={size} viewBox="0 0 64 64" aria-hidden="true">

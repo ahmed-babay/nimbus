@@ -18,6 +18,8 @@ import type {
   EventCardData,
   ExplainerCardData,
   GithubCardData,
+  TvCardData,
+  FlightsCardData,
   Illustration,
   MemoryCardData,
   MusicCardData,
@@ -138,6 +140,10 @@ function CardBody({
       return <NewsBody data={card.data} />
     case 'github':
       return <GithubBody data={card.data} />
+    case 'tv':
+      return <TvBody data={card.data} />
+    case 'flights':
+      return <FlightsBody data={card.data} />
     case 'search':
       return <SearchBody data={card.data} />
     case 'entity':
@@ -208,7 +214,7 @@ function WeatherBody({ data }: { data: WeatherCardData }) {
       <div className="flex items-center gap-2.5">
         {/* Drawn and animated rather than an emoji: the overlay's CSP blocks
             remote images, and rain that falls is read faster than the word. */}
-        <WeatherGlyph icon={data.icon} size={52} />
+        <WeatherGlyph kind={data.kind} size={52} />
         <div>
           <div className="text-2xl font-semibold tabular-nums text-nimbus-text">
             <CountUp value={data.temp} suffix="°" />
@@ -706,6 +712,123 @@ function NewsBody({ data }: { data: NewsCardData }) {
           <li className="text-[11px] text-nimbus-text-dim">No articles found.</li>
         )}
       </ul>
+    </div>
+  )
+}
+
+/**
+ * Sorted by distance, because "which one is that" is answered by looking at
+ * the nearest. The direction is the useful column: it says where to point your
+ * head, which a latitude never would.
+ */
+function FlightsBody({ data }: { data: FlightsCardData }) {
+  if (data.total === 0) {
+    return (
+      <div className={`${panel} text-[11.5px] text-nimbus-text-dim`}>
+        Nothing in the air over {data.place} right now.
+      </div>
+    )
+  }
+
+  return (
+    <div className={panel}>
+      <div className="mb-2 text-[10px] uppercase tracking-wide text-nimbus-text-dim">
+        {data.total} over {data.place}
+      </div>
+      <ul className="space-y-1.5">
+        {data.flights.map((flight, index) => (
+          <motion.li
+            key={`${flight.callsign ?? 'unknown'}-${index}`}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.32, ease: EASE, delay: index * 0.06 }}
+            className="flex items-baseline gap-2"
+          >
+            <span className="min-w-0 flex-1 truncate text-[11.5px] text-nimbus-text">
+              {flight.callsign ?? 'unidentified'}
+              {flight.heading && (
+                <span className="text-nimbus-text-dim"> heading {flight.heading}</span>
+              )}
+            </span>
+            <span className="shrink-0 text-[10.5px] text-nimbus-text-dim">
+              {flight.direction}
+            </span>
+            <span className="shrink-0 text-[10.5px] tabular-nums text-nimbus-cyan">
+              {flight.distanceKm} km
+            </span>
+            {flight.altitudeM !== null && (
+              <span className="w-16 shrink-0 text-right text-[10.5px] tabular-nums text-nimbus-text-dim">
+                {flight.altitudeM.toLocaleString('en-GB')} m
+              </span>
+            )}
+          </motion.li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+/**
+ * The answer is a date, so the date is the largest thing on the card.
+ *
+ * When there is no next episode the same slot carries why not — "no date yet"
+ * against a running show, the end against a finished one — because that is
+ * the actual answer to the question, not a gap where the answer failed.
+ */
+function TvBody({ data }: { data: TvCardData }) {
+  const episode = data.next ?? data.previous
+  const airs = episode?.airstamp ? new Date(episode.airstamp) : null
+  const upcoming = data.next !== null
+
+  const numbering = episode
+    ? [
+        episode.season !== null && `S${episode.season}`,
+        episode.number !== null && `E${episode.number}`
+      ]
+        .filter(Boolean)
+        .join('')
+    : ''
+
+  return (
+    <div className={`${panel} flex items-center gap-3`}>
+      {data.poster ? (
+        <motion.img
+          {...mediaIn}
+          src={data.poster}
+          alt=""
+          className="h-20 w-14 shrink-0 rounded-lg object-cover shadow-md ring-1 ring-white/15"
+        />
+      ) : (
+        <div className="h-20 w-14 shrink-0 rounded-lg bg-white/[0.05] ring-1 ring-white/10" />
+      )}
+
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-[12.5px] text-nimbus-text">{data.show}</div>
+
+        <div className="mt-1 text-[11px] text-nimbus-text-dim">
+          {airs ? (
+            <>
+              <span className={upcoming ? 'text-nimbus-accent-bright' : undefined}>
+                {airs.toLocaleDateString('en-GB', {
+                  weekday: 'short',
+                  day: 'numeric',
+                  month: 'short'
+                })}
+              </span>
+              {!upcoming && <span> · last aired</span>}
+            </>
+          ) : (
+            <span>{upcoming ? 'no date yet' : 'nothing scheduled'}</span>
+          )}
+        </div>
+
+        <div className="mt-0.5 flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-nimbus-text-dim">
+          {numbering && <span>{numbering}</span>}
+          {episode?.title && <span className="truncate">{episode.title}</span>}
+          {data.network && <span className="truncate">{data.network}</span>}
+          <span className="shrink-0">{data.status}</span>
+        </div>
+      </div>
     </div>
   )
 }
