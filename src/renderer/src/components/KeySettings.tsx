@@ -280,11 +280,6 @@ const KEY_INFO: Record<SecretName, { label: string; why: string; where: string }
     why: 'Web search and news',
     where: 'app.tavily.com'
   },
-  OPENWEATHER_API_KEY: {
-    label: 'OpenWeatherMap',
-    why: 'Weather',
-    where: 'openweathermap.org/api'
-  },
   GNEWS_API_KEY: {
     label: 'GNews',
     why: 'Optional — nicer news images',

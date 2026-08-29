@@ -17,7 +17,7 @@ general chat — using only free-tier / no-key APIs.
   this replaced a spoken wake word
 - **Gemini API** (free tier) for intent classification (via structured JSON output, not
   prompt-guessing — see "Intent extraction" below) and spoken response generation
-- **OpenWeatherMap** (weather, free key) · **Yahoo Finance** (stocks, no key) ·
+- **Open-Meteo** (weather, no key) · **Yahoo Finance** (stocks, no key) ·
   **CoinGecko** (crypto, no key) · **GNews** (news, free key) · **GitHub REST API**
   (trending repos, no key)
 
@@ -79,12 +79,12 @@ Then fill in `.env` with keys from each of these free services:
 | `GEMINI_API_KEY` | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) | Chat + intent classification |
 | `GROQ_API_KEY` | [console.groq.com/keys](https://console.groq.com/keys) | Speech-to-text (Whisper) |
 | `TAVILY_API_KEY` | [app.tavily.com](https://app.tavily.com) | Web search **and news** (1,000/month free) |
-| `OPENWEATHER_API_KEY` | [openweathermap.org/api](https://openweathermap.org/api) | Weather |
 | `GNEWS_API_KEY` | *(optional)* [gnews.io/register](https://gnews.io/register) | Only for per-article news thumbnails — see below |
 | `GITHUB_TOKEN` | *(optional)* [github.com/settings/tokens](https://github.com/settings/tokens) | Raises GitHub's unauthenticated rate limit; trending works without it |
 
-Stocks (Yahoo Finance) and crypto (CoinGecko) need no key at all — one less signup. Neither
-does the wake trigger, since it's a hotkey configured in `config.json`.
+Weather (Open-Meteo), stocks (Yahoo Finance) and crypto (CoinGecko) need no key at all —
+three fewer signups. Neither does the wake trigger, since it's a hotkey configured in
+`config.json`.
 
 ## 3. Run it
 
@@ -876,9 +876,10 @@ Two things the briefing exposed that were quietly wrong elsewhere:
   A RUSH"*. Asked for a **country** it returns real reporting from DW, Reuters and Forbes.
   So `newsTopic` defaults to the country in `location.region`, which is also the news a
   briefing should carry: the one where you live.
-- **OpenWeatherMap calls this location "Regierungsbezirk Darmstadt"** — the administrative
-  district rather than the city. Its coordinates are right, so the briefing shows the
-  configured city name instead; adding a country code to the query does not help.
+- **A name-based weather API answers with the wrong name.** OpenWeatherMap called this
+  location "Regierungsbezirk Darmstadt" — the administrative district rather than the
+  city — and a country code in the query did not help. Open-Meteo takes coordinates, so
+  the place is now geocoded first and the name comes back as the one that was asked for.
 
 ## Reminders, and knowing when to leave
 
