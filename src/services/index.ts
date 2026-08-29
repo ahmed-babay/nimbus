@@ -17,6 +17,7 @@ import {
 import { getCryptoPrice } from './crypto'
 import { getNews } from './news'
 import { getTrendingRepos } from './github'
+import { describeEpisode, nextEpisode } from './tv'
 import { webSearch } from './search'
 import { research } from './research'
 import { tryIllustrate } from './illustrate'
@@ -510,6 +511,16 @@ async function runIntent(
           // that already draws those rather than needing one of their own.
           card: { type: 'event', data: { created: null, upcoming: holidays } }
         }
+      }
+
+      case 'episode': {
+        if (!config.integrations.tv) {
+          throw new Error('The TV integration is disabled in config.json.')
+        }
+        const show = params.query
+        if (!show) throw new Error("I didn't catch which show you meant.")
+        const data = await nextEpisode(show)
+        return { speech: describeEpisode(data), card: { type: 'tv', data } }
       }
 
       case 'define': {

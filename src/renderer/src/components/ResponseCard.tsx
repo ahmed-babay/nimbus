@@ -18,6 +18,7 @@ import type {
   EventCardData,
   ExplainerCardData,
   GithubCardData,
+  TvCardData,
   Illustration,
   MemoryCardData,
   MusicCardData,
@@ -138,6 +139,8 @@ function CardBody({
       return <NewsBody data={card.data} />
     case 'github':
       return <GithubBody data={card.data} />
+    case 'tv':
+      return <TvBody data={card.data} />
     case 'search':
       return <SearchBody data={card.data} />
     case 'entity':
@@ -706,6 +709,71 @@ function NewsBody({ data }: { data: NewsCardData }) {
           <li className="text-[11px] text-nimbus-text-dim">No articles found.</li>
         )}
       </ul>
+    </div>
+  )
+}
+
+/**
+ * The answer is a date, so the date is the largest thing on the card.
+ *
+ * When there is no next episode the same slot carries why not — "no date yet"
+ * against a running show, the end against a finished one — because that is
+ * the actual answer to the question, not a gap where the answer failed.
+ */
+function TvBody({ data }: { data: TvCardData }) {
+  const episode = data.next ?? data.previous
+  const airs = episode?.airstamp ? new Date(episode.airstamp) : null
+  const upcoming = data.next !== null
+
+  const numbering = episode
+    ? [
+        episode.season !== null && `S${episode.season}`,
+        episode.number !== null && `E${episode.number}`
+      ]
+        .filter(Boolean)
+        .join('')
+    : ''
+
+  return (
+    <div className={`${panel} flex items-center gap-3`}>
+      {data.poster ? (
+        <motion.img
+          {...mediaIn}
+          src={data.poster}
+          alt=""
+          className="h-20 w-14 shrink-0 rounded-lg object-cover shadow-md ring-1 ring-white/15"
+        />
+      ) : (
+        <div className="h-20 w-14 shrink-0 rounded-lg bg-white/[0.05] ring-1 ring-white/10" />
+      )}
+
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-[12.5px] text-nimbus-text">{data.show}</div>
+
+        <div className="mt-1 text-[11px] text-nimbus-text-dim">
+          {airs ? (
+            <>
+              <span className={upcoming ? 'text-nimbus-accent-bright' : undefined}>
+                {airs.toLocaleDateString('en-GB', {
+                  weekday: 'short',
+                  day: 'numeric',
+                  month: 'short'
+                })}
+              </span>
+              {!upcoming && <span> · last aired</span>}
+            </>
+          ) : (
+            <span>{upcoming ? 'no date yet' : 'nothing scheduled'}</span>
+          )}
+        </div>
+
+        <div className="mt-0.5 flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-nimbus-text-dim">
+          {numbering && <span>{numbering}</span>}
+          {episode?.title && <span className="truncate">{episode.title}</span>}
+          {data.network && <span className="truncate">{data.network}</span>}
+          <span className="shrink-0">{data.status}</span>
+        </div>
+      </div>
     </div>
   )
 }

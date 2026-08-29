@@ -55,6 +55,7 @@ export type NimbusIntent =
   | 'outdoors'
   | 'convert'
   | 'holidays'
+  | 'episode'
   | 'define'
   | 'remember'
   | 'recall'
@@ -82,6 +83,27 @@ export type WeatherKind =
   | 'storm'
   | 'snow'
   | 'mist'
+
+/** One episode, as much of it as TVMaze actually knows yet. */
+export interface TvEpisode {
+  /** Null while the episode is scheduled but still untitled. */
+  title: string | null
+  season: number | null
+  number: number | null
+  airstamp: string | null
+}
+
+export interface TvCardData {
+  show: string
+  /** TVMaze's own wording — "Running", "Ended", "To Be Determined". */
+  status: string
+  network: string | null
+  /** The upcoming episode, when one is scheduled. */
+  next: TvEpisode | null
+  /** The most recent one, shown only when there is no next episode. */
+  previous: TvEpisode | null
+  poster: string | null
+}
 
 export interface WeatherCardData {
   city: string
@@ -517,6 +539,7 @@ export type ResponseCardData =
   | { type: 'crypto'; data: CryptoCardData }
   | { type: 'news'; data: NewsCardData }
   | { type: 'github'; data: GithubCardData }
+  | { type: 'tv'; data: TvCardData }
   | { type: 'search'; data: SearchCardData }
   | { type: 'entity'; data: EntityCardData }
   | { type: 'music'; data: MusicCardData }
@@ -563,6 +586,7 @@ export interface NimbusConfig {
     crypto: boolean
     news: boolean
     github: boolean
+    tv: boolean
     search: boolean
     music: boolean
     transit: boolean

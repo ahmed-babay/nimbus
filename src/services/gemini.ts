@@ -38,6 +38,7 @@ const VALID_INTENTS: NimbusIntent[] = [
   'outdoors',
   'convert',
   'holidays',
+  'episode',
   'define',
   'remember',
   'recall',
@@ -178,6 +179,11 @@ the relevant parameter for it, leaving the others empty:
 - "holidays": asking about public/bank holidays -- "is Monday a holiday",
   "when is the next public holiday", "are the shops open on Thursday", "what
   holidays are coming up". No params.
+- "episode": asking when a TV show is next on, or where it is up to -- "when
+  is the next episode of Severance", "is there a new Simpsons this week",
+  "has The Bear come back yet", "when does season 3 start".
+  -> params.query (just the show's name, e.g. "Severance")
+  For a film, or for what a show is about, use "search" instead.
 - "define": asking what an ENGLISH word means or how it is used -- "what does
   resilient mean", "define concede", "how do you use 'albeit'".
   -> params.word (just the single word, lowercase)

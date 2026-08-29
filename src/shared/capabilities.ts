@@ -92,6 +92,14 @@ export const CAPABILITIES: Capability[] = [
 
   // Getting around
   {
+    group: 'Look things up',
+    title: 'When a show is next on',
+    example: 'when is the next episode of Severance',
+    keywords: 'tv series show episode season airs air date netflix streaming watch'
+  },
+
+  // Getting around
+  {
     group: 'Getting around',
     title: 'Next departures',
     example: 'when is the next train to Frankfurt',
