@@ -408,6 +408,8 @@ const INTENT_PARAMS: Partial<Record<NimbusIntent, string[]>> = {
   crypto: ['coin'],
   news: ['query'],
   github: ['language'],
+  episode: ['query'],
+  flights: ['city'],
   music: ['query', 'playback', 'playIn'],
   transit: ['to', 'from', 'fromHere', 'when', 'timeMode', 'watch'],
   directions: ['to', 'from', 'fromHere', 'mode'],
