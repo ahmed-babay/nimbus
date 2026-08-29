@@ -1,66 +1,112 @@
-import type { WeatherCardData } from '../shared/types'
+import type { WeatherCardData, WeatherKind } from '../shared/types'
+import { geocode } from './maps'
 import { httpFetch } from './http'
 
-const BASE_URL = 'https://api.openweathermap.org/data/2.5/weather'
+const FORECAST_URL = 'https://api.open-meteo.com/v1/forecast'
 
-interface OpenWeatherResponse {
-  name: string
-  main: { temp: number; feels_like: number; humidity: number }
-  weather: Array<{ description: string; icon: string }>
-  wind: { speed: number }
+interface OpenMeteoResponse {
+  current?: {
+    temperature_2m?: number
+    apparent_temperature?: number
+    relative_humidity_2m?: number
+    wind_speed_10m?: number
+    weather_code?: number
+  }
 }
 
 /**
- * OpenWeatherMap free tier: https://openweathermap.org/api
- */
-/**
- * A place name worth reading aloud.
+ * Weather from Open-Meteo — no key, and already the source behind
+ * `outdoors.ts` for air quality, pollen and UV.
  *
- * Keeps the user's own wording when it plainly refers to the same place, so
- * "Darmstadt" stays "Darmstadt" rather than becoming the district that
- * contains it.
+ * The forecast is keyed by coordinates rather than by a place name, so a
+ * lookup geocodes first through the same Nominatim helper the maps and
+ * outdoor answers use. That is one more request than a name-based API needs,
+ * but it is what removes the last avoidable API key from the app — and it
+ * fixes the naming problem too: the geocoder answers with the place that was
+ * asked for instead of the administrative district that contains it.
  */
-function prettyPlace(asked: string, returned: string): string {
-  const wanted = asked.trim()
-  if (!wanted) return returned
-  const simple = returned.replace(/^(Regierungsbezirk|Landkreis|Kreis|Bezirk|Provincia di|Province of)\s+/i, '')
-  if (simple.toLowerCase() === wanted.toLowerCase()) return simple
-  // The API name still contains what was asked for - "Darmstadt" inside
-  // "Regierungsbezirk Darmstadt" - so the shorter, asked-for form wins.
-  if (simple.toLowerCase().includes(wanted.toLowerCase())) return wanted
-  return simple
+
+/**
+ * WMO weather codes, which is what every Open-Meteo endpoint speaks.
+ *
+ * The label is read aloud and printed under the temperature, so it is phrased
+ * the way a person would say it rather than as the standard's own wording
+ * ("Thunderstorm with slight hail").
+ */
+const WMO: Record<number, { kind: WeatherKind; label: string }> = {
+  0: { kind: 'clear', label: 'clear sky' },
+  1: { kind: 'clear', label: 'mainly clear' },
+  2: { kind: 'partly', label: 'partly cloudy' },
+  3: { kind: 'cloudy', label: 'overcast' },
+  45: { kind: 'mist', label: 'fog' },
+  48: { kind: 'mist', label: 'freezing fog' },
+  51: { kind: 'drizzle', label: 'light drizzle' },
+  53: { kind: 'drizzle', label: 'drizzle' },
+  55: { kind: 'drizzle', label: 'heavy drizzle' },
+  56: { kind: 'drizzle', label: 'freezing drizzle' },
+  57: { kind: 'drizzle', label: 'freezing drizzle' },
+  61: { kind: 'rain', label: 'light rain' },
+  63: { kind: 'rain', label: 'rain' },
+  65: { kind: 'rain', label: 'heavy rain' },
+  66: { kind: 'rain', label: 'freezing rain' },
+  67: { kind: 'rain', label: 'heavy freezing rain' },
+  71: { kind: 'snow', label: 'light snow' },
+  73: { kind: 'snow', label: 'snow' },
+  75: { kind: 'snow', label: 'heavy snow' },
+  77: { kind: 'snow', label: 'snow grains' },
+  80: { kind: 'rain', label: 'light showers' },
+  81: { kind: 'rain', label: 'showers' },
+  82: { kind: 'rain', label: 'heavy showers' },
+  85: { kind: 'snow', label: 'snow showers' },
+  86: { kind: 'snow', label: 'heavy snow showers' },
+  95: { kind: 'storm', label: 'thunderstorm' },
+  96: { kind: 'storm', label: 'thunderstorm with hail' },
+  99: { kind: 'storm', label: 'thunderstorm with hail' }
+}
+
+const UNKNOWN = { kind: 'mist' as WeatherKind, label: 'unclear' }
+
+/**
+ * Just the place, not its postal address. The geocoder answers with the full
+ * hierarchy ("Darmstadt, Hessen"), and only the first part belongs on a card
+ * or in a spoken sentence.
+ */
+function shortPlace(name: string): string {
+  return name.split(',')[0].trim() || name
 }
 
 export async function getWeather(city: string): Promise<WeatherCardData> {
-  const apiKey = process.env.OPENWEATHER_API_KEY
-  if (!apiKey) {
-    throw new Error('OPENWEATHER_API_KEY is not set. Add it to your .env file.')
+  const place = await geocode(city)
+  if (!place) {
+    throw new Error(`I couldn't find a city named "${city}".`)
   }
 
-  const url = `${BASE_URL}?q=${encodeURIComponent(city)}&units=metric&appid=${apiKey}`
-  const res = await httpFetch(url, { label: 'OpenWeatherMap' })
+  const url =
+    `${FORECAST_URL}?latitude=${place.lat}&longitude=${place.lon}` +
+    '&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code' +
+    // The card says "m/s wind"; Open-Meteo would otherwise answer in km/h.
+    '&wind_speed_unit=ms'
 
+  const res = await httpFetch(url, { label: 'Open-Meteo', timeoutMs: 10000, retries: 1 })
   if (!res.ok) {
-    if (res.status === 404) {
-      throw new Error(`I couldn't find a city named "${city}".`)
-    }
-    throw new Error(`OpenWeatherMap request failed (${res.status}).`)
+    throw new Error(`The weather lookup failed (${res.status}).`)
   }
 
-  const json = (await res.json()) as OpenWeatherResponse
+  const json = (await res.json()) as OpenMeteoResponse
+  const current = json.current
+  if (!current || typeof current.temperature_2m !== 'number') {
+    throw new Error(`I couldn't get the weather for "${city}" just now.`)
+  }
+
+  const code = WMO[current.weather_code ?? -1] ?? UNKNOWN
 
   return {
-    // OpenWeather answers with whatever administrative area contains the
-    // coordinates, which for Darmstadt is "Regierungsbezirk Darmstadt" - a
-    // government district nobody calls their home town. Prefer what the user
-    // actually asked for; fall back to the API's name only when they asked
-    // for nothing in particular.
-    city: prettyPlace(city, json.name),
-    temp: Math.round(json.main.temp),
-    feelsLike: Math.round(json.main.feels_like),
-    condition: json.weather?.[0]?.description ?? 'unknown',
-    icon: json.weather?.[0]?.icon ?? '01d',
-    humidity: json.main.humidity,
-    windSpeed: json.wind?.speed ?? 0
+    city: shortPlace(place.name),
+    temp: Math.round(current.temperature_2m),
+    feelsLike: Math.round(current.apparent_temperature ?? current.temperature_2m),
+    condition: code.label,
+    kind: code.kind,
+    humidity: Math.round(current.relative_humidity_2m ?? 0),
+    windSpeed: current.wind_speed_10m ?? 0
   }
 }

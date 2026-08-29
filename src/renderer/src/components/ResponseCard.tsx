@@ -208,7 +208,7 @@ function WeatherBody({ data }: { data: WeatherCardData }) {
       <div className="flex items-center gap-2.5">
         {/* Drawn and animated rather than an emoji: the overlay's CSP blocks
             remote images, and rain that falls is read faster than the word. */}
-        <WeatherGlyph icon={data.icon} size={52} />
+        <WeatherGlyph kind={data.kind} size={52} />
         <div>
           <div className="text-2xl font-semibold tabular-nums text-nimbus-text">
             <CountUp value={data.temp} suffix="°" />

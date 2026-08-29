@@ -6,7 +6,6 @@ export type SecretName =
   | 'ANTHROPIC_API_KEY'
   | 'GROQ_API_KEY'
   | 'TAVILY_API_KEY'
-  | 'OPENWEATHER_API_KEY'
   | 'GNEWS_API_KEY'
   | 'GITHUB_TOKEN'
   | 'FINNHUB_API_KEY'
@@ -70,12 +69,26 @@ export interface IntentClassification {
   params: Record<string, string>
 }
 
+/**
+ * What the animated glyph draws. Derived from Open-Meteo's WMO weather code
+ * in `services/weather.ts`, so the renderer never has to know that standard.
+ */
+export type WeatherKind =
+  | 'clear'
+  | 'partly'
+  | 'cloudy'
+  | 'rain'
+  | 'drizzle'
+  | 'storm'
+  | 'snow'
+  | 'mist'
+
 export interface WeatherCardData {
   city: string
   temp: number
   feelsLike: number
   condition: string
-  icon: string
+  kind: WeatherKind
   humidity: number
   windSpeed: number
 }
