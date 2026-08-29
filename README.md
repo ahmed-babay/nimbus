@@ -18,8 +18,9 @@ general chat — using only free-tier / no-key APIs.
 - **Gemini API** (free tier) for intent classification (via structured JSON output, not
   prompt-guessing — see "Intent extraction" below) and spoken response generation
 - **Open-Meteo** (weather, no key) · **Yahoo Finance** (stocks, no key) ·
-  **CoinGecko** (crypto, no key) · **TVMaze** (TV schedules, no key) · **GNews**
-  (news, free key) · **GitHub REST API** (trending repos, no key)
+  **CoinGecko** (crypto, no key) · **TVMaze** (TV schedules, no key) · **OpenSky
+  Network** (aircraft overhead, no key) · **GNews** (news, free key) · **GitHub REST
+  API** (trending repos, no key)
 
 > **Why record + Whisper instead of the Web Speech API's SpeechRecognition?** The original
 > plan used `SpeechRecognition`, which is built into Chromium — but only *works* in real
@@ -1033,7 +1034,7 @@ Claude Desktop or another agent, that's the point where MCP would start paying f
 
 ## Toggling integrations
 
-Edit `config.json` — set any of `integrations.weather/stocks/crypto/news/github/tv/transit/maps` to `false`
+Edit `config.json` — set any of `integrations.weather/stocks/crypto/news/github/tv/flights/transit/maps` to `false`
 to disable it (Nimbus will explain it's turned off if you ask anyway), change
 `hotkey.accelerator` (Electron [accelerator syntax](https://www.electronjs.org/docs/latest/api/accelerator))
 if Ctrl+Shift+Space conflicts with something else, or adjust `overlay.autoFadeMs`. Restart

@@ -56,6 +56,7 @@ export type NimbusIntent =
   | 'convert'
   | 'holidays'
   | 'episode'
+  | 'flights'
   | 'define'
   | 'remember'
   | 'recall'
@@ -83,6 +84,27 @@ export type WeatherKind =
   | 'storm'
   | 'snow'
   | 'mist'
+
+/** One aircraft, as seen from where the user is standing. */
+export interface OverheadFlight {
+  /** The flight number it is squawking; absent on some private traffic. */
+  callsign: string | null
+  country: string | null
+  distanceKm: number
+  /** Which way to look — "north-east". */
+  direction: string
+  altitudeM: number | null
+  speedKmh: number | null
+  /** Which way it is going, if known. */
+  heading: string | null
+}
+
+export interface FlightsCardData {
+  place: string
+  /** Everything airborne in the box, not just the rows that fit on the card. */
+  total: number
+  flights: OverheadFlight[]
+}
 
 /** One episode, as much of it as TVMaze actually knows yet. */
 export interface TvEpisode {
@@ -540,6 +562,7 @@ export type ResponseCardData =
   | { type: 'news'; data: NewsCardData }
   | { type: 'github'; data: GithubCardData }
   | { type: 'tv'; data: TvCardData }
+  | { type: 'flights'; data: FlightsCardData }
   | { type: 'search'; data: SearchCardData }
   | { type: 'entity'; data: EntityCardData }
   | { type: 'music'; data: MusicCardData }
@@ -587,6 +610,7 @@ export interface NimbusConfig {
     news: boolean
     github: boolean
     tv: boolean
+    flights: boolean
     search: boolean
     music: boolean
     transit: boolean

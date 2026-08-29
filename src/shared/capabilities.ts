@@ -93,6 +93,12 @@ export const CAPABILITIES: Capability[] = [
   // Getting around
   {
     group: 'Look things up',
+    title: 'Planes overhead',
+    example: "what's that plane overhead",
+    keywords: 'plane planes aircraft flight flying sky above overhead air traffic'
+  },
+  {
+    group: 'Look things up',
     title: 'When a show is next on',
     example: 'when is the next episode of Severance',
     keywords: 'tv series show episode season airs air date netflix streaming watch'

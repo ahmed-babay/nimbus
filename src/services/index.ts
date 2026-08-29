@@ -18,6 +18,7 @@ import { getCryptoPrice } from './crypto'
 import { getNews } from './news'
 import { getTrendingRepos } from './github'
 import { describeEpisode, nextEpisode } from './tv'
+import { describeFlights, overheadFlights } from './flights'
 import { webSearch } from './search'
 import { research } from './research'
 import { tryIllustrate } from './illustrate'
@@ -521,6 +522,14 @@ async function runIntent(
         if (!show) throw new Error("I didn't catch which show you meant.")
         const data = await nextEpisode(show)
         return { speech: describeEpisode(data), card: { type: 'tv', data } }
+      }
+
+      case 'flights': {
+        if (!config.integrations.flights) {
+          throw new Error('The flights integration is disabled in config.json.')
+        }
+        const data = await overheadFlights(params.city)
+        return { speech: describeFlights(data), card: { type: 'flights', data } }
       }
 
       case 'define': {

@@ -19,6 +19,7 @@ import type {
   ExplainerCardData,
   GithubCardData,
   TvCardData,
+  FlightsCardData,
   Illustration,
   MemoryCardData,
   MusicCardData,
@@ -141,6 +142,8 @@ function CardBody({
       return <GithubBody data={card.data} />
     case 'tv':
       return <TvBody data={card.data} />
+    case 'flights':
+      return <FlightsBody data={card.data} />
     case 'search':
       return <SearchBody data={card.data} />
     case 'entity':
@@ -708,6 +711,58 @@ function NewsBody({ data }: { data: NewsCardData }) {
         {articles.length === 0 && (
           <li className="text-[11px] text-nimbus-text-dim">No articles found.</li>
         )}
+      </ul>
+    </div>
+  )
+}
+
+/**
+ * Sorted by distance, because "which one is that" is answered by looking at
+ * the nearest. The direction is the useful column: it says where to point your
+ * head, which a latitude never would.
+ */
+function FlightsBody({ data }: { data: FlightsCardData }) {
+  if (data.total === 0) {
+    return (
+      <div className={`${panel} text-[11.5px] text-nimbus-text-dim`}>
+        Nothing in the air over {data.place} right now.
+      </div>
+    )
+  }
+
+  return (
+    <div className={panel}>
+      <div className="mb-2 text-[10px] uppercase tracking-wide text-nimbus-text-dim">
+        {data.total} over {data.place}
+      </div>
+      <ul className="space-y-1.5">
+        {data.flights.map((flight, index) => (
+          <motion.li
+            key={`${flight.callsign ?? 'unknown'}-${index}`}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.32, ease: EASE, delay: index * 0.06 }}
+            className="flex items-baseline gap-2"
+          >
+            <span className="min-w-0 flex-1 truncate text-[11.5px] text-nimbus-text">
+              {flight.callsign ?? 'unidentified'}
+              {flight.heading && (
+                <span className="text-nimbus-text-dim"> heading {flight.heading}</span>
+              )}
+            </span>
+            <span className="shrink-0 text-[10.5px] text-nimbus-text-dim">
+              {flight.direction}
+            </span>
+            <span className="shrink-0 text-[10.5px] tabular-nums text-nimbus-cyan">
+              {flight.distanceKm} km
+            </span>
+            {flight.altitudeM !== null && (
+              <span className="w-16 shrink-0 text-right text-[10.5px] tabular-nums text-nimbus-text-dim">
+                {flight.altitudeM.toLocaleString('en-GB')} m
+              </span>
+            )}
+          </motion.li>
+        ))}
       </ul>
     </div>
   )

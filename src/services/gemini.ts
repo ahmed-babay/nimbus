@@ -39,6 +39,7 @@ const VALID_INTENTS: NimbusIntent[] = [
   'convert',
   'holidays',
   'episode',
+  'flights',
   'define',
   'remember',
   'recall',
@@ -184,6 +185,11 @@ the relevant parameter for it, leaving the others empty:
   "has The Bear come back yet", "when does season 3 start".
   -> params.query (just the show's name, e.g. "Severance")
   For a film, or for what a show is about, use "search" instead.
+- "flights": asking what aircraft are in the sky nearby -- "what's that plane
+  overhead", "any planes above me", "what's flying over Frankfurt right now".
+  -> params.city (only when they named a place; omit for where they are)
+  This is live positions, not schedules. A question about a *particular*
+  flight's status -- "is LH400 delayed", "when does BA912 land" -- is "search".
 - "define": asking what an ENGLISH word means or how it is used -- "what does
   resilient mean", "define concede", "how do you use 'albeit'".
   -> params.word (just the single word, lowercase)
