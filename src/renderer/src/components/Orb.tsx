@@ -215,15 +215,35 @@ export function Orb({
     const startedAt = mountedAt.current
 
     let frame = 0
-    let last = 0
     // Smoothed: raw level is jittery frame to frame, and following it exactly
     // makes the sphere vibrate instead of breathe.
     let smoothed = 0
+    /**
+     * When the canvas was last actually redrawn.
+     *
+     * The storm is slow-moving plasma, not a mouse cursor — 60 full redraws a
+     * second (each one several overlapping radial gradients under `lighter`
+     * compositing) is more GPU compositing work than the motion needs, and
+     * this window is the worst place in the app to spend it: transparent,
+     * always-on-top, and already carrying a `backdrop-filter` blur, which
+     * together are the most GPU-composited class of window Electron has.
+     * Capped to ~30fps rather than lowering `dt`'s clamp, so the *storm*
+     * still advances by real elapsed time and never looks like it sped up or
+     * slowed down — only how often it is repainted changes.
+     */
+    let lastDraw = 0
 
     const build = (now: number, dt: number): void => {
       const raw = levelRef.current
       const level = Number.isFinite(raw) ? Math.max(0, Math.min(1, raw as number)) : 0
-      smoothed += (level - smoothed) * 0.16
+      // Scaled by dt rather than a bare per-call 0.16: this used to be called
+      // once every rAF tick, so a fixed factor was implicitly a fixed factor
+      // per ~16.7ms. Now that the draw rate is capped independently of rAF,
+      // a bare constant would make the voice track visibly laggier at a lower
+      // draw rate purely because it is applied less often — scaling by dt
+      // keeps the smoothing's real-time responsiveness the same regardless of
+      // how often a frame actually gets drawn.
+      smoothed += (level - smoothed) * Math.min(1, 0.16 * (dt / 16.7))
       // Exponential smoothing carries state forward frame to frame, so one
       // non-finite reading here (a stalled AudioContext, a device hiccup)
       // would otherwise poison every frame after it rather than just the one
@@ -320,10 +340,22 @@ export function Orb({
       // never happened.
       frame = requestAnimationFrame(tick)
 
-      if (!last) last = now
-      // Clamped so a stall does not advance the storm by a whole second at once.
-      const dt = Math.min(64, now - last)
-      last = now
+      // Hidden windows already get their rAF throttled hard by Chromium, but
+      // that throttling is a courtesy, not a guarantee across every driver —
+      // and this window sits hidden for most of its life. Treated as a hard
+      // stop rather than trusted implicitly.
+      if (document.hidden) return
+
+      // Frame-rate cap, decoupled from rAF's own cadence: the canvas is only
+      // repainted every ~33ms, using the real elapsed time since the last
+      // paint as its dt — this is what "one frame's worth of time" now means,
+      // so there is no separate rAF-interval dt to track any more.
+      if (!lastDraw) lastDraw = now
+      // Clamped so a stall (a dropped tab, a minimised window) does not
+      // advance the storm by a whole second in one jump when it resumes.
+      const dt = Math.min(64, now - lastDraw)
+      if (dt < 32) return
+      lastDraw = now
 
       try {
         build(now, dt)
