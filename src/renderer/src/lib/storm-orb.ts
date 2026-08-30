@@ -534,7 +534,37 @@ export function createStormOrb(canvas: HTMLCanvasElement, options: StormOptions)
 
   // --- the frame -----------------------------------------------------------
 
-  function draw(drive: OrbDrive, dt: number, now: number): void {
+  /**
+   * Guards every quantity the caller hands in.
+   *
+   * `charge`/`release`/`flash` all end up under a fractional exponent
+   * (`Math.pow(x, 1.5)`) somewhere in `draw`, and a fractional power of a
+   * negative number is `NaN` in JavaScript — which a canvas gradient then
+   * throws a hard `TypeError` on. `levelRef` upstream is smoothed frame over
+   * frame in the caller, so one bad reading (a stalled AudioContext, a device
+   * hiccup) poisons every frame after it forever, not just the frame it
+   * happened on. Sanitising here means a stray value degrades one frame
+   * instead of silently freezing the whole orb — which is what actually
+   * happened before this existed: an uncaught exception inside the render
+   * loop never re-schedules its own `requestAnimationFrame`, so the sphere,
+   * and the response-wave effect published alongside it, both went static.
+   */
+  function sanitize(drive: OrbDrive): OrbDrive {
+    const num = (v: number, lo: number, hi: number, fallback = lo): number =>
+      Number.isFinite(v) ? clamp(v, lo, hi) : fallback
+    return {
+      palette: drive.palette,
+      intensity: num(drive.intensity, 0, 1.4, 0.3),
+      charge: num(drive.charge, 0, 1),
+      release: num(drive.release, 0, 1),
+      flash: num(drive.flash, 0, 1),
+      level: num(drive.level, 0, 1),
+      scale: num(drive.scale, 0.3, 3, 1)
+    }
+  }
+
+  function draw(rawDrive: OrbDrive, dt: number, now: number): void {
+    const drive = sanitize(rawDrive)
     const pal = drive.palette
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     ctx.clearRect(0, 0, W, H)
@@ -546,11 +576,18 @@ export function createStormOrb(canvas: HTMLCanvasElement, options: StormOptions)
     // where it rests, which is what gives the release somewhere to travel.
     // Clamped to the bitmap: the swell and the entrance overshoot both scale
     // this up, and a sphere wider than the canvas is cropped to a square.
-    const R = clamp(
-      baseR * drive.scale * (1 - drive.charge * 0.12 + drive.flash * 0.16 + drive.release * 0.05),
-      6,
-      (Math.min(W, H) / 2) * 0.98
-    )
+    // Falls back to a small fixed radius rather than 0 — a gradient still
+    // needs two distinct radii to be valid, and 0..0 throws the same way NaN
+    // does.
+    const cap = Math.min(W, H) / 2
+    const R =
+      Number.isFinite(baseR) && cap > 0
+        ? clamp(
+            baseR * drive.scale * (1 - drive.charge * 0.12 + drive.flash * 0.16 + drive.release * 0.05),
+            6,
+            cap * 0.98
+          )
+        : 6
 
     // ---- outer atmosphere ----
     ctx.globalCompositeOperation = 'lighter'
@@ -784,7 +821,14 @@ export function createStormOrb(canvas: HTMLCanvasElement, options: StormOptions)
    * behaviour rather than its colour: a charged core throws more lightning,
    * and a question being taken in is a shower of streamers arriving.
    */
-  function frame(drive: OrbDrive, dt: number, now: number): void {
+  function frame(rawDrive: OrbDrive, dt: number, now: number): void {
+    // Sanitized once here rather than left to `draw`: the spawn-rate logic
+    // below reads `drive.charge`/`drive.intensity` too, and clamp() passes a
+    // NaN straight through — both its comparisons are false, so it falls to
+    // the raw value instead of a bound. A NaN intensity would otherwise leave
+    // `spawnDebt` permanently NaN and silently stop new lightning forever,
+    // never throwing so nothing would say why.
+    const drive = sanitize(rawDrive)
     spin += dt * 0.00016 * (0.6 + drive.intensity * 0.8)
 
     const rate = (7 + Math.pow(clamp(drive.intensity + burst, 0, 1.4), 2) * 62) / 1000

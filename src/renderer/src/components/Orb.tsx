@@ -221,8 +221,14 @@ export function Orb({
     let smoothed = 0
 
     const build = (now: number, dt: number): void => {
-      const level = Math.max(0, Math.min(1, levelRef.current ?? 0))
+      const raw = levelRef.current
+      const level = Number.isFinite(raw) ? Math.max(0, Math.min(1, raw as number)) : 0
       smoothed += (level - smoothed) * 0.16
+      // Exponential smoothing carries state forward frame to frame, so one
+      // non-finite reading here (a stalled AudioContext, a device hiccup)
+      // would otherwise poison every frame after it rather than just the one
+      // it happened on.
+      if (!Number.isFinite(smoothed)) smoothed = 0
 
       const seconds = (now - startedAt) / 1000
       // A slow sine keeps it alive when nothing is being said, so it never
@@ -307,17 +313,32 @@ export function Orb({
     }
 
     const tick = (now: number): void => {
+      // Scheduled first, before this frame's work runs, so the loop survives
+      // a bad frame. It used to run last: if `build` threw, the sphere and the
+      // response-wave effect (`publishShock`, further down) both froze at
+      // whatever they last drew, because the next `requestAnimationFrame` call
+      // never happened.
+      frame = requestAnimationFrame(tick)
+
       if (!last) last = now
       // Clamped so a stall does not advance the storm by a whole second at once.
       const dt = Math.min(64, now - last)
       last = now
 
-      build(now, dt)
-      publishShock(now)
-
-      if (rootRef.current) rootRef.current.style.opacity = `${Math.min(1, ((now - startedAt) / ENTRANCE_MS) * 2.2)}`
-
-      frame = requestAnimationFrame(tick)
+      try {
+        build(now, dt)
+        publishShock(now)
+        if (rootRef.current) {
+          rootRef.current.style.opacity = `${Math.min(1, ((now - startedAt) / ENTRANCE_MS) * 2.2)}`
+        }
+      } catch (err) {
+        // The storm engine sanitizes its own inputs, so this should not fire —
+        // but a canvas gradient throws hard on a non-finite value, and this is
+        // the backstop for anything that finds a gap in that sanitizing.
+        // Skipping one frame is a flicker; freezing forever is what this
+        // exists to rule out.
+        console.warn('[orb] frame failed, skipping', err)
+      }
     }
 
     if (calm) {
