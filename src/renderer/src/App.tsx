@@ -744,7 +744,7 @@ function PeekIcon({
         searching={searching}
         answerSeq={answerSeq}
         levelRef={levelRef}
-        size={48}
+        size={42}
         tight
       />
     </motion.div>
@@ -838,6 +838,7 @@ function PeekDock({
           answerSeq={answerSeq}
           levelRef={levelRef}
           size={36}
+          tight
         />
         <div className="min-w-0 flex-1">
           <p className="text-[12px] font-semibold tracking-[-0.01em] text-nimbus-text">Nimbus</p>

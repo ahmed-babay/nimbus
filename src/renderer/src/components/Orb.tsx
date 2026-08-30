@@ -26,9 +26,9 @@ interface OrbProps {
   /** Overrides the default size, in pixels. */
   size?: number
   /**
-   * Crop to the sphere and drop the outer atmosphere. The idle corner chip is
-   * a tiny square window; without this the halo is clipped into a square and
-   * the sphere sits in a ring inside it.
+   * Drop the outer atmosphere and use a smaller overscan. This keeps the orb
+   * correctly sized in compact layouts while still leaving a little bitmap
+   * around the sphere for a response discharge.
    */
   tight?: boolean
 }
@@ -198,7 +198,7 @@ export function Orb({
     // The sphere is sized as a fraction of the canvas because a canvas cannot
     // paint outside itself: when the atmosphere is drawn it needs most of the
     // bitmap, and when it is not the sphere can have nearly all of it.
-    const storm = createStormOrb(canvas, { fill: tight ? 0.72 : 0.42, bare: tight })
+    const storm = createStormOrb(canvas, { fill: tight ? 0.53 : 0.42, bare: tight })
     if (!storm) return
     stormRef.current = storm
     storm.resize()
@@ -432,7 +432,7 @@ export function Orb({
       */}
       <div
         ref={rootRef}
-        className={`pointer-events-none absolute ${tight ? 'inset-0 overflow-hidden rounded-full' : '-inset-[45%]'}`}
+        className={`pointer-events-none absolute ${tight ? '-inset-[25%]' : '-inset-[45%]'}`}
         style={{ opacity: 0 }}
       >
         <canvas ref={canvasRef} className="h-full w-full" />

@@ -192,6 +192,55 @@ interface Bolt {
   branch: number[][] | null
 }
 
+/** A response bolt authored in screen space so it can leave the sphere. */
+interface DischargeArm {
+  pts: number[][]
+  branch: number[][] | null
+  width: number
+  delay: number
+}
+
+function jaggedRay(angle: number, start: number, end: number, steps: number): number[][] {
+  const points: number[][] = []
+  const nx = -Math.sin(angle)
+  const ny = Math.cos(angle)
+
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps
+    const radius = start + (end - start) * t
+    const jitter = i === 0 ? 0 : rand(-0.09, 0.09) * Math.sin(t * Math.PI * 0.86)
+    points.push([
+      Math.cos(angle) * radius + nx * jitter,
+      Math.sin(angle) * radius + ny * jitter
+    ])
+  }
+  return points
+}
+
+function makeDischargeArm(index: number, count: number): DischargeArm {
+  // Evenly cover the shell but break the symmetry enough to feel electrical.
+  const angle = (index / count) * TAU + rand(-0.28, 0.28)
+  const reach = rand(1.38, 1.68)
+  const pts = jaggedRay(angle, 0.78, reach, 9)
+  let branch: number[][] | null = null
+
+  if (Math.random() < 0.72) {
+    const split = 4 + ((Math.random() * 3) | 0)
+    const forkAngle = angle + rand(-0.58, 0.58)
+    const fork = jaggedRay(forkAngle, 0, rand(0.3, 0.55), 4)
+    const origin = pts[split]
+    branch = fork.map((point) => [origin[0] + point[0], origin[1] + point[1]])
+  }
+
+  return {
+    pts,
+    branch,
+    width: rand(0.72, 1.25),
+    // The tiny stagger makes the spread legible instead of one static star.
+    delay: index * rand(0.008, 0.018)
+  }
+}
+
 function makeBranch(pts: number[][]): number[][] {
   const i = 2 + ((Math.random() * (pts.length - 4)) | 0)
   const a = pts[i].slice()
@@ -378,6 +427,8 @@ export function createStormOrb(canvas: HTMLCanvasElement, options: StormOptions)
   /** Rises on release so the discharge fires outward for a moment after it. */
   let burst = 0
   let lastCharge = 0
+  let lastRelease = 0
+  let dischargeArms: DischargeArm[] = []
 
   /**
    * Populations sized to the sphere.
@@ -407,9 +458,12 @@ export function createStormOrb(canvas: HTMLCanvasElement, options: StormOptions)
   }
 
   function resize(): void {
-    const rect = canvas.getBoundingClientRect()
-    W = Math.max(1, Math.round(rect.width))
-    H = Math.max(1, Math.round(rect.height))
+    // clientWidth/clientHeight are layout dimensions and deliberately ignore
+    // ancestor transforms. The compact dock and corner icon animate in from a
+    // small scale; measuring their transformed rect allocated a tiny bitmap
+    // that was then stretched several times larger once the entrance settled.
+    W = Math.max(1, canvas.clientWidth)
+    H = Math.max(1, canvas.clientHeight)
     dpr = Math.min(window.devicePixelRatio || 1, 2)
 
     canvas.width = Math.round(W * dpr)
@@ -525,6 +579,22 @@ export function createStormOrb(canvas: HTMLCanvasElement, options: StormOptions)
       ctx.lineTo(x1, y1)
     }
     return zsum / pts.length
+  }
+
+  /** Draws the growing prefix of a response bolt outside the 3D projection. */
+  function strokeDischarge(pts: number[][], progress: number, R: number): void {
+    const head = clamp(progress, 0, 1) * (pts.length - 1)
+    const whole = Math.floor(head)
+    const fraction = head - whole
+
+    ctx.beginPath()
+    ctx.moveTo(cx + pts[0][0] * R, cy + pts[0][1] * R)
+    for (let i = 1; i <= whole; i++) ctx.lineTo(cx + pts[i][0] * R, cy + pts[i][1] * R)
+    if (whole < pts.length - 1 && fraction > 0) {
+      const a = pts[whole]
+      const b = pts[whole + 1]
+      ctx.lineTo(cx + (a[0] + (b[0] - a[0]) * fraction) * R, cy + (a[1] + (b[1] - a[1]) * fraction) * R)
+    }
   }
 
   /** Depth: 1 on the near face, ~0.18 on the far side. */
@@ -796,6 +866,44 @@ export function createStormOrb(canvas: HTMLCanvasElement, options: StormOptions)
     ctx.lineWidth = Math.max(1, 7 * u)
     ctx.stroke()
 
+    // ---- response lightning leaving the shell ----
+    //
+    // The ordinary bolts above live on the unit sphere and are intentionally
+    // clipped by its body. These arms are the brief exception: one fresh set
+    // is made per answer, races beyond the rim, then fully disappears so the
+    // storm is contained again while Nimbus idles or listens.
+    if (drive.release > 0 && dischargeArms.length > 0) {
+      const fade = Math.pow(1 - drive.release, 1.65)
+      for (const arm of dischargeArms) {
+        const local = clamp((drive.release - arm.delay) / 0.2, 0, 1)
+        if (local <= 0) continue
+        const growth = 1 - Math.pow(1 - local, 3)
+        const attack = Math.min(1, local * 7)
+        const alpha = fade * attack
+
+        strokeDischarge(arm.pts, growth, R)
+        ctx.strokeStyle = rgba(pal.beam, alpha * 0.48)
+        ctx.lineWidth = Math.max(1.2, arm.width * 7 * u)
+        ctx.stroke()
+        ctx.strokeStyle = rgba(pal.arc, alpha * 0.92)
+        ctx.lineWidth = Math.max(0.72, arm.width * 2.25 * u)
+        ctx.stroke()
+        ctx.strokeStyle = rgba(pal.core, Math.min(1, alpha * 1.18))
+        ctx.lineWidth = Math.max(0.42, arm.width * 0.72 * u)
+        ctx.stroke()
+
+        if (arm.branch && growth > 0.48) {
+          strokeDischarge(arm.branch, (growth - 0.48) / 0.52, R)
+          ctx.strokeStyle = rgba(pal.arc, alpha * 0.65)
+          ctx.lineWidth = Math.max(0.55, arm.width * 1.45 * u)
+          ctx.stroke()
+          ctx.strokeStyle = rgba(pal.core, alpha * 0.82)
+          ctx.lineWidth = Math.max(0.38, arm.width * 0.5 * u)
+          ctx.stroke()
+        }
+      }
+    }
+
     // ---- the discharge leaving ----
     //
     // One ring rather than three. The panel behind the orb runs its own wave
@@ -829,6 +937,13 @@ export function createStormOrb(canvas: HTMLCanvasElement, options: StormOptions)
     // `spawnDebt` permanently NaN and silently stop new lightning forever,
     // never throwing so nothing would say why.
     const drive = sanitize(rawDrive)
+    if (drive.release > 0 && lastRelease === 0) {
+      const count = Math.round(clamp(baseR / 5, 5, 8))
+      dischargeArms = Array.from({ length: count }, (_, index) => makeDischargeArm(index, count))
+    } else if (drive.release === 0 && lastRelease > 0) {
+      dischargeArms = []
+    }
+    lastRelease = drive.release
     spin += dt * 0.00016 * (0.6 + drive.intensity * 0.8)
 
     const rate = (7 + Math.pow(clamp(drive.intensity + burst, 0, 1.4), 2) * 62) / 1000
