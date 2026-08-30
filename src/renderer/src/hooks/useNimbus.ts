@@ -6,10 +6,6 @@ import { useRadioPlayer, type RadioPlayerControls } from './useRadioPlayer'
 import { isStopPhrase, isStopPlaybackPhrase, isMediaStopRequest } from '../lib/stop-phrases'
 
 const DEFAULT_AUTO_FADE_MS = 8000
-// When an answer is on screen it needs reading time — headlines, a photo and
-// an extract take far longer to take in than the fade meant for an empty
-// overlay, and closing at 8s made results feel like they vanished instantly.
-const READING_AUTO_FADE_MS = 45000
 // Consecutive turns with nothing said before the overlay gives up.
 const MAX_EMPTY_TURNS = 2
 
@@ -298,11 +294,16 @@ export function useNimbus(): NimbusOverlayState {
     // Never close while a station is playing — closing tears down the audio
     // element and the music would just stop. "stop" or Esc ends it.
     if (radioActiveRef.current || holdOpenRef.current) return
-    // Give the user real reading time whenever there's an answer on screen.
-    const autoFadeMs = hasContentRef.current
-      ? READING_AUTO_FADE_MS
-      : (config?.overlay.autoFadeMs ?? DEFAULT_AUTO_FADE_MS)
-    fadeTimer.current = setTimeout(dismiss, autoFadeMs)
+    // An answer is not transient chrome. Maps, departures, headlines and even
+    // plain text can still be in use long after speech ends; hiding them on a
+    // timer looks exactly like the app crashed. Results now stay until the
+    // user closes Nimbus or begins another turn. The configured timeout only
+    // applies when the overlay has nothing useful on it.
+    if (hasContentRef.current) return
+    fadeTimer.current = setTimeout(
+      dismiss,
+      config?.overlay.autoFadeMs ?? DEFAULT_AUTO_FADE_MS
+    )
   }, [clearFadeTimer, config, dismiss])
 
   useEffect(() => {
