@@ -346,8 +346,22 @@ export function useVoiceInput({
           }
 
           toPcm(blob)
-            .then((pcm) => window.nimbus.transcribeAudio(pcm.buffer as ArrayBuffer))
+            .then((pcm) => {
+              // The user can start typing while PCM conversion is in flight.
+              // That cancels this voice turn; do not start a transcription
+              // that is already known to be stale.
+              if (sessionId !== sessionIdRef.current) return null
+              return window.nimbus.transcribeAudio(pcm.buffer as ArrayBuffer)
+            })
             .then((transcript) => {
+              // Cancellation can also happen while Whisper is working. This
+              // check is the important half: without it, the late voice result
+              // enters handleResult after typed input has begun and replaces
+              // the draft/answer underneath the user's fingers.
+              if (sessionId !== sessionIdRef.current) {
+                console.log('[voice] transcription finished after cancellation, discarding')
+                return
+              }
               if (!transcript) {
                 console.log('[voice] transcription returned empty text')
                 onEnd?.('empty')
@@ -362,6 +376,7 @@ export function useVoiceInput({
               onResult(transcript)
             })
             .catch((err: unknown) => {
+              if (sessionId !== sessionIdRef.current) return
               const message = err instanceof Error ? err.message : 'Transcription failed.'
               console.error(`[voice] transcription error: ${message}`)
               onError?.(message)
