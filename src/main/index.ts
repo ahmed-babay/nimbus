@@ -3,6 +3,7 @@ import { electronApp, optimizer } from '@electron-toolkit/utils'
 import dotenv from 'dotenv'
 import dns from 'node:dns'
 import { createTray } from './tray'
+import { crashLogPath, logCrashEvent } from './crash-log'
 import {
   createOverlayWindow,
   showOverlay,
@@ -143,10 +144,10 @@ function ipv4FirstLookup(hostname: string, options: unknown, callback: unknown):
  * Logged loudly rather than swallowed silently: these still point at bugs.
  */
 process.on('unhandledRejection', (reason) => {
-  console.error('[main] unhandled rejection:', reason instanceof Error ? reason.stack : reason)
+  logCrashEvent(`unhandled rejection: ${reason instanceof Error ? reason.stack : reason}`)
 })
 process.on('uncaughtException', (error) => {
-  console.error('[main] uncaught exception:', error instanceof Error ? error.stack : error)
+  logCrashEvent(`uncaught exception: ${error instanceof Error ? error.stack : error}`)
 })
 
 
@@ -828,7 +829,7 @@ app.on('window-all-closed', () => {
  * Logged with the actual reason, because until now there was nothing to go on.
  */
 app.on('render-process-gone', (_event, _contents, details) => {
-  console.error(`[main] renderer gone: ${details.reason} (exitCode ${details.exitCode})`)
+  logCrashEvent(`renderer gone: ${details.reason} (exitCode ${details.exitCode})`)
   if (details.reason === 'clean-exit') return
   try {
     // ipcMain handlers are process-wide and already registered, so only the
@@ -836,15 +837,20 @@ app.on('render-process-gone', (_event, _contents, details) => {
     overlayWindow = createOverlayWindow()
     console.log('[main] overlay rebuilt after renderer crash')
   } catch (error) {
-    console.error('[main] could not rebuild the overlay:', error)
+    logCrashEvent(`could not rebuild the overlay: ${error instanceof Error ? error.stack : error}`)
   }
 })
 
 // The GPU and utility processes recover on their own; this is only so there is
 // a record when one of them goes, since that often precedes the renderer going.
 app.on('child-process-gone', (_event, details) => {
-  console.error(`[main] ${details.type} process gone: ${details.reason}`)
+  logCrashEvent(`${details.type} process gone: ${details.reason}`)
 })
+
+// So the crash log's own location is on record somewhere findable — printed
+// once at startup rather than only mattering after something has already
+// gone wrong, which is the moment nobody remembers where to look.
+console.log(`[main] crash log: ${crashLogPath()}`)
 
 app.on('will-quit', () => {
   stopReminderScheduler()

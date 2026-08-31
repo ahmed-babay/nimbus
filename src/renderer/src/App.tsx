@@ -147,16 +147,23 @@ export default function App() {
     }
   }, [overlayLayout.corner, overlayLayout.squeeze, mode, state, pendingSelection])
 
-  // After three quiet seconds in the compact dock, shrink to a taskbar-sized
-  // orb so it stops occupying the corner. Clicking it brings the dock back.
-  // Stay open while listening or holding selected text — shrinking then would
-  // hide the Ctrl+Shift+A actions before they can be used.
+  // After three quiet seconds in an empty compact dock, shrink to a
+  // taskbar-sized orb so it stops occupying the corner. Clicking it brings the
+  // dock back. An answer stays expanded: collapsing a map or result card a few
+  // seconds after it renders looks like a crash and makes the result unusable.
   useEffect(() => {
     if (!overlayLayout.corner) return
     if (overlayLayout.squeeze !== 'compact') return
     if (mode !== 'assistant') return
     const tick = window.setInterval(() => {
-      if (state === 'thinking' || state === 'speaking' || state === 'listening' || pendingSelection) {
+      if (
+        state === 'thinking' ||
+        state === 'speaking' ||
+        state === 'listening' ||
+        pendingSelection ||
+        response ||
+        error
+      ) {
         lastTouchRef.current = Date.now()
         return
       }
@@ -168,7 +175,7 @@ export default function App() {
       setCompactVisible(false)
     }, 250)
     return () => window.clearInterval(tick)
-  }, [overlayLayout.corner, overlayLayout.squeeze, mode, state, pendingSelection])
+  }, [overlayLayout.corner, overlayLayout.squeeze, mode, state, pendingSelection, response, error])
 
   // Listening for its own name, when the user has turned that on. Suspended
   // whenever Nimbus is already up or talking — otherwise it competes with the
@@ -737,7 +744,7 @@ function PeekIcon({
         searching={searching}
         answerSeq={answerSeq}
         levelRef={levelRef}
-        size={48}
+        size={42}
         tight
       />
     </motion.div>
@@ -831,6 +838,7 @@ function PeekDock({
           answerSeq={answerSeq}
           levelRef={levelRef}
           size={36}
+          tight
         />
         <div className="min-w-0 flex-1">
           <p className="text-[12px] font-semibold tracking-[-0.01em] text-nimbus-text">Nimbus</p>

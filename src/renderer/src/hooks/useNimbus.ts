@@ -6,10 +6,6 @@ import { useRadioPlayer, type RadioPlayerControls } from './useRadioPlayer'
 import { isStopPhrase, isStopPlaybackPhrase, isMediaStopRequest } from '../lib/stop-phrases'
 
 const DEFAULT_AUTO_FADE_MS = 8000
-// When an answer is on screen it needs reading time — headlines, a photo and
-// an extract take far longer to take in than the fade meant for an empty
-// overlay, and closing at 8s made results feel like they vanished instantly.
-const READING_AUTO_FADE_MS = 45000
 // Consecutive turns with nothing said before the overlay gives up.
 const MAX_EMPTY_TURNS = 2
 
@@ -298,11 +294,32 @@ export function useNimbus(): NimbusOverlayState {
     // Never close while a station is playing — closing tears down the audio
     // element and the music would just stop. "stop" or Esc ends it.
     if (radioActiveRef.current || holdOpenRef.current) return
-    // Give the user real reading time whenever there's an answer on screen.
-    const autoFadeMs = hasContentRef.current
-      ? READING_AUTO_FADE_MS
-      : (config?.overlay.autoFadeMs ?? DEFAULT_AUTO_FADE_MS)
-    fadeTimer.current = setTimeout(dismiss, autoFadeMs)
+    // An answer is not transient chrome. Maps, departures, headlines and even
+    // plain text can still be in use long after speech ends; hiding them on a
+    // timer looks exactly like the app crashed. Results now stay until the
+    // user closes Nimbus or begins another turn. The configured timeout only
+    // applies when the overlay has nothing useful on it.
+    if (hasContentRef.current) return
+    fadeTimer.current = setTimeout(
+      () => {
+        fadeTimer.current = null
+        // State can change during the timeout. In particular, a timer armed
+        // by a failed/empty voice turn used to survive into the next typed
+        // question and close the overlay underneath the user's fingers.
+        if (
+          hasContentRef.current ||
+          holdOpenRef.current ||
+          radioActiveRef.current ||
+          stateRef.current === 'thinking' ||
+          stateRef.current === 'speaking' ||
+          stateRef.current === 'listening'
+        ) {
+          return
+        }
+        dismiss()
+      },
+      config?.overlay.autoFadeMs ?? DEFAULT_AUTO_FADE_MS
+    )
   }, [clearFadeTimer, config, dismiss])
 
   useEffect(() => {
@@ -497,6 +514,11 @@ export function useNimbus(): NimbusOverlayState {
   /** Sends an utterance through the normal assistant pipeline. */
   const askQuestion = useCallback(
     (finalTranscript: string) => {
+      // A timer from an empty/error state belongs to that state, not to the
+      // question that just replaced it. Leaving it armed closes the overlay
+      // partway through a slow local inference or while the next prompt is
+      // being typed.
+      clearFadeTimer()
       // Previous answer clears here — when a new question actually arrives —
       // rather than the moment the mic reopens.
       emptyTurnsRef.current = 0
@@ -548,7 +570,7 @@ export function useNimbus(): NimbusOverlayState {
           speak(message)
         })
     },
-    [speak]
+    [clearFadeTimer, speak]
   )
 
   useEffect(() => {
@@ -720,12 +742,15 @@ export function useNimbus(): NimbusOverlayState {
   const submitText = useCallback((text: string) => {
     const trimmed = text.trim()
     if (!trimmed) return
-    // Only stops the in-flight recording; the mic stays enabled so the next
-    // turn can still be spoken.
-    stopVoiceInputRef.current?.()
+    clearFadeTimer()
+    // Typing supersedes the automatic follow-up microphone. `stop()` flushes
+    // and transcribes what it captured, which can deliver a competing empty or
+    // hallucinated voice result after the typed turn has already begun.
+    // Cancel drops that recording while leaving the mic preference enabled.
+    cancelVoiceInputRef.current?.()
     console.log(`[nimbus] typed input: "${trimmed}"`)
     handleResultRef.current?.(trimmed)
-  }, [])
+  }, [clearFadeTimer])
 
   /** Explicit on/off for speech input. */
   const toggleMic = useCallback(() => {
@@ -759,11 +784,14 @@ export function useNimbus(): NimbusOverlayState {
 
   /** Closes the mic the moment typing starts, before it hears the keyboard. */
   const handleTypingStart = useCallback(() => {
+    clearFadeTimer()
     if (stateRef.current === 'listening') {
-      stopVoiceInputRef.current?.()
+      // This turn has been replaced by typed input, so it must not be flushed
+      // through transcription and allowed to race the text into handleResult.
+      cancelVoiceInputRef.current?.()
       setState('idle')
     }
-  }, [])
+  }, [clearFadeTimer])
 
   /** True while the open microphone is a follow-up to Nimbus speaking first. */
   const afterInterruptionRef = useRef(false)
