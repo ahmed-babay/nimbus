@@ -2,24 +2,7 @@ import { BrowserWindow, screen, shell } from 'electron'
 import { is } from '@electron-toolkit/utils'
 import { join } from 'path'
 import { IPC } from '../shared/ipc-channels'
-import { warmLocalModel } from '../services/local-llm'
 import type { OverlayCorner, OverlayLayout, OverlaySqueeze } from '../shared/types'
-
-/**
- * How long after the overlay appears before the model starts loading.
- *
- * Long enough for the entrance and audio cue to finish before a large GPU
- * upload begins, while still overlapping a normal spoken question.
- */
-const WARM_UP_DELAY_MS = 1800
-
-let warmUpTimer: ReturnType<typeof setTimeout> | null = null
-
-function cancelModelWarmUp(): void {
-  if (!warmUpTimer) return
-  clearTimeout(warmUpTimer)
-  warmUpTimer = null
-}
 
 const WINDOW_WIDTH = 520
 // Tall enough for the largest response card (news hero image + three
@@ -372,24 +355,6 @@ export function showOverlay(window: BrowserWindow, extraChannel?: string): void 
   window.webContents.send(IPC.WAKE)
   if (extraChannel) window.webContents.send(extraChannel)
   emitLayout(window)
-
-  // Start reading the weights now rather than when the question arrives. The
-  // user is about to spend a second or two speaking and another being
-  // transcribed, and the load runs underneath that instead of after it — which
-  // is the difference between a pause they never notice and twelve seconds of
-  // apparently nothing happening. A no-op when the model is already warm or
-  // the provider is a cloud one.
-  //
-  // Held back for a beat so the overlay's entrance finishes first. Loading
-  // does not block the main thread — measured, the worst stall across a twelve
-  // second load is 78ms — but it does hand several gigabytes to the GPU, and
-  // starting that in the same frame as the window appearing put the contention
-  // exactly where it is most visible: on the animation the user is looking at.
-  cancelModelWarmUp()
-  warmUpTimer = setTimeout(() => {
-    warmUpTimer = null
-    void warmLocalModel()
-  }, WARM_UP_DELAY_MS)
 }
 
 /**
@@ -409,9 +374,6 @@ export function presentOverlay(window: BrowserWindow, channel: string, payload?:
 }
 
 export function hideOverlay(window: BrowserWindow): void {
-  // A quick open-and-close should not start a multi-gigabyte model upload
-  // after the interface has already disappeared.
-  cancelModelWarmUp()
   window.setIgnoreMouseEvents(true, { forward: true })
   window.hide()
 }
