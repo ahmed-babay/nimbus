@@ -8,11 +8,18 @@ import type { OverlayCorner, OverlayLayout, OverlaySqueeze } from '../shared/typ
 /**
  * How long after the overlay appears before the model starts loading.
  *
- * Long enough for the entrance animation to land, short enough that it is
- * still loading while the user speaks — which is the whole point of warming
- * up on open rather than on the question.
+ * Long enough for the entrance and audio cue to finish before a large GPU
+ * upload begins, while still overlapping a normal spoken question.
  */
-const WARM_UP_DELAY_MS = 350
+const WARM_UP_DELAY_MS = 1800
+
+let warmUpTimer: ReturnType<typeof setTimeout> | null = null
+
+function cancelModelWarmUp(): void {
+  if (!warmUpTimer) return
+  clearTimeout(warmUpTimer)
+  warmUpTimer = null
+}
 
 const WINDOW_WIDTH = 520
 // Tall enough for the largest response card (news hero image + three
@@ -378,7 +385,11 @@ export function showOverlay(window: BrowserWindow, extraChannel?: string): void 
   // second load is 78ms — but it does hand several gigabytes to the GPU, and
   // starting that in the same frame as the window appearing put the contention
   // exactly where it is most visible: on the animation the user is looking at.
-  setTimeout(() => void warmLocalModel(), WARM_UP_DELAY_MS)
+  cancelModelWarmUp()
+  warmUpTimer = setTimeout(() => {
+    warmUpTimer = null
+    void warmLocalModel()
+  }, WARM_UP_DELAY_MS)
 }
 
 /**
@@ -398,6 +409,9 @@ export function presentOverlay(window: BrowserWindow, channel: string, payload?:
 }
 
 export function hideOverlay(window: BrowserWindow): void {
+  // A quick open-and-close should not start a multi-gigabyte model upload
+  // after the interface has already disappeared.
+  cancelModelWarmUp()
   window.setIgnoreMouseEvents(true, { forward: true })
   window.hide()
 }

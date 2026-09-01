@@ -679,15 +679,16 @@ app.whenReady().then(() => {
     }
   })
 
-  // Fetched and loaded in the background so the first thing said isn't the
-  // request that waits for it. 2.2MB, and it is deliberately not awaited —
-  // voice input falls back to the energy heuristic until it is ready.
-  void warmVad()
+  // Stagger native/background initialization until Electron and the hidden
+  // renderer have finished starting. Voice input safely uses its energy
+  // fallback in the meantime, so there is no reason to make app launch and
+  // ONNX initialization compete for the same CPU and disk burst.
+  setTimeout(() => void warmVad(), 2500)
 
   // Where this machine is, asked once at startup and kept fresh. Everything
   // that says "from here" - trains, directions, weather, the router's place
   // correction - reads the answer, so it must not wait for it.
-  void refreshPlace()
+  setTimeout(() => void refreshPlace(), 4000)
   setInterval(() => void refreshPlace(), PLACE_REFRESH_MS)
 
   startReminderScheduler({
