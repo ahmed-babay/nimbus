@@ -881,7 +881,10 @@ async function runIntent(
         }
         return {
           speech,
-          card: { type: 'search', data: { ...data, illustrations: await pictures } }
+          card: {
+            type: 'search',
+            data: { ...data, answer: speech, illustrations: await pictures }
+          }
         }
       }
 

@@ -149,7 +149,8 @@ export async function research(
     const result = await withModelFallback((name) =>
       buildModel(name, systemInstruction).generateContent(prompt)
     )
-    return { speech: result.response.text().trim(), card }
+    const speech = result.response.text().trim()
+    return { speech, card: { ...card, answer: speech } }
   }
 
   const { stream } = await withModelFallback((name) =>
@@ -162,5 +163,6 @@ export async function research(
     full += chunk
     onChunk(chunk)
   }
-  return { speech: full.trim(), card }
+  const speech = full.trim()
+  return { speech, card: { ...card, answer: speech } }
 }

@@ -431,6 +431,12 @@ function PaperworkBody({ data, onAsk }: { data: PaperworkCardData; onAsk: (text:
         </div>
       </div>
 
+      {data.summary && (
+        <p className="mt-2 border-t border-white/[0.07] pt-2 text-[11.5px] leading-relaxed text-nimbus-text-dim">
+          {data.summary}
+        </p>
+      )}
+
       {facts.some(([, value]) => value) && (
         <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5">
           {facts
@@ -1960,7 +1966,12 @@ function SearchBody({ data }: { data: SearchCardData }) {
   return (
     <div className={panel}>
       {illustrations.length > 0 && <Illustrations items={illustrations} />}
-      <ul className="space-y-2">
+      {data.answer && (
+        <p className="mb-2.5 whitespace-pre-wrap text-[12.5px] leading-relaxed text-nimbus-text">
+          {data.answer}
+        </p>
+      )}
+      <ul className={`${data.answer ? 'border-t border-white/[0.07] pt-2.5' : ''} space-y-2`}>
         {data.results.slice(0, 3).map((result) => (
           <ListRow
             key={result.url}
