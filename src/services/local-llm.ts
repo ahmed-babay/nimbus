@@ -114,6 +114,17 @@ const LOCAL_MODELS: LocalModel[] = [
 const IDLE_UNLOAD_MS = 5 * 60 * 1000
 
 /**
+ * Space deliberately left for Windows, Chromium and the animated overlay.
+ * node-llama-cpp's default reserve tops out around 1.2GB; on an 8GB laptop
+ * that let the local model fill enough of the card for Windows to page GPU
+ * memory while it loaded, briefly freezing the desktop cursor. A quarter of
+ * smaller cards, capped at 2GB on larger ones, trades a little inference
+ * speed for a responsive desktop.
+ */
+const desktopVramReserve = (totalVram: number): number =>
+  Math.min(2_000_000_000, totalVram * 0.25)
+
+/**
  * How much the local model is given to read and write in one turn.
  *
  * A cloud model's limit is so far above anything this app sends that callers
@@ -393,8 +404,10 @@ async function load(): Promise<Loaded> {
     reportLoad(true, 0)
 
     const llama = await getLlama({
-      // CPU deliberately — see the note at the top of this file.
+      // GPU by default for routing latency; the explicit override remains for
+      // machines where even the reserved headroom is not enough.
       gpu: process.env.NIMBUS_LOCAL_GPU === 'false' ? false : 'auto',
+      vramPadding: desktopVramReserve,
       logLevel: LlamaLogLevel.error
     })
     const model = await llama.loadModel({
