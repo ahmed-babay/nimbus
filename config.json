@@ -23,7 +23,7 @@
   },
   "voice": {
     "endOfSpeechMs": 900,
-    "speechRate": "+20%"
+    "speechRate": "+30%"
   },
   "screenshot": {
     "selectRegion": true

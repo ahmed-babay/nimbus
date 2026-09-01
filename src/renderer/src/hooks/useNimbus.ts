@@ -382,15 +382,29 @@ export function useNimbus(): NimbusOverlayState {
       // neural voices. Voice names differ by Windows version, so prefer a
       // known English male voice and leave the system default only when none
       // of them is installed.
-      const voices = window.speechSynthesis.getVoices()
-      const maleVoice = voices.find(
-        (voice) =>
-          /^en[-_]/i.test(voice.lang) &&
-          /\b(andrew|brian|christopher|david|eric|george|guy|mark|michael|roger|ryan|stefan)\b/i.test(
-            voice.name
-          )
-      )
+      const voices = window.speechSynthesis
+        .getVoices()
+        .filter((voice) => /^en[-_]/i.test(voice.lang))
+      const preferredMaleVoices = [
+        'guy',
+        'christopher',
+        'brian',
+        'david',
+        'mark',
+        'george',
+        'ryan',
+        'michael',
+        'eric',
+        'roger',
+        'stefan',
+        'andrew'
+      ]
+      const maleVoice = preferredMaleVoices
+        .map((name) => voices.find((candidate) => candidate.name.toLowerCase().includes(name)))
+        .find(Boolean)
       if (maleVoice) utterance.voice = maleVoice
+      utterance.rate = 1.18
+      utterance.pitch = 0.92
       utterance.onend = thenListen ? listenAgain : scheduleAutoFade
       utterance.onerror = scheduleAutoFade
       window.speechSynthesis.speak(utterance)

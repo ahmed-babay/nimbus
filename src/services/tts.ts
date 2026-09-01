@@ -8,7 +8,7 @@ import { localVoiceAvailable, speakOutOfProcess } from '../main/speech-host'
  * Read lazily because the main process loads .env after static imports run.
  */
 function voice(): string {
-  return process.env.TTS_VOICE || 'en-US-AndrewNeural'
+  return process.env.TTS_VOICE || 'en-US-GuyNeural'
 }
 
 export interface SynthesizedSpeech {
@@ -61,7 +61,7 @@ async function synthesizeWithEdge(text: string): Promise<SynthesizedSpeech> {
   // Edge's default pace is slower than reading speed, which makes answers feel
   // laggy next to text that has already finished streaming. Measured on a
   // typical reply: default 6.1s, +25% 4.9s.
-  const rate = config.voice?.speechRate || '+20%'
+  const rate = config.voice?.speechRate || '+30%'
   const tts = new MsEdgeTTS()
   // MP3 rather than Edge's webm/opus: Edge streams a fragmented webm with no
   // duration header, which some decoders reject. MP3 decodes everywhere.
