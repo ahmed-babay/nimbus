@@ -74,9 +74,18 @@ export function ResponseCard({
   // and skip the spoken-word reveal, which only tracks the spoken portion.
   const displayText = response.fullText ?? response.speech
   const wasShortened = Boolean(response.fullText)
+  // Data cards already present the answer in their own layout. Repeating the
+  // spoken summary above them made every result look duplicated (most
+  // noticeably selections, departures, maps, stocks and definitions).
+  // Screenshots and illustration-only cards are supporting media, so their
+  // spoken answer still needs to be visible beside them.
+  const showSpeech =
+    response.card.type === 'text' ||
+    response.card.type === 'screen' ||
+    response.card.type === 'explainer'
   // Plain answers are the ones worth copying (drafted emails, messages,
   // snippets); the structured cards carry their own actions.
-  const showCopy = response.card.type === 'text' || wasShortened
+  const showCopy = showSpeech && (response.card.type === 'text' || wasShortened)
 
   return (
     <motion.div
@@ -84,14 +93,14 @@ export function ResponseCard({
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
     >
-      {/* Long answers still get the reveal for the part that's read aloud;
-          the tail past the TTS cap stays fully visible. */}
-      <SpokenText
-        text={displayText}
-        progressRef={speechProgressRef}
-        spokenRatio={wasShortened ? response.speech.length / displayText.length : 1}
-        className="whitespace-pre-wrap text-[13px] leading-relaxed text-nimbus-text"
-      />
+      {showSpeech && (
+        <SpokenText
+          text={displayText}
+          progressRef={speechProgressRef}
+          spokenRatio={wasShortened ? response.speech.length / displayText.length : 1}
+          className="whitespace-pre-wrap text-[13px] leading-relaxed text-nimbus-text"
+        />
+      )}
 
       <CardBody card={response.card} radio={radio} onReplace={onReplace} onAsk={onAsk} />
 
