@@ -130,8 +130,10 @@ export function factsContext(): string {
   const facts = getFacts()
   if (facts.length === 0) return ''
   return (
-    'What you know about this user (they told you these directly — use them ' +
-    'without being asked, and never contradict them):\n' +
+    'Private background facts the user told you directly. Use one only when it ' +
+    'materially improves the answer to the current request. Never announce, ' +
+    'list, or repeat a fact merely to personalize a greeting or unrelated answer, ' +
+    'and never contradict it:\n' +
     facts.map((fact) => `- ${fact.text}`).join('\n')
   )
 }
