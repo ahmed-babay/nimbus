@@ -4,6 +4,8 @@ interface WaveformProps {
   levelRef: RefObject<number>
   /** Samples across the strip. More is smoother and costs one path segment each. */
   barCount?: number
+  /** Short listening indicator used beside labels and controls. */
+  compact?: boolean
 }
 
 /** The drawing surface, in its own units. Scaled to fit by the viewBox. */
@@ -44,7 +46,7 @@ const MAX_AMPLITUDE = MID - 1.5
  * deliberately not React state, which would re-render the overlay ~60 times a
  * second.
  */
-export function Waveform({ levelRef, barCount = 44 }: WaveformProps) {
+export function Waveform({ levelRef, barCount = 44, compact = false }: WaveformProps) {
   const bodyRef = useRef<SVGPathElement>(null)
   const crestRef = useRef<SVGPathElement>(null)
 
@@ -124,7 +126,7 @@ export function Waveform({ levelRef, barCount = 44 }: WaveformProps) {
   return (
     <svg
       viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-      className="h-7 w-full overflow-visible"
+      className={compact ? 'h-[18px] w-24 shrink-0 overflow-visible' : 'h-7 w-full overflow-visible'}
       preserveAspectRatio="none"
       aria-hidden="true"
     >

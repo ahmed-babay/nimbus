@@ -619,18 +619,20 @@ export default function App() {
                           className="h-14 w-24 shrink-0 rounded-md object-cover object-top ring-1 ring-nimbus-accent/40"
                         />
                         <div className="min-w-0 flex-1">
-                          <Waveform levelRef={levelRef} barCount={18} />
-                          <p className="mt-1 text-[11px] text-nimbus-accent-bright">
-                            Screen captured — ask about it
-                          </p>
+                          <div className="flex items-center gap-2">
+                            <Waveform levelRef={levelRef} barCount={18} compact />
+                            <p className="text-[10.5px] text-nimbus-accent-bright">
+                              Screen captured — ask about it
+                            </p>
+                          </div>
                         </div>
                       </div>
                     ) : state === 'listening' ? (
-                      <div className="flex h-14 flex-col justify-center gap-1">
-                        <Waveform levelRef={levelRef} />
-                        <p className="text-[9.5px] text-nimbus-text-dim">
-                          Listening — say &ldquo;stop&rdquo; when done
-                        </p>
+                      <div className="flex h-10 items-center">
+                        <div className="flex items-center gap-2 rounded-full border border-white/[0.07] bg-white/[0.025] px-2.5 py-1.5">
+                          <Waveform levelRef={levelRef} barCount={22} compact />
+                          <p className="text-[10px] text-nimbus-text-dim">Listening</p>
+                        </div>
                       </div>
                     ) : (
                       // Mic is closed (typing, or a finished typed turn) — say
@@ -673,11 +675,11 @@ export default function App() {
                   <motion.div
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
-                    className="mt-3 flex items-center gap-2.5 border-t border-white/[0.06] pt-2.5"
+                    className="mt-2.5 flex items-center gap-2 border-t border-white/[0.06] pt-2"
                   >
-                    <Waveform levelRef={levelRef} barCount={18} />
-                    <span className="text-[10px] uppercase tracking-[0.14em] text-nimbus-text-dim">
-                      Listening — say &ldquo;stop&rdquo; to close
+                    <Waveform levelRef={levelRef} barCount={18} compact />
+                    <span className="text-[10px] text-nimbus-text-dim">
+                      Listening · say &ldquo;stop&rdquo; to close
                     </span>
                   </motion.div>
                 )}

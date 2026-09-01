@@ -45,9 +45,9 @@ export function SelectionActions({ text, onRun, levelRef, listening }: Selection
       </div>
 
       {listening && levelRef ? (
-        <div className="mt-2.5 flex items-center gap-2.5 border-t border-white/[0.06] pt-2">
-          <Waveform levelRef={levelRef} barCount={16} />
-          <span className="text-[10px] uppercase tracking-[0.14em] text-nimbus-text-dim">
+        <div className="mt-2.5 flex items-center gap-2 border-t border-white/[0.06] pt-2">
+          <Waveform levelRef={levelRef} barCount={16} compact />
+          <span className="text-[10px] text-nimbus-text-dim">
             …or say what to do
           </span>
         </div>
