@@ -54,7 +54,7 @@ async function devicesToTry(): Promise<readonly string[]> {
 }
 
 /**
- * A warm, unremarkable narrator voice. Deliberately not a character: this
+ * A warm, unremarkable male narrator voice. Deliberately not a character: this
  * reads train times and weather dozens of times a day, and personality wears
  * out fast at that frequency.
  *
@@ -64,7 +64,7 @@ async function devicesToTry(): Promise<readonly string[]> {
  * .env was ever read.
  */
 function voice(): string {
-  return process.env.NIMBUS_LOCAL_VOICE || 'af_heart'
+  return process.env.NIMBUS_LOCAL_VOICE || 'am_michael'
 }
 
 /** The voice the out-of-process host should use. */

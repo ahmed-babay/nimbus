@@ -3,7 +3,13 @@ import config from '../../config.json'
 import { purgeLocalTts, localTtsInstalled, localTtsSupportsLanguage, localVoiceName } from './local-tts'
 import { localVoiceAvailable, speakOutOfProcess } from '../main/speech-host'
 
-const VOICE = process.env.TTS_VOICE || 'en-GB-SoniaNeural'
+/**
+ * Male neural voice, configurable for another locale or speaking style.
+ * Read lazily because the main process loads .env after static imports run.
+ */
+function voice(): string {
+  return process.env.TTS_VOICE || 'en-US-AndrewNeural'
+}
 
 export interface SynthesizedSpeech {
   audio: Buffer
@@ -59,7 +65,7 @@ async function synthesizeWithEdge(text: string): Promise<SynthesizedSpeech> {
   const tts = new MsEdgeTTS()
   // MP3 rather than Edge's webm/opus: Edge streams a fragmented webm with no
   // duration header, which some decoders reject. MP3 decodes everywhere.
-  await tts.setMetadata(VOICE, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3)
+  await tts.setMetadata(voice(), OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3)
   const { audioStream } = tts.toStream(text, { rate })
 
   const chunks: Buffer[] = []

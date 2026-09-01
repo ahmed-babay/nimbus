@@ -378,6 +378,19 @@ export function useNimbus(): NimbusOverlayState {
       // rather than leaving it stuck mid-reveal.
       speechProgressRef.current = 1
       const utterance = new SpeechSynthesisUtterance(text)
+      // Keep the emergency system fallback consistent with Nimbus's male
+      // neural voices. Voice names differ by Windows version, so prefer a
+      // known English male voice and leave the system default only when none
+      // of them is installed.
+      const voices = window.speechSynthesis.getVoices()
+      const maleVoice = voices.find(
+        (voice) =>
+          /^en[-_]/i.test(voice.lang) &&
+          /\b(andrew|brian|christopher|david|eric|george|guy|mark|michael|roger|ryan|stefan)\b/i.test(
+            voice.name
+          )
+      )
+      if (maleVoice) utterance.voice = maleVoice
       utterance.onend = thenListen ? listenAgain : scheduleAutoFade
       utterance.onerror = scheduleAutoFade
       window.speechSynthesis.speak(utterance)
