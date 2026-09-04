@@ -1,5 +1,6 @@
 import type { MusicCardData } from '../shared/types'
 import { fetchImageAsDataUri } from './images'
+import { wantsBrowserPlayback as explicitBrowserPlayback } from './music-intent'
 
 // Piped is an open-source YouTube frontend with a public, key-free API.
 // Instances go down or rate-limit individually, so several are tried in turn.
@@ -67,9 +68,7 @@ async function searchInstance(base: string, query: string): Promise<PipedItem[] 
  * of a false negative is one click on a card that is already on screen.
  */
 export function wantsBrowserPlayback(utterance: string): boolean {
-  return /\b(on|in|via|open|öffne|auf)\s+(youtube|yt|the browser|browser)\b|\byoutube\s+(video|link)\b|\bopen the video\b/i.test(
-    utterance
-  )
+  return explicitBrowserPlayback(utterance)
 }
 
 export async function findMusic(query: string, autoOpen = false): Promise<MusicCardData> {

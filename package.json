@@ -6,6 +6,7 @@
   "author": "Ahmed",
   "private": true,
   "scripts": {
+    "test": "node --test scripts/test-reliability.cjs",
     "dev": "set \"ELECTRON_RUN_AS_NODE=\" && electron-vite dev",
     "build": "electron-vite build",
     "start": "electron-vite preview",

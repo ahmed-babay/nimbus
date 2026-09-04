@@ -5,6 +5,7 @@ import { getHistoryAsContents, getHistorySummary } from './conversation'
 import { currentTimeContext } from './now'
 import { placeContext, replyLanguageContext } from './region'
 import { factsContext } from './memory'
+import { directMusicIntent } from './music-intent'
 
 // NOTE: Web Speech API (renderer) handles STT/TTS for free with no API key.
 // If recognition quality is ever a problem, a free-tier Whisper API call
@@ -570,6 +571,8 @@ async function classifyLocally(
 }
 
 export async function classifyIntent(utterance: string): Promise<IntentClassification> {
+  const direct = directMusicIntent(utterance)
+  if (direct) return direct
   // Recent turns are prepended so follow-ups resolve: "what about tomorrow?"
   // or "how about Berlin?" only make sense against what was just discussed.
   const context = getHistorySummary()
@@ -760,6 +763,9 @@ export async function chat(utterance: string, onChunk?: StreamHandler): Promise<
     'Keep responses to 1-3 short sentences since they will be read aloud by text-to-speech. ' +
     'Do not use markdown, bullet points, or emoji. ' +
     'You are mid-conversation — refer back to what was already said when relevant.\n\n' +
+    'Answer the actual question before adding context. If a request is ambiguous, ask one short clarifying question. ' +
+    'Never claim to have played music, opened an app, saved a reminder, or performed another action: this chat path cannot execute actions. ' +
+    'Do not invent live facts, sources, or personal details. Say when you do not know.\n\n' +
     'Treat the user\'s home and current position as private background data, not ' +
     'conversation filler. Do not mention their city, location, position, or ' +
     'where they live in greetings, acknowledgements, small talk, or unrelated ' +

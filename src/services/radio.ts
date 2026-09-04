@@ -38,7 +38,7 @@ async function search(base: string, path: string): Promise<RadioStation[] | null
 }
 
 function pickStation(stations: RadioStation[]): RadioStation | null {
-  const playable = stations.filter((s) => (s.url_resolved || s.url) && s.codec !== 'UNKNOWN')
+  const playable = stations.filter((s) => /^https?:\/\//i.test(s.url_resolved || s.url || '') && s.codec !== 'UNKNOWN')
   // Prefer https: the renderer plays these directly, and an http stream is a
   // mixed-content request from an https-ish context.
   const secure = playable.filter((s) => (s.url_resolved ?? s.url ?? '').startsWith('https://'))
@@ -86,7 +86,14 @@ export function normalizeGenre(query: string): string {
 }
 
 export async function findStation(query: string): Promise<RadioCardData> {
-  const term = encodeURIComponent(normalizeGenre(query).trim())
+  const cleaned = normalizeGenre(query).trim()
+    .replace(/^(?:play|put on)\s+(?:some\s+)?/i, '')
+    .replace(/\s+(?:music|radio|beats)$/i, '')
+  const moods: Record<string, string> = {
+    relaxing: 'chillout', chill: 'chillout', focus: 'ambient',
+    study: 'lofi', sleep: 'ambient', upbeat: 'pop', music: 'chillout'
+  }
+  const term = encodeURIComponent(moods[cleaned.toLowerCase()] ?? cleaned)
   // Tag search matches genres/moods ("jazz", "lofi"); name search catches
   // requests for a specific station.
   const paths = [
@@ -95,15 +102,17 @@ export async function findStation(query: string): Promise<RadioCardData> {
     `/json/stations/search?tagList=${term}&limit=12&hidebroken=true&order=votes&reverse=true`
   ]
 
-  for (const base of INSTANCES) {
-    for (const path of paths) {
+  // Race mirrors and query styles under one timeout, rather than making the
+  // listener wait through twelve sequential seven-second failures.
+  try {
+    return await Promise.any(INSTANCES.slice(0, 2).flatMap((base) => paths.slice(0, 2).map(async (path) => {
       const stations = await search(base, path)
-      if (!stations) continue
+      if (!stations) throw new Error('No stations')
       const station = pickStation(stations)
-      if (!station) continue
+      if (!station) throw new Error('No playable stations')
 
       const streamUrl = station.url_resolved ?? station.url ?? ''
-      if (!streamUrl) continue
+      if (!streamUrl) throw new Error('No stream')
 
       return {
         name: (station.name ?? 'Unknown station').trim(),
@@ -118,8 +127,8 @@ export async function findStation(query: string): Promise<RadioCardData> {
         country: station.country ?? '',
         query
       }
-    }
+    })))
+  } catch {
+    throw new Error(`I couldn't find a station playing "${query}".`)
   }
-
-  throw new Error(`I couldn't find a station playing "${query}".`)
 }

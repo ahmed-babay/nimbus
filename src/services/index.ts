@@ -35,7 +35,8 @@ import {
   searchAnswers
 } from './memory'
 import { lookupEntity } from './wikipedia'
-import { findMusic, wantsBrowserPlayback } from './music'
+import { findMusic } from './music'
+import { wantsBrowserPlayback } from './music-intent'
 import { isStopPlaybackPhrase, isMediaStopRequest } from '../shared/stop-phrases'
 import { watchJourney, wantsWatching } from './watchers'
 import { findJourneys, wantsArrival } from './transit'
@@ -395,7 +396,7 @@ async function runIntent(
         const query = params.query || utterance
         // Only when they asked for it. The router decides however it was
         // phrased; the regex is a backstop for the plain wordings.
-        const toBrowser = params.playIn === 'youtube' || wantsBrowserPlayback(utterance)
+        const toBrowser = wantsBrowserPlayback(utterance)
 
         // Background music by genre or mood plays *inside* Nimbus via a radio
         // stream. Skipped entirely when they asked for YouTube, since handing
@@ -408,8 +409,10 @@ async function runIntent(
               card: { type: 'radio', data: station }
             }
           } catch {
-            // No station matched — fall through to a YouTube result rather
-            // than failing outright.
+            return {
+              speech: `I couldn't connect to a station for ${query}. Try another genre, such as jazz or lofi, or ask explicitly for YouTube.`,
+              card: { type: 'text' }
+            }
           }
         }
 
