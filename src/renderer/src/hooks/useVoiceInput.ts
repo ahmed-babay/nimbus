@@ -2,6 +2,7 @@ import { useCallback, useRef } from 'react'
 import { playListenEndChime, playListenStartChime } from '../lib/chime'
 import { isLikelyNoise } from '../lib/noise-transcripts'
 import { toPcm } from '../lib/pcm'
+import { silenceWindowMs } from '../lib/voice-timing'
 
 // Electron's Chromium doesn't ship the proprietary Google API key that the
 // Web Speech API's SpeechRecognition needs, so it always fails with a
@@ -37,15 +38,12 @@ const CONTINUE_MULTIPLIER = 1.6 // lower bar to stay "still talking" (hysteresis
 // sentence, so pauses get more room. Once they've been speaking for a while a
 // pause much more likely means "done", and waiting the full early window just
 // feels laggy.
-const SILENCE_MS_EARLY = 1300
-const SILENCE_MS_SETTLED = 900
-const SPEECH_SETTLED_MS = 1500 // speech duration after which the shorter window applies
 
 const MIN_RECORDING_MS = 500 // never cut off before this, avoids instant truncation
 // Asked to listen and heard nothing, Nimbus should let go of the microphone
 // rather than sit there holding it open.
 const NO_SPEECH_TIMEOUT_MS = 7000
-const MAX_RECORDING_MS = 20000 // hard safety cap once they *are* talking
+const MAX_RECORDING_MS = 45000 // allow a complete multi-part request
 // Small margin so a trailing consonant isn't clipped. The hysteresis below
 // does most of that work, so this stays short — it's pure added latency.
 const TAIL_PADDING_MS = 150
@@ -417,7 +415,6 @@ export function useVoiceInput({
         )
         const startedAt = Date.now()
         let lastLoudAt = Date.now()
-        let speechStartedAt = Date.now()
         const levelHistory: number[] = []
 
         // --- Silero VAD tap ---
@@ -524,7 +521,9 @@ export function useVoiceInput({
           const elapsed = now - startedAt
 
           // Skip the chime, then sample the room before judging any speech.
-          if (elapsed < CALIBRATION_END_MS) {
+          const earlyVoice = elapsed >= CALIBRATION_START_MS && vadReady &&
+            now - lastVadAt < VAD_STALE_MS && vadProb > VAD_START
+          if (elapsed < CALIBRATION_END_MS && !earlyVoice) {
             if (elapsed >= CALIBRATION_START_MS) {
               noiseFloor = (noiseFloor * calibrationSamples + voiceLevel) / (calibrationSamples + 1)
               calibrationSamples++
@@ -598,7 +597,6 @@ export function useVoiceInput({
 
           if (isSpeech) {
             lastLoudAt = now
-            if (!speech.detected) speechStartedAt = now
             speech.detected = true
             metrics.voicedMs += POLL_MS
           }
@@ -627,10 +625,9 @@ export function useVoiceInput({
             // likely finished; someone who just started may still be
             // assembling it. Shortening the window once they're settled is
             // what makes the end of a turn feel immediate.
-            const settled = endOfSpeechMs ?? SILENCE_MS_SETTLED
-            const speakingFor = now - speechStartedAt
-            const silenceWindow =
-              speakingFor > SPEECH_SETTLED_MS ? settled : Math.max(settled, SILENCE_MS_EARLY)
+            // Silence is not speaking time: a short opening followed by a
+            // pause must not age itself into the less patient window.
+            const silenceWindow = silenceWindowMs(metrics.voicedMs, endOfSpeechMs)
             if (elapsed > MIN_RECORDING_MS && quietFor > silenceWindow + TAIL_PADDING_MS) stop()
           } else if (elapsed > NO_SPEECH_TIMEOUT_MS) {
             // Nothing said at all — close the turn promptly instead of

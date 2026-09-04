@@ -88,6 +88,8 @@ async function transcribeWithGroq(pcm: Float32Array, options: TranscribeOptions)
   form.append('file', new Blob([Uint8Array.from(wav)], { type: 'audio/wav' }), 'audio.wav')
   form.append('model', process.env.GROQ_WHISPER_MODEL || 'whisper-large-v3-turbo')
   form.append('response_format', 'json')
+  form.append('temperature', '0')
+  if (options.language) form.append('language', options.language)
   // Whisper takes an optional prompt as a vocabulary hint. Naming the region
   // measurably improves local place names — "Lusenplatz" became "Luisenplatz"
   // and "Mephilden hole" became "Mathildenhole" on the same audio. It doesn't

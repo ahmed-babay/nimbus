@@ -13,6 +13,16 @@ function source(file) {
 }
 const { directMusicIntent, wantsBrowserPlayback } = source('src/services/music-intent.ts')
 const { findStation, normalizeGenre } = source('src/services/radio.ts')
+const { silenceWindowMs } = source('src/renderer/src/lib/voice-timing.ts')
+
+test('voice pauses stay patient after a short opening and honor longer preferences', () => {
+  assert.equal(silenceWindowMs(400, 900), 1800)
+  assert.equal(silenceWindowMs(2000), 1200)
+  assert.equal(silenceWindowMs(400, 2500), 2500)
+  assert.equal(silenceWindowMs(2000, NaN), 1200)
+  assert.equal(silenceWindowMs(2000, -10), 600)
+  assert.equal(silenceWindowMs(2000, Infinity), 1200)
+})
 
 test('common spoken music commands work without an LLM', () => {
   for (const text of ['play jazz', 'Please put on some lofi music', 'can you play relaxing music please', 'play music', 'play luffy', 'play focus music in Nimbus']) {

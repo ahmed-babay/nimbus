@@ -22,8 +22,8 @@
     "autoFadeMs": 8000
   },
   "voice": {
-    "endOfSpeechMs": 900,
-    "speechRate": "+30%"
+    "endOfSpeechMs": 1200,
+    "speechRate": "+10%"
   },
   "screenshot": {
     "selectRegion": true
