@@ -18,8 +18,8 @@ const LOCAL_MODELS: Record<
   { name: string; size: string; why: string; ready: string }
 > = {
   llm: {
-    name: 'Qwen3.5 0.8B',
-    size: '532 MB',
+    name: 'On-device intelligence',
+    size: '0.5–2.5 GB · selected for your hardware',
     why: 'Answers and routing, with no key and no network.',
     ready: 'runs offline'
   },

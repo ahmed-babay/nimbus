@@ -420,10 +420,13 @@ export function Orb({
 
   return (
     <div
-      className="relative shrink-0"
+      className="nimbus-orb relative shrink-0"
+      data-state={state}
       style={{ width: size, height: size }}
       aria-hidden="true"
     >
+      {state === 'thinking' && <span className="nimbus-orb-orbit" />}
+      {answerSeq > 0 && <span key={answerSeq} className="nimbus-orb-answer" />}
       {/*
         The canvas is larger than the orb's own box when the atmosphere is
         drawn, because a canvas cannot paint outside its bitmap and the halo

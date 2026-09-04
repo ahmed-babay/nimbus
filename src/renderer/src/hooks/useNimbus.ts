@@ -41,6 +41,7 @@ export interface NimbusOverlayState {
   /** True while the overlay is on screen. */
   isOpen: boolean
   submitText: (text: string) => void
+  finishListening: () => void
   /** Call when the user starts typing, to close the mic. */
   onTypingStart: () => void
   /** Whether speech input is enabled, and its toggle. */
@@ -1070,6 +1071,7 @@ export function useNimbus(): NimbusOverlayState {
     speechProgressRef,
     isOpen,
     submitText,
+    finishListening: stopVoiceInput,
     onTypingStart: handleTypingStart,
     answerSeq,
     micEnabled,

@@ -65,6 +65,7 @@ export default function App() {
     speechProgressRef,
     isOpen,
     submitText,
+    finishListening,
     onTypingStart,
     answerSeq,
     micEnabled,
@@ -336,7 +337,7 @@ export default function App() {
             }}
             // Capped to the window so a long answer scrolls instead of being
             // clipped off the bottom with no way to reach it.
-            className="relative flex min-h-0 max-h-[calc(100vh-1rem)] w-[492px] flex-col overflow-hidden rounded-[20px] border border-nimbus-border bg-[#14161f]"
+            className="nimbus-glass relative flex min-h-0 max-h-[calc(100vh-1rem)] w-[492px] flex-col overflow-hidden rounded-[24px] border border-nimbus-border"
             // Depth from shadow and a hairline edge rather than a neon ring.
             // A glowing outline is the single strongest "toy" signal a panel
             // can send, and this one sits next to real work all day.
@@ -657,6 +658,30 @@ export default function App() {
 
                 {meetingOpen && <MeetingPanel meeting={meeting} />}
 
+                {state === 'listening' && (
+                  <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2.5">
+                    <div>
+                      <p className="text-[12px] font-medium text-nimbus-text">Take your time. I’m listening.</p>
+                      <p className="mt-0.5 text-[10px] text-nimbus-text-dim">Pause naturally, or send when you’re ready.</p>
+                    </div>
+                    <button onClick={finishListening} className="shrink-0 rounded-full bg-nimbus-accent/15 px-3 py-2 text-[11px] font-medium text-nimbus-accent-bright hover:bg-nimbus-accent/25">Send voice ↑</button>
+                  </div>
+                )}
+
+                {transcript && state !== 'thinking' && (
+                  <details className="mt-3 text-[11px] text-nimbus-text-dim">
+                    <summary className="cursor-pointer">What Nimbus heard</summary>
+                    <form className="mt-2 flex gap-2" onSubmit={(event) => {
+                      event.preventDefault()
+                      const corrected = String(new FormData(event.currentTarget).get('correction') ?? '').trim()
+                      if (corrected) submitText(corrected)
+                    }}>
+                      <input key={transcript} name="correction" defaultValue={transcript} aria-label="Correct what Nimbus heard" onFocus={onTypingStart} className="min-w-0 flex-1 rounded-lg border border-white/15 bg-black/15 px-2 py-2 text-nimbus-text" />
+                      <button type="submit" className="rounded-lg px-2 text-nimbus-accent-bright hover:bg-white/5">Ask again</button>
+                    </form>
+                  </details>
+                )}
+
                 {/* Always available — talking isn't possible everywhere. */}
                 <TextInput
                   onSubmit={submitText}
@@ -830,7 +855,7 @@ function PeekDock({
       style={{ ...accentVars(orbModeFor(state, searching)), transformOrigin: origin }}
     >
       <div
-        className="flex shrink-0 items-center gap-2 self-stretch rounded-full border border-white/20 bg-[#14161f] px-2 py-1.5 shadow-[0_12px_32px_-12px_rgba(0,0,0,0.7),inset_0_1px_0_0_rgba(255,255,255,0.22)]"
+        className="nimbus-glass flex shrink-0 items-center gap-2 self-stretch rounded-full border border-white/20 px-2 py-1.5 shadow-[0_12px_32px_-12px_rgba(0,0,0,0.7),inset_0_1px_0_0_rgba(255,255,255,0.22)]"
         onPointerDown={drag.onPointerDown}
         style={drag.style}
       >
@@ -875,7 +900,7 @@ function PeekDock({
             aria-hidden
             className="absolute left-7 -top-1.5 h-3 w-3 rotate-45 border-l border-t border-white/15 bg-[#14161f]"
           />
-          <div className="overflow-hidden rounded-[22px] border border-white/15 bg-[#14161f] shadow-[0_18px_40px_-18px_rgba(0,0,0,0.7),inset_0_1px_0_0_rgba(255,255,255,0.14)]">
+          <div className="nimbus-glass overflow-hidden rounded-[22px] border border-white/15 shadow-[0_18px_40px_-18px_rgba(0,0,0,0.7),inset_0_1px_0_0_rgba(255,255,255,0.14)]">
             <div className="nimbus-scroll max-h-[min(22rem,calc(100vh-8.5rem))] overflow-y-auto px-3.5 py-3.5">
             {response ? (
               <ResponseCard

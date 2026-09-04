@@ -1,5 +1,40 @@
 @import 'tailwindcss';
 
+.nimbus-glass {
+  background: linear-gradient(135deg, rgb(35 39 55 / 0.88), rgb(13 17 28 / 0.82) 65%);
+  backdrop-filter: blur(32px) saturate(145%);
+  -webkit-backdrop-filter: blur(32px) saturate(145%);
+}
+
+button:focus-visible, summary:focus-visible {
+  outline: 2px solid var(--color-nimbus-accent-bright);
+  outline-offset: 3px;
+}
+
+.nimbus-orb-orbit, .nimbus-orb-answer {
+  position: absolute;
+  pointer-events: none;
+  inset: -12%;
+  border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--color-nimbus-accent) 22%, transparent);
+}
+.nimbus-orb-orbit {
+  border-top-color: var(--color-nimbus-accent-bright);
+  animation: nimbus-orbit 2.4s linear infinite;
+}
+.nimbus-orb-answer {
+  animation: nimbus-answer 1.2s ease-out both;
+}
+@keyframes nimbus-orbit { to { transform: rotate(360deg); } }
+@keyframes nimbus-answer {
+  from { transform: scale(0.8); opacity: 0.8; }
+  to { transform: scale(1.6); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nimbus-orb-orbit, .nimbus-orb-answer { animation: none; }
+  .nimbus-orb-answer { display: none; }
+}
+
 @theme {
   /* Deep neutral graphite with a single cool accent.
    *

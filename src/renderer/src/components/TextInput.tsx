@@ -92,8 +92,8 @@ export function TextInput({
         // to type without saying anything.
         className={`flex items-center gap-2 border px-3 py-2 shadow-[0_8px_24px_-12px_rgba(0,0,0,0.8)] transition-colors ${
           compact
-            ? 'rounded-full border-white/25 bg-[#14161f] py-2.5 focus-within:border-nimbus-accent/55'
-            : 'rounded-xl border-white/15 bg-[#14161f]/95 focus-within:border-nimbus-accent/45'
+            ? 'nimbus-glass rounded-full border-white/25 py-2.5 focus-within:border-nimbus-accent/55'
+            : 'rounded-2xl border-white/15 bg-white/[0.045] py-3 focus-within:border-nimbus-accent/45'
         }`}
       >
         <input
@@ -136,6 +136,7 @@ export function TextInput({
             if (event.key === 'Escape') event.currentTarget.blur()
           }}
           placeholder={placeholder}
+          aria-label="Message Nimbus"
           spellCheck={false}
           className="min-w-0 flex-1 bg-transparent text-[13px] text-nimbus-text outline-none placeholder:text-nimbus-text-dim"
         />
