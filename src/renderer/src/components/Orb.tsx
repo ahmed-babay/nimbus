@@ -16,12 +16,13 @@ const ENERGY: Record<OrbMode, number> = {
   idle: .38, listening: .48, thinking: .58, searching: .65, speaking: .5, playing: .48
 }
 
-/** A fixed shell. Voice and answers change the light inside, never its size. */
+/** A fixed-size shell with a tiny voice-driven sway, never an expanding burst. */
 export function Orb({ state, searching = false, answerSeq = 0, levelRef, size = 52 }: OrbProps) {
+  const rootRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const mode = orbModeFor(state, searching)
-  const live = useRef({ state, mode })
-  live.current = { state, mode }
+  const live = useRef({ state, mode, size })
+  live.current = { state, mode, size }
   // Mounting an existing answer in another layout is not a new answer.
   const previousAnswer = useRef(answerSeq)
   const answeredAt = useRef(-Infinity)
@@ -75,19 +76,32 @@ export function Orb({ state, searching = false, answerSeq = 0, levelRef, size = 
       const raw = live.current.state === 'listening' || live.current.state === 'speaking' ? levelRef.current : 0
       const safe = Number.isFinite(raw) ? Math.max(0, Math.min(1, raw)) : 0
       level += (safe - level) * Math.min(1, dt / 120)
+      // A smooth, sub-two-pixel sway follows the voice envelope. Smaller
+      // dock orbs move proportionally less; silence settles back to center.
+      const amplitude = Math.sqrt(Math.max(0, level - .025)) * 1.6 * Math.min(1, live.current.size / 72)
+      if (rootRef.current) {
+        const seconds = now / 1000
+        const x = Math.sin(seconds * 16) * amplitude
+        const y = Math.sin(seconds * 11 + .7) * amplitude * .45
+        rootRef.current.style.transform = amplitude < .015 ? 'none' : `translate3d(${x.toFixed(3)}px, ${y.toFixed(3)}px, 0)`
+      }
       // Each channel eases together so the shell stays one continuous object.
       for (const key of ['beam', 'arc', 'core', 'shell'] as const) {
         for (let i = 0; i < 3; i++) palette[key][i] += (target[key][i] - palette[key][i]) * Math.min(1, dt / 320)
       }
       storm.frame(drive(now), dt, now)
     }
-    const onMotionChange = () => { level = 0; palette = stormPalette(STATE_THEME[live.current.mode].orb); target = palette; resize() }
+    const onMotionChange = () => {
+      level = 0
+      if (rootRef.current) rootRef.current.style.transform = 'none'
+      palette = stormPalette(STATE_THEME[live.current.mode].orb); target = palette; resize()
+    }
     motion.addEventListener('change', onMotionChange)
     frame = requestAnimationFrame(tick)
     return () => { cancelAnimationFrame(frame); observer.disconnect(); motion.removeEventListener('change', onMotionChange) }
   }, [levelRef])
 
-  return <div className="nimbus-orb nimbus-orb-contained relative shrink-0" data-state={state} style={{ width: size, height: size }} aria-hidden="true">
+  return <div ref={rootRef} className="nimbus-orb nimbus-orb-contained relative shrink-0" data-state={state} style={{ width: size, height: size }} aria-hidden="true">
     <canvas ref={canvasRef} className="h-full w-full" />
   </div>
 }
