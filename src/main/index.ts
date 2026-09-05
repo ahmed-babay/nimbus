@@ -207,11 +207,11 @@ let pendingCapture: ScreenCapture | null = null
 let pendingSelection: CapturedSelection | null = null
 
 function registerIpcHandlers(): void {
-  ipcMain.handle(IPC.TRANSCRIPT, async (event, utterance: string): Promise<NimbusResponse> => {
+  ipcMain.handle(IPC.TRANSCRIPT, async (event, utterance: string, requestId?: number): Promise<NimbusResponse> => {
     // Forward tokens as the model produces them, so the overlay can show the
     // answer building up instead of sitting on "Thinking…" until it's done.
     const stream = (chunk: string): void => {
-      if (!event.sender.isDestroyed()) event.sender.send(IPC.SPEECH_CHUNK, chunk)
+      if (!event.sender.isDestroyed()) event.sender.send(IPC.SPEECH_CHUNK, chunk, requestId)
     }
 
     // A screenshot is waiting: this question is about the screen, so answer

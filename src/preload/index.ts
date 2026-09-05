@@ -34,8 +34,8 @@ const api = {
     ipcRenderer.on(IPC.WAKE, listener)
     return () => ipcRenderer.removeListener(IPC.WAKE, listener)
   },
-  onSpeechChunk: (callback: (chunk: string) => void): (() => void) => {
-    const listener = (_event: unknown, chunk: string): void => callback(chunk)
+  onSpeechChunk: (callback: (chunk: string, requestId?: number) => void): (() => void) => {
+    const listener = (_event: unknown, chunk: string, requestId?: number): void => callback(chunk, requestId)
     ipcRenderer.on(IPC.SPEECH_CHUNK, listener)
     return () => ipcRenderer.removeListener(IPC.SPEECH_CHUNK, listener)
   },
@@ -85,8 +85,8 @@ const api = {
     ipcRenderer.on(IPC.SHOW_SETTINGS, listener)
     return () => ipcRenderer.removeListener(IPC.SHOW_SETTINGS, listener)
   },
-  sendTranscript: (utterance: string): Promise<NimbusResponse> =>
-    ipcRenderer.invoke(IPC.TRANSCRIPT, utterance),
+  sendTranscript: (utterance: string, requestId?: number): Promise<NimbusResponse> =>
+    ipcRenderer.invoke(IPC.TRANSCRIPT, utterance, requestId),
   /** Takes 16kHz mono float samples; the renderer decodes, main transcribes. */
   transcribeAudio: (pcm: ArrayBuffer): Promise<string> =>
     ipcRenderer.invoke(IPC.TRANSCRIBE_AUDIO, pcm),

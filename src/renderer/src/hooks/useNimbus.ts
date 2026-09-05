@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 import type { NimbusConfig, NimbusResponse, NimbusState, TextActionKind } from '@shared/types'
 import { useVoiceInput, type VoiceEndReason } from './useVoiceInput'
-import { playOpenChime, playCloseChime } from '../lib/chime'
+import { playOpenChime, playCloseChime, playInterruptChime } from '../lib/chime'
+import { useThinkingFeedback } from './useThinkingFeedback'
 import { useRadioPlayer, type RadioPlayerControls } from './useRadioPlayer'
 import { isStopPhrase, isStopPlaybackPhrase, isMediaStopRequest } from '../lib/stop-phrases'
 
@@ -42,6 +43,9 @@ export interface NimbusOverlayState {
   isOpen: boolean
   submitText: (text: string) => void
   finishListening: () => void
+  transcribing: boolean
+  interruptAnswer: () => void
+  replayAnswer: () => void
   /** Call when the user starts typing, to close the mic. */
   onTypingStart: () => void
   /** Whether speech input is enabled, and its toggle. */
@@ -68,6 +72,8 @@ export function useNimbus(): NimbusOverlayState {
   const [response, setResponse] = useState<NimbusResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [transcript, setTranscript] = useState<string | null>(null)
+  const [transcribing, setTranscribing] = useState(false)
+  const [turnSequence, setTurnSequence] = useState(0)
   /** Answer text accumulating live from the model, shown while thinking. */
   const [streamingText, setStreamingText] = useState('')
   /** True while a web search is actually in flight, so the orb can show that rather than plain thinking. */
@@ -123,7 +129,11 @@ export function useNimbus(): NimbusOverlayState {
   /** Bumped on every answer, so the orb can react without knowing about TTS. */
   const [answerSeq, setAnswerSeq] = useState(0)
   const [ttsEnabled, setTtsEnabled] = useState(true)
+  const cancelThinkingFeedback = useThinkingFeedback(state === 'thinking' && isOpen, ttsEnabled, config?.language?.native, turnSequence)
+  const cancelThinkingRef = useRef(cancelThinkingFeedback)
+  cancelThinkingRef.current = cancelThinkingFeedback
   const ttsEnabledRef = useRef(true)
+  const voiceEpochRef = useRef(0)
   useEffect(() => {
     ttsEnabledRef.current = ttsEnabled
   }, [ttsEnabled])
@@ -187,12 +197,15 @@ export function useNimbus(): NimbusOverlayState {
   }, [])
 
   const stopPlayback = useCallback(() => {
+    cancelThinkingRef.current()
+    levelRef.current = 0
     const source = currentSourceRef.current
     currentSourceRef.current = null
     if (source) {
       source.onended = null
       try {
         source.stop()
+        source.disconnect()
       } catch {
         /* already stopped */
       }
@@ -213,6 +226,9 @@ export function useNimbus(): NimbusOverlayState {
   const openPanel = useCallback(
     (panel: 'settings' | 'standing') => {
       clearFadeTimer()
+      generationRef.current += 1
+      if (!isOpenRef.current) playOpenChime()
+      window.speechSynthesis?.cancel()
       cancelVoiceInputRef.current?.()
       stopPlaybackNowRef.current?.()
       setIsOpen(true)
@@ -266,6 +282,7 @@ export function useNimbus(): NimbusOverlayState {
     // Only for a real close: a dismiss reached while already closed (a
     // second Esc, a stray auto-fade tick) must not play the sound twice.
     if (isOpenRef.current) playCloseChime()
+    isOpenRef.current = false
     holdOpenRef.current = false
     clearFadeTimer()
     setIsOpen(false)
@@ -379,6 +396,8 @@ export function useNimbus(): NimbusOverlayState {
       // rather than leaving it stuck mid-reveal.
       speechProgressRef.current = 1
       const utterance = new SpeechSynthesisUtterance(text)
+      const generation = generationRef.current
+      const voiceEpoch = voiceEpochRef.current
       // Keep the emergency system fallback consistent with Nimbus's male
       // neural voices. Voice names differ by Windows version, so prefer a
       // known English male voice and leave the system default only when none
@@ -404,10 +423,14 @@ export function useNimbus(): NimbusOverlayState {
         .map((name) => voices.find((candidate) => candidate.name.toLowerCase().includes(name)))
         .find(Boolean)
       if (maleVoice) utterance.voice = maleVoice
-      utterance.rate = 1.18
-      utterance.pitch = 0.92
-      utterance.onend = thenListen ? listenAgain : scheduleAutoFade
-      utterance.onerror = scheduleAutoFade
+      utterance.rate = 1.04
+      utterance.pitch = 1
+      utterance.onend = () => {
+        if (generation !== generationRef.current || voiceEpoch !== voiceEpochRef.current || !ttsEnabledRef.current || !isOpenRef.current) return
+        if (thenListen) listenAgain()
+        else scheduleAutoFade()
+      }
+      utterance.onerror = () => { if (generation === generationRef.current && isOpenRef.current) scheduleAutoFade() }
       window.speechSynthesis.speak(utterance)
     },
     [listenAgain, scheduleAutoFade]
@@ -444,11 +467,12 @@ export function useNimbus(): NimbusOverlayState {
       // it returns. Anything started in this generation must not act once
       // that has happened, or Nimbus talks into a shut overlay.
       const generation = generationRef.current
+      const voiceEpoch = ++voiceEpochRef.current
 
       window.nimbus
         .synthesizeSpeech(text)
         .then(async ({ audio, mimeType }) => {
-          if (generation !== generationRef.current) {
+          if (generation !== generationRef.current || voiceEpoch !== voiceEpochRef.current || !ttsEnabledRef.current || !isOpenRef.current) {
             console.log('[nimbus] discarding speech for a closed session')
             return
           }
@@ -465,7 +489,7 @@ export function useNimbus(): NimbusOverlayState {
 
           // decodeAudioData detaches the buffer it's given, so hand it a copy.
           const buffer = await ctx.decodeAudioData(audio.slice(0))
-          if (generation !== generationRef.current) return
+          if (generation !== generationRef.current || voiceEpoch !== voiceEpochRef.current || !ttsEnabledRef.current || !isOpenRef.current) return
 
           stopPlayback()
           const source = ctx.createBufferSource()
@@ -527,6 +551,7 @@ export function useNimbus(): NimbusOverlayState {
           console.log(`[nimbus] speaking via Edge neural voice (${duration.toFixed(1)}s)`)
         })
         .catch((err: unknown) => {
+          if (generation !== generationRef.current || voiceEpoch !== voiceEpochRef.current || !ttsEnabledRef.current || !isOpenRef.current) return
           // Loud, not silent: a quiet fallback here is exactly what made the
           // voice seem "unchanged" while the neural path was actually failing.
           console.error(
@@ -542,6 +567,10 @@ export function useNimbus(): NimbusOverlayState {
   /** Sends an utterance through the normal assistant pipeline. */
   const askQuestion = useCallback(
     (finalTranscript: string) => {
+      generationRef.current += 1
+      setTurnSequence(current => current + 1)
+      stopPlayback()
+      window.speechSynthesis?.cancel()
       // A timer from an empty/error state belongs to that state, not to the
       // question that just replaced it. Leaving it armed closes the overlay
       // partway through a slow local inference or while the next prompt is
@@ -559,12 +588,13 @@ export function useNimbus(): NimbusOverlayState {
       setState('thinking')
       const generation = generationRef.current
       window.nimbus
-        .sendTranscript(finalTranscript)
+        .sendTranscript(finalTranscript, generation)
         .then((res) => {
           if (generation !== generationRef.current) {
             console.log('[nimbus] discarding answer for a closed session')
             return
           }
+          cancelThinkingRef.current()
           setStreamingText('')
           setSearching(false)
           setPendingCapture(null)
@@ -591,6 +621,8 @@ export function useNimbus(): NimbusOverlayState {
           speak(res.speech)
         })
         .catch((err: unknown) => {
+          if (generation !== generationRef.current || !isOpenRef.current) return
+          cancelThinkingRef.current()
           const message = err instanceof Error ? err.message : 'Something went wrong.'
           setSearching(false)
           setError(message)
@@ -598,7 +630,7 @@ export function useNimbus(): NimbusOverlayState {
           speak(message)
         })
     },
-    [clearFadeTimer, speak]
+    [clearFadeTimer, speak, stopPlayback]
   )
 
   useEffect(() => {
@@ -685,10 +717,15 @@ export function useNimbus(): NimbusOverlayState {
       setStreamingText('')
       setError(null)
       setState('thinking')
+      const generation = ++generationRef.current
+      setTurnSequence(current => current + 1)
+      stopPlaybackNowRef.current?.()
 
       window.nimbus
         .runTextAction(kind, customInstruction)
         .then(({ result, canReplace }) => {
+          if (generation !== generationRef.current || !isOpenRef.current) return
+          cancelThinkingRef.current()
           setStreamingText('')
           // Keep the selection context alive so a spoken follow-up chains
           // onto this result rather than being treated as a new question.
@@ -711,7 +748,9 @@ export function useNimbus(): NimbusOverlayState {
           startVoiceInputRef.current?.()
         })
         .catch((err: unknown) => {
+          if (generation !== generationRef.current || !isOpenRef.current) return
           setStreamingText('')
+          cancelThinkingRef.current()
           const message = err instanceof Error ? err.message : 'That action failed.'
 
           // The main process no longer holds the selection (it was pasted, or
@@ -782,32 +821,34 @@ export function useNimbus(): NimbusOverlayState {
 
   /** Explicit on/off for speech input. */
   const toggleMic = useCallback(() => {
-    setMicEnabled((on) => {
-      const next = !on
+      const next = !micEnabledRef.current
       micEnabledRef.current = next
+      setMicEnabled(next)
       if (!next) {
-        stopVoiceInputRef.current?.()
+        cancelVoiceInputRef.current?.()
+        playInterruptChime()
         if (stateRef.current === 'listening') setState('idle')
       } else if (stateRef.current === 'idle') {
         setState('listening')
         startVoiceInputRef.current?.()
       }
-      return next
-    })
   }, [])
 
   /** Explicit on/off for spoken answers. */
   const toggleTts = useCallback(() => {
-    setTtsEnabled((on) => {
-      const next = !on
+      const next = !ttsEnabledRef.current
+      voiceEpochRef.current += 1
       ttsEnabledRef.current = next
+      setTtsEnabled(next)
       // Silence anything mid-sentence rather than letting it finish.
       if (!next) {
+        playInterruptChime()
         window.speechSynthesis?.cancel()
         stopPlaybackNowRef.current?.()
+        speechProgressRef.current = 1
+        startPendingRadioRef.current?.()
+        if (stateRef.current === 'speaking') setState('idle')
       }
-      return next
-    })
   }, [])
 
   /** Closes the mic the moment typing starts, before it hears the keyboard. */
@@ -891,6 +932,7 @@ export function useNimbus(): NimbusOverlayState {
     onEnd: handleVoiceEnd,
     onError: handleVoiceError,
     onLevel: handleLevel,
+    onProcessing: setTranscribing,
     endOfSpeechMs: config?.voice?.endOfSpeechMs
   })
 
@@ -910,7 +952,9 @@ export function useNimbus(): NimbusOverlayState {
   }, [])
 
   useEffect(() => {
-    return window.nimbus.onSpeechChunk((chunk) => {
+    return window.nimbus.onSpeechChunk((chunk, requestId) => {
+      if (!isOpenRef.current || stateRef.current !== 'thinking') return
+      if (requestId !== undefined && requestId !== generationRef.current) return
       setStreamingText((current) => current + chunk)
     })
   }, [])
@@ -991,6 +1035,12 @@ export function useNimbus(): NimbusOverlayState {
   useEffect(() => {
     const unsubscribeWake = window.nimbus.onWake(() => {
       clearFadeTimer()
+      if (stateRef.current === 'speaking' || stateRef.current === 'thinking') {
+        generationRef.current += 1
+        stopPlaybackNowRef.current?.()
+        window.speechSynthesis?.cancel()
+        playInterruptChime()
+      }
       // Only when it was actually closed. Waking an already-open overlay for a
       // follow-up would otherwise stack the opening chime on top of the
       // listening one, which is two sounds for one event.
@@ -1030,28 +1080,39 @@ export function useNimbus(): NimbusOverlayState {
       }
     })
 
-    const unsubscribeSettings = window.nimbus.onShowSettings(() => {
-      clearFadeTimer()
-      setIsOpen(true)
-      setMode('settings')
-      setState('idle')
-    })
-
-    const unsubscribeStanding = window.nimbus.onShowStanding(() => {
-      clearFadeTimer()
-      setIsOpen(true)
-      setMode('standing')
-      setState('idle')
-    })
+    const unsubscribeSettings = window.nimbus.onShowSettings(openSettings)
+    const unsubscribeStanding = window.nimbus.onShowStanding(openStanding)
 
     return () => {
       unsubscribeWake()
       unsubscribeSettings()
       unsubscribeStanding()
     }
-  }, [clearFadeTimer, startVoiceInput])
+  }, [clearFadeTimer, startVoiceInput, openSettings, openStanding])
 
   useEffect(() => clearFadeTimer, [clearFadeTimer])
+
+  const interruptAnswer = useCallback(() => {
+    generationRef.current += 1
+    stopPlayback()
+    window.speechSynthesis?.cancel()
+    cancelVoiceInputRef.current?.()
+    setSearching(false)
+    setStreamingText('')
+    speechProgressRef.current = 1
+    setState('idle')
+    playInterruptChime()
+  }, [stopPlayback])
+
+  const replayAnswer = useCallback(() => {
+    if (!response?.speech || !isOpenRef.current) return
+    generationRef.current += 1
+    stopPlayback()
+    window.speechSynthesis?.cancel()
+    cancelVoiceInputRef.current?.()
+    setState('speaking')
+    speak(response.speech, false)
+  }, [response, speak, stopPlayback])
 
   return {
     state,
@@ -1072,6 +1133,9 @@ export function useNimbus(): NimbusOverlayState {
     isOpen,
     submitText,
     finishListening: stopVoiceInput,
+    transcribing,
+    interruptAnswer,
+    replayAnswer,
     onTypingStart: handleTypingStart,
     answerSeq,
     micEnabled,

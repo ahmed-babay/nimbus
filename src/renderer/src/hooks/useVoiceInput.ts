@@ -118,6 +118,7 @@ export interface UseVoiceInputOptions {
   onError?: (error: string) => void
   /** Live mic level, 0..1 — drives the waveform visualisation. */
   onLevel?: (level: number) => void
+  onProcessing?: (processing: boolean) => void
   /** Overrides SILENCE_MS_SETTLED from config, so end-of-turn responsiveness
    *  is tunable without editing code. */
   endOfSpeechMs?: number
@@ -163,6 +164,7 @@ export function useVoiceInput({
   onEnd,
   onError,
   onLevel,
+  onProcessing,
   endOfSpeechMs
 }: UseVoiceInputOptions): VoiceInputControls {
   const sessionRef = useRef<VoiceSession | null>(null)
@@ -209,11 +211,12 @@ export function useVoiceInput({
    * can't come back a second later as a spoken answer.
    */
   const cancel = useCallback(() => {
+    onProcessing?.(false)
     sessionIdRef.current += 1
     const session = sessionRef.current
     if (session?.recorder && session.recorder.state !== 'inactive') session.recorder.stop()
     cleanup(session)
-  }, [cleanup])
+  }, [cleanup, onProcessing])
 
   const stop = useCallback(() => {
     const session = sessionRef.current
@@ -233,6 +236,7 @@ export function useVoiceInput({
   )
 
   const start = useCallback(() => {
+    onProcessing?.(false)
     if (!isSupported) {
       onError?.('Microphone recording is not supported in this environment.')
       return
@@ -299,7 +303,6 @@ export function useVoiceInput({
         }
 
         recorder.onstop = () => {
-          playListenEndChime()
           const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' })
           const spoke = speech.detected
           cleanup(session)
@@ -343,6 +346,8 @@ export function useVoiceInput({
             return
           }
 
+          playListenEndChime()
+          onProcessing?.(true)
           toPcm(blob)
             .then((pcm) => {
               // The user can start typing while PCM conversion is in flight.
@@ -361,20 +366,24 @@ export function useVoiceInput({
                 return
               }
               if (!transcript) {
+                onProcessing?.(false)
                 console.log('[voice] transcription returned empty text')
                 onEnd?.('empty')
                 return
               }
               if (isLikelyNoise(transcript)) {
+                onProcessing?.(false)
                 console.log(`[voice] discarding noise transcript: "${transcript}"`)
                 onEnd?.('empty')
                 return
               }
               console.log(`[voice] transcript: "${transcript}"`)
+              onProcessing?.(false)
               onResult(transcript)
             })
             .catch((err: unknown) => {
               if (sessionId !== sessionIdRef.current) return
+              onProcessing?.(false)
               const message = err instanceof Error ? err.message : 'Transcription failed.'
               console.error(`[voice] transcription error: ${message}`)
               onError?.(message)
@@ -645,7 +654,7 @@ export function useVoiceInput({
         const message = err instanceof Error ? err.message : 'Microphone access was denied.'
         onError?.(message)
       })
-  }, [isSupported, onResult, onEnd, onError, onLevel, endOfSpeechMs, cleanup, stop])
+  }, [isSupported, onResult, onEnd, onError, onLevel, onProcessing, endOfSpeechMs, cleanup, stop])
 
   return { start, stop, cancel, isRecording, isSupported }
 }
