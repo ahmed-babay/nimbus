@@ -277,6 +277,18 @@ Prefer "search" over "chat" whenever the answer depends on facts about the real
 world that may have changed. It is much better to search unnecessarily than to
 confidently state something out of date.
 
+BEING TOLD TO SEARCH IS NOT A SUGGESTION. If the user says to search, look
+something up, check online, google it, research it, see what the web says — in
+any wording, any language — the intent is "search" and params.query is what
+they wanted looked up, with the instruction itself removed ("search the
+internet for the price of a 3070" -> query "rtx 3070 price"). Never answer such
+a sentence as "chat", and never route it anywhere that would end in saying you
+do not have that information: they have just told you where to get it. The one
+exception is when a dedicated intent above reaches the same live source and
+does it better — "google the weather in Berlin" is still "weather", "look up
+the next train to Frankfurt" is still "transit" — because those return real
+data rather than links. Anything with no such intent is "search".
+
 Separately, for ANY intent, set params.topic when a picture or diagram would
 genuinely help the user understand the answer — a physical object, place,
 organism, structure, or a process that is normally taught with a diagram.

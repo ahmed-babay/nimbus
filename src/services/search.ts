@@ -88,6 +88,30 @@ export async function webSearch(query: string): Promise<SearchCardData> {
   return { query, answer: json.answer ?? null, results }
 }
 
+/**
+ * The snippet search's results in the shape the deep path produces.
+ *
+ * Snippets are thinner than read pages, but they are the same *kind* of thing
+ * — a title, a host, and some text that was on the page — so everything
+ * downstream that reads evidence works on both without a second code path.
+ * Tavily's own summary leads, because it is the one part of a snippet search
+ * that has already been aimed at the question.
+ */
+export function snippetEvidence(data: SearchCardData): Evidence[] {
+  const pages = data.results.map((result) => ({
+    title: result.title,
+    url: result.url,
+    host: hostOf(result.url),
+    published: null,
+    text: result.snippet
+  }))
+  if (!data.answer) return pages
+  return [
+    { title: 'Summary of the results', url: '', host: 'search', published: null, text: data.answer },
+    ...pages
+  ]
+}
+
 /** One page, trimmed to what the model should read. */
 export interface Evidence {
   title: string

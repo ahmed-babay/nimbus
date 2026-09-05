@@ -5,7 +5,8 @@ import { getHistorySummary } from './conversation'
 import { currentTimeContext } from './now'
 import { replyLanguageContext } from './region'
 import type { StreamHandler } from './gemini'
-import type { SearchCardData } from '../shared/types'
+import { extractFacts } from './facts'
+import type { FactsCardData, SearchCardData } from '../shared/types'
 import config from '../../config.json'
 
 /**
@@ -114,7 +115,7 @@ export async function research(
   query: string,
   onChunk?: StreamHandler,
   onSearching?: (active: boolean) => void
-): Promise<{ speech: string; card: SearchCardData }> {
+): Promise<{ speech: string; card: SearchCardData; facts: FactsCardData | null }> {
   const queries = config.search?.plan === false ? [query] : await planQueries(question, query)
 
   onSearching?.(true)
@@ -145,12 +146,30 @@ export async function research(
 
   const card: SearchCardData = { query: queries.join(' · '), answer: null, results }
 
+  /**
+   * Pulling the card's figures out of the same pages, alongside writing the
+   * answer rather than after it.
+   *
+   * Started here, before synthesis, and awaited at the very end — so on a
+   * cloud provider it runs inside the time the answer takes to write and the
+   * card is effectively free. Running it after the answer instead would put
+   * two model calls in series and add seconds to every web answer, which is
+   * far too high a price for a nicer layout.
+   */
+  const pending = extractFacts({ question, query: card.query, evidence, sources: results })
+
+  /** Attaches the spoken answer, so the card still reads with the sound off. */
+  const withAnswer = async (speech: string): Promise<FactsCardData | null> => {
+    const extracted = await pending
+    return extracted ? { ...extracted, answer: speech } : null
+  }
+
   if (!onChunk) {
     const result = await withModelFallback((name) =>
       buildModel(name, systemInstruction).generateContent(prompt)
     )
     const speech = result.response.text().trim()
-    return { speech, card: { ...card, answer: speech } }
+    return { speech, card: { ...card, answer: speech }, facts: await withAnswer(speech) }
   }
 
   const { stream } = await withModelFallback((name) =>
@@ -164,5 +183,5 @@ export async function research(
     onChunk(chunk)
   }
   const speech = full.trim()
-  return { speech, card: { ...card, answer: speech } }
+  return { speech, card: { ...card, answer: speech }, facts: await withAnswer(speech) }
 }

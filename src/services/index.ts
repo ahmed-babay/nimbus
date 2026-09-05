@@ -19,8 +19,9 @@ import { getNews } from './news'
 import { getTrendingRepos } from './github'
 import { describeEpisode, nextEpisode } from './tv'
 import { describeFlights, overheadFlights } from './flights'
-import { webSearch } from './search'
+import { snippetEvidence, webSearch } from './search'
 import { research } from './research'
+import { extractFacts } from './facts'
 import { tryIllustrate } from './illustrate'
 import { addReminder, cancelReminders, pendingReminders } from './reminders'
 import { planDepartureAlarm } from './departure-alarm'
@@ -38,6 +39,7 @@ import { lookupEntity } from './wikipedia'
 import { findMusic } from './music'
 import { wantsBrowserPlayback } from './music-intent'
 import { isStopPlaybackPhrase, isMediaStopRequest } from '../shared/stop-phrases'
+import { searchSubject, wantsWebSearch } from '../shared/search-phrases'
 import { watchJourney, wantsWatching } from './watchers'
 import { findJourneys, wantsArrival } from './transit'
 import { outdoorConditions, describeOutdoors } from './outdoors'
@@ -149,6 +151,8 @@ export async function handleUtterance(
   return response
 }
 
+import { quickCalculation } from '../shared/quick-calculation'
+
 async function resolveUtterance(
   utterance: string,
   onChunk?: StreamHandler,
@@ -160,12 +164,39 @@ async function resolveUtterance(
   if (isMediaStopRequest(utterance)) {
     return { speech: 'Stopped.', card: { type: 'text' }, intent: 'music' }
   }
-  const { intent, params } = await classifyIntent(utterance)
+  const calculation = quickCalculation(utterance)
+  if (calculation !== null) return { speech: calculation, card: { type: 'text' }, intent: 'chat' }
+  const classified = await classifyIntent(utterance)
+  const { intent, params } = honourExplicitSearch(utterance, classified)
   // Noted before running it, so a question still counts even if the lookup
   // fails. What is being learned is what you asked for, not what came back.
   noteAsk(intent, params)
   const response = await runIntent(intent, params, utterance, onChunk, onSearching)
   return { ...response, intent }
+}
+
+/**
+ * Intents that answer from the model rather than from anything live.
+ *
+ * These are the only ones an explicit "search the internet" overrides. The
+ * rest already reach a real source — asking Nimbus to look up the weather and
+ * having it read a weather API is exactly right, and a list of blue links
+ * would be a worse answer to the same sentence. What the override is for is
+ * the case the user actually hit: being told "I don't have information about
+ * that" moments after saying where to get it.
+ */
+const MEMORY_ONLY_INTENTS = new Set<NimbusIntent>(['chat', 'recall'])
+
+/** Forces the search path when the user said, in so many words, to search. */
+function honourExplicitSearch(
+  utterance: string,
+  classified: { intent: NimbusIntent; params: Record<string, string> }
+): { intent: NimbusIntent; params: Record<string, string> } {
+  if (!MEMORY_ONLY_INTENTS.has(classified.intent)) return classified
+  if (!wantsWebSearch(utterance)) return classified
+  const query = classified.params.query || searchSubject(utterance)
+  console.log(`[nimbus] "${classified.intent}" overridden — the user asked for a web search`)
+  return { intent: 'search', params: { ...classified.params, query } }
 }
 
 async function runIntent(
@@ -849,11 +880,13 @@ async function runIntent(
               }
             : undefined
           try {
-            const { speech, card } = await research(utterance, query, track, onSearching)
-            return {
-              speech,
-              card: { type: 'search', data: { ...card, illustrations: await pictures } }
-            }
+            const { speech, card, facts } = await research(utterance, query, track, onSearching)
+            const illustrations = await pictures
+            // The laid-out card when the sources actually held a structure,
+            // and the ordinary result list when they did not. Same answer
+            // either way — this only decides how it is shown.
+            if (facts) return { speech, card: { type: 'facts', data: { ...facts, illustrations } } }
+            return { speech, card: { type: 'search', data: { ...card, illustrations } } }
           } catch (err) {
             if (streamed) throw err
             console.warn('[nimbus] deep search failed, falling back:', err)
@@ -867,6 +900,14 @@ async function runIntent(
         } finally {
           onSearching?.(false)
         }
+        // Started before the answer is phrased, for the same reason the deep
+        // path does it: two model calls in parallel cost one call's wait.
+        const pendingFacts = extractFacts({
+          question: utterance,
+          query,
+          evidence: snippetEvidence(data),
+          sources: data.results
+        })
         // Tavily often returns its own summary; prefer letting Gemini phrase
         // it conversationally, but fall back to Tavily's if Gemini is rate
         // limited so the user still gets an answer.
@@ -882,12 +923,14 @@ async function runIntent(
           if (!data.answer) throw err
           speech = data.answer
         }
+        const illustrations = await pictures
+        const facts = await pendingFacts
+        if (facts) {
+          return { speech, card: { type: 'facts', data: { ...facts, answer: speech, illustrations } } }
+        }
         return {
           speech,
-          card: {
-            type: 'search',
-            data: { ...data, answer: speech, illustrations: await pictures }
-          }
+          card: { type: 'search', data: { ...data, answer: speech, illustrations } }
         }
       }
 

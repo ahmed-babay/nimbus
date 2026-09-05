@@ -267,6 +267,82 @@ export interface SearchCardData {
   illustrations?: Illustration[]
 }
 
+/**
+ * How a looked-up answer wants to be laid out.
+ *
+ * Weather, trains and stocks each got a card built for them, and everything
+ * else — which is most of what anyone asks — got three blue links. This is the
+ * generic version of the same idea: the shape is chosen per question rather
+ * than per integration, so "how much is an RTX 3070" gets the price treatment
+ * and "what are the requirements for a German driving licence" gets the list,
+ * without either needing an API of its own.
+ */
+export type FactLayout =
+  /** One figure that is money, plus where to get it. */
+  | 'price'
+  /** One figure that is not money — a distance, a score, a population. */
+  | 'metric'
+  /** A thing and its properties: specs, a person, a place. */
+  | 'profile'
+  /** Two or more things set against each other. */
+  | 'comparison'
+  /** Points that are not ordered. */
+  | 'list'
+  /** Points that are ordered, and the order matters. */
+  | 'steps'
+  /** Things that happened, or will, in time order. */
+  | 'timeline'
+
+/** One labelled value. The atom every fact layout is built from. */
+export interface FactRow {
+  label: string
+  value: string
+  /** A quieter trailing note — "as of Tuesday", "including VAT". */
+  note?: string
+  /** Colours the value when it is a movement rather than a level. */
+  trend?: 'up' | 'down'
+}
+
+/** One column of a comparison, or one seller in a price list. */
+export interface FactGroup {
+  title: string
+  /** The figure that leads this group. */
+  headline?: string
+  note?: string
+  rows: FactRow[]
+  /** Where this one came from, when it is worth opening. */
+  url?: string
+}
+
+/**
+ * A web answer, laid out for the question that was asked.
+ *
+ * Everything past `answer`, `query` and `sources` is optional: extraction is a
+ * best effort over pages nobody controls, and a card that renders half of a
+ * good structure is better than one that refuses to render without all of it.
+ * When too little comes back the plain search card is shown instead.
+ */
+export interface FactsCardData {
+  layout: FactLayout
+  /** What the answer is about — "RTX 3070", "Sony WH-1000XM5". */
+  title: string
+  subtitle?: string
+  /** The single figure the question was really asking for. */
+  headline?: string
+  /** What that figure is — "cheapest new", "average", "driving". */
+  headlineLabel?: string
+  /** Where and when it came from — "Amazon.de · today". */
+  headlineNote?: string
+  rows: FactRow[]
+  groups: FactGroup[]
+  bullets: string[]
+  /** The spoken answer, so the card still reads with the sound off. */
+  answer: string
+  query: string
+  sources: SearchResult[]
+  illustrations?: Illustration[]
+}
+
 /** A spoken explanation that had no data card of its own, but earned pictures. */
 export interface ExplainerCardData {
   topic: string
@@ -564,6 +640,7 @@ export type ResponseCardData =
   | { type: 'tv'; data: TvCardData }
   | { type: 'flights'; data: FlightsCardData }
   | { type: 'search'; data: SearchCardData }
+  | { type: 'facts'; data: FactsCardData }
   | { type: 'entity'; data: EntityCardData }
   | { type: 'music'; data: MusicCardData }
   | { type: 'radio'; data: RadioCardData }

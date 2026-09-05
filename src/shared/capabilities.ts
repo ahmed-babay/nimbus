@@ -31,6 +31,8 @@ export interface Capability {
 }
 
 export const CAPABILITIES: Capability[] = [
+  { group: 'Everyday tools', title: 'Calculate instantly', example: 'calculate (125 + 75) / 4', keywords: 'math arithmetic calculator percent percentage local offline' },
+  { group: 'Everyday tools', title: 'Convert units', example: 'convert 10 miles to km', keywords: 'units distance weight temperature celsius fahrenheit kg pounds inches feet offline' },
   {
     group: 'Setup',
     title: 'Settings and API keys',
@@ -56,8 +58,8 @@ export const CAPABILITIES: Capability[] = [
   {
     group: 'Look things up',
     title: 'Search the web',
-    example: 'what happened with the ECB rate decision',
-    keywords: 'google research find news current'
+    example: 'search the internet for the price of an RTX 3070',
+    keywords: 'google research find news current price cost how much specs compare online internet look up'
   },
   {
     group: 'Look things up',
