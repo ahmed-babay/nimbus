@@ -16,6 +16,24 @@ const { findStation, normalizeGenre } = source('src/services/radio.ts')
 const { silenceWindowMs } = source('src/renderer/src/lib/voice-timing.ts')
 const { deferFeedback } = source('src/renderer/src/lib/deferred-feedback.ts')
 const { SOUND_SCORE } = source('src/renderer/src/lib/sound-design.ts')
+const { chooseAcknowledgment } = source('src/renderer/src/lib/acknowledgment-phrases.ts')
+
+test('acknowledgments vary without repeating the last spoken phrase', () => {
+  for (const language of ['English', 'German', 'Arabic', 'French', 'Spanish']) {
+    const choices = new Set([0, .25, .5, .99].map(value => chooseAcknowledgment(language, undefined, () => value)))
+    assert.equal(choices.size, 4)
+    for (const previous of choices) {
+      for (const value of [0, .4, .99]) {
+        const next = chooseAcknowledgment(language, previous, () => value)
+        assert.ok(choices.has(next))
+        assert.notEqual(next, previous)
+        assert.doesNotMatch(next, /hmm/i)
+      }
+    }
+  }
+  assert.equal(chooseAcknowledgment(' English ', undefined, () => 0), 'Let me check.')
+  assert.equal(chooseAcknowledgment('unsupported'), undefined)
+})
 
 test('sound cues have distinct contours and bounded levels and tails', () => {
   const scores = Object.values(SOUND_SCORE)
