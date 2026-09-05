@@ -644,7 +644,7 @@ export function createStormOrb(canvas: HTMLCanvasElement, options: StormOptions)
    */
   function tremorAmplitude(tremor: number, R: number): number {
     if (tremor <= 0.001) return 0
-    return tremor * clamp(R * 0.062, 1.2, 4.2)
+    return tremor * clamp(R * 0.12, 2.2, 6)
   }
 
   /**

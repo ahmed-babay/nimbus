@@ -1,4 +1,4 @@
-import { motion } from 'framer-motion'
+import { motion, useReducedMotion } from 'framer-motion'
 
 import type { WeatherKind } from '@shared/types'
 
@@ -22,13 +22,11 @@ const RAIN = 'var(--color-nimbus-cyan)'
 
 /** Slow rotation, so the rays read as a sun rather than a gear. */
 function Sun({ cx, cy, r }: { cx: number; cy: number; r: number }) {
+  const reducedMotion = useReducedMotion()
   return (
     <g>
-      <motion.g
-        animate={{ rotate: 360 }}
-        transition={{ duration: 40, repeat: Infinity, ease: 'linear' }}
-        style={{ originX: `${cx}px`, originY: `${cy}px` }}
-      >
+      <g className="weather-sun-rays">
+        {!reducedMotion && <animateTransform attributeName="transform" type="rotate" from={`0 ${cx} ${cy}`} to={`360 ${cx} ${cy}`} dur="40s" repeatCount="indefinite" />}
         {Array.from({ length: 8 }).map((_, i) => (
           <line
             key={i}
@@ -42,7 +40,7 @@ function Sun({ cx, cy, r }: { cx: number; cy: number; r: number }) {
             transform={`rotate(${i * 45} ${cx} ${cy})`}
           />
         ))}
-      </motion.g>
+      </g>
       <motion.circle
         cx={cx}
         cy={cy}

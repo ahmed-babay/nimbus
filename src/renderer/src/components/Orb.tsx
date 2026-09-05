@@ -84,7 +84,7 @@ export function Orb({ state, searching = false, answerSeq = 0, levelRef, size = 
       // Eased so a layout tremor lands hard and fades, rather than ramping
       // linearly down like a slider being dragged.
       const settling = pulse * pulse * 0.72
-      const speaking = live.current.state === 'speaking' ? Math.min(1, 0.42 + level * 0.75) : 0
+      const speaking = live.current.state === 'speaking' ? Math.min(1, 0.75 + level * 1.1) : 0
       return Math.min(1, Math.max(settling, speaking))
     }
 
