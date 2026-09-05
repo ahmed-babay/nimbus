@@ -8,6 +8,7 @@ import { SelectionActions } from './components/SelectionActions'
 import { TextInput } from './components/TextInput'
 import { KeySettings } from './components/KeySettings'
 import { ExperienceSettings } from './components/ExperienceSettings'
+import { AnswerLibrary } from './components/AnswerLibrary'
 import { Presence } from './components/Presence'
 import { VoiceMessageBar } from './components/VoiceMessageBar'
 import { SubtitleBar } from './components/SubtitleBar'
@@ -51,6 +52,7 @@ const PEEK_SPRING = { duration: 0.2, ease: 'easeOut' as const }
 
 export default function App() {
   const [commandsOpen, setCommandsOpen] = useState(false)
+  const [libraryOpen, setLibraryOpen] = useState(false)
   const {
     state,
     mode,
@@ -128,8 +130,8 @@ export default function App() {
   }, [overlayLayout.squeeze])
 
   useEffect(() => {
-    setHoldOpen(subtitles.active || meetingOpen || overlayLayout.corner !== null)
-  }, [subtitles.active, meetingOpen, overlayLayout.corner, setHoldOpen])
+    setHoldOpen(libraryOpen || subtitles.active || meetingOpen || overlayLayout.corner !== null)
+  }, [libraryOpen, subtitles.active, meetingOpen, overlayLayout.corner, setHoldOpen])
 
   // Settings and the watching list need the full card. Coming back to the
   // assistant while still docked returns to the compact dock, not a full
@@ -469,6 +471,9 @@ export default function App() {
               // Header and input stay put; only the answer between them moves.
               <div className="nimbus-studio flex min-h-0 flex-1 flex-col px-6 py-5">
                 <Header
+                  onLibraryChange={setLibraryOpen}
+                  onLibraryOpen={() => { onTypingStart(); if (state !== 'idle') interruptAnswer() }}
+                  onAsk={submitText}
                   state={transcribing ? 'thinking' : state}
                   searching={searching}
                   onClose={dismiss}
@@ -488,7 +493,7 @@ export default function App() {
                   onDragEnd={onDragEnd}
                 />
 
-                <Presence state={state} searching={searching} answerSeq={answerSeq} levelRef={levelRef} compact={Boolean(commandsOpen || response || error || pendingSelection || pendingCapture || state === 'thinking')} transcribing={transcribing} />
+                <Presence state={state} searching={searching} answerSeq={answerSeq} levelRef={levelRef} compact={Boolean(commandsOpen || response || error || pendingSelection || pendingCapture || state === 'thinking')} transcribing={transcribing} pulseKey={squeeze} />
 
                 <div className="flex min-h-0 flex-1 gap-3.5">
 
@@ -499,6 +504,7 @@ export default function App() {
                         hiccup can't wipe out an answer being read. */}
                     {commandsOpen && !response && !error ? null : response ? (
                       <ResponseCard
+                        question={transcript ?? undefined}
                         response={response}
                         speechProgressRef={speechProgressRef}
                         radio={radio}
@@ -694,6 +700,7 @@ function PeekIcon({
         levelRef={levelRef}
         size={42}
         tight
+        pulseKey="icon"
       />
     </motion.div>
   )
@@ -787,6 +794,7 @@ function PeekDock({
           levelRef={levelRef}
           size={36}
           tight
+          pulseKey="compact"
         />
         <div className="min-w-0 flex-1">
           <p className="text-[12px] font-semibold tracking-[-0.01em] text-nimbus-text">Nimbus</p>
@@ -866,6 +874,9 @@ function PeekDock({
 }
 
 function Header({
+  onLibraryChange,
+  onLibraryOpen,
+  onAsk,
   state,
   searching,
   onClose,
@@ -878,6 +889,9 @@ function Header({
   onDragChange,
   onDragEnd
 }: {
+  onLibraryChange: (open: boolean) => void
+  onLibraryOpen: () => void
+  onAsk: (text: string) => void
   state: NimbusState
   searching: boolean
   onClose: () => void
@@ -945,6 +959,7 @@ function Header({
         </IconButton>
 
         <span className="mx-1 h-3.5 w-px bg-white/10" />
+        <AnswerLibrary onOpen={onLibraryOpen} onAsk={onAsk} onChange={onLibraryChange} />
 
         <button
           onClick={onStanding}

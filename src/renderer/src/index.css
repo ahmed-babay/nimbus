@@ -1,9 +1,38 @@
 @import 'tailwindcss';
 
+.library-trigger { padding: 4px 7px; border-radius: 8px; font-size: 11px; color: var(--color-nimbus-text-dim); }
+.library-trigger:hover, .library-save button:hover { background: rgb(210 240 255 / .08); color: var(--color-nimbus-text); }
+.library-save { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 12px; font-size: 10px; color: var(--color-nimbus-text-dim); }
+.library-save button { padding: 6px 10px; border: 1px solid var(--color-nimbus-border); border-radius: 10px; }
+.answer-library { color: var(--color-nimbus-text); border: 1px solid rgb(215 243 255 / .25); border-radius: 26px; width: min(510px, calc(100vw - 28px)); max-height: calc(100vh - 28px); padding: 22px; margin: auto; }
+.answer-library[open] { display: flex; flex-direction: column; gap: 13px; }
+.answer-library::backdrop { background: rgb(4 12 20 / .65); backdrop-filter: blur(7px); }
+.library-heading, .library-entry-heading { display: flex; justify-content: space-between; align-items: start; gap: 12px; }
+.library-heading h2 { font-size: 23px; font-weight: 450; letter-spacing: -.04em; margin-top: 4px; }
+.library-heading > button { font-size: 22px; padding: 0 6px; }
+.library-caption, .library-empty { color: var(--color-nimbus-text-dim); font-size: 11px; line-height: 1.65; }
+.answer-library input { width: 100%; border: 1px solid var(--color-nimbus-border); background: rgb(0 10 20 / .25); border-radius: 12px; padding: 11px 12px; font-size: 12px; outline-color: var(--color-nimbus-accent-bright); }
+.library-toolbar, .library-actions, .library-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; font-size: 10px; color: var(--color-nimbus-text-dim); }
+.library-toolbar { justify-content: space-between; }
+.library-toolbar button, .library-actions button, .library-footer button, .library-confirm button { color: var(--color-nimbus-accent-bright); padding: 4px 0; }
+.library-toolbar button:disabled { opacity: .4; }
+.library-entries { overflow-y: auto; min-height: 0; flex: 1; }
+.library-entries article { border: 1px solid rgb(220 244 255 / .10); border-radius: 16px; background: linear-gradient(130deg, rgb(210 240 255 / .065), transparent); padding: 15px; margin-bottom: 10px; }
+.library-entry-heading h3 { font-size: 13px; font-weight: 550; overflow-wrap: anywhere; }
+.library-entry-heading button { color: var(--color-nimbus-accent-bright); padding: 2px 6px; }
+.library-entries time { font-size: 9px; color: var(--color-nimbus-text-dim); }
+.library-answer { white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; font-size: 12px; line-height: 1.7; margin: 10px 0; }
+.library-source { display: block; text-align: left; font-size: 10px; color: var(--color-nimbus-accent-bright); margin: 5px 0; overflow-wrap: anywhere; }
+.library-actions { border-top: 1px solid rgb(220 244 255 / .09); padding-top: 8px; margin-top: 10px; }
+.library-empty { padding: 20px 0; }
+.library-confirm { font-size: 11px; line-height: 1.6; border-top: 1px solid var(--color-nimbus-border); padding-top: 10px; }
+.library-confirm button { display: inline-block; margin-right: 14px; }
+
 .nimbus-glass {
-  background: linear-gradient(145deg, rgb(30 33 42 / .97), rgb(12 15 22 / .96) 66%);
-  backdrop-filter: blur(40px) saturate(125%);
-  -webkit-backdrop-filter: blur(40px) saturate(125%);
+  background: radial-gradient(ellipse at 0% 0%, rgb(181 224 247 / .13), transparent 55%), linear-gradient(145deg, rgb(34 51 65 / .94), rgb(13 24 35 / .96) 70%);
+  backdrop-filter: blur(40px) saturate(135%);
+  -webkit-backdrop-filter: blur(40px) saturate(135%);
+  box-shadow: inset 0 1px 0 rgb(227 248 255 / .28), inset 1px 0 0 rgb(212 243 255 / .10), inset 0 -1px 0 rgb(180 220 255 / .06), 0 22px 65px -28px rgb(0 9 20 / .65);
 }
 
 .nimbus-studio { position: relative; isolation: isolate; }
@@ -29,7 +58,7 @@
 .nimbus-shortcuts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 2px 0 12px; }
 .nimbus-shortcuts button {
   text-align: left; padding: 13px 10px; border: 1px solid rgb(255 255 255 / .07);
-  border-radius: 15px; background: rgb(255 255 255 / .025); font-size: 11px; color: var(--color-nimbus-text);
+  border-radius: 15px; background: linear-gradient(135deg, rgb(210 240 255 / .09), rgb(210 240 255 / .025)); box-shadow: inset 0 1px rgb(235 250 255 / .08); font-size: 11px; color: var(--color-nimbus-text);
 }
 .nimbus-shortcuts button:hover { background: rgb(255 255 255 / .065); border-color: var(--color-nimbus-accent-deep); }
 .nimbus-shortcuts span { display: block; font-size: 17px; color: var(--color-nimbus-accent-bright); margin-bottom: 10px; }
@@ -62,7 +91,7 @@
 @media (prefers-reduced-motion: reduce) { .voice-message-processing i { animation: none; opacity: .65; } }
 .nimbus-command-menu {
   border-radius: 18px; border: 1px solid rgb(255 255 255 / .12);
-  background: linear-gradient(140deg, #252832, #151820);
+  background: linear-gradient(140deg, #283e4c, #142432);
   box-shadow: 0 14px 35px -18px #000, inset 0 1px rgb(255 255 255 / .05);
 }
 .nimbus-command-item[data-active='true'] { box-shadow: inset 2px 0 var(--color-nimbus-accent-bright); }
@@ -111,9 +140,9 @@ button:focus-visible, summary:focus-visible {
      the orb and every button/highlight it sits beside in two unrelated
      colour families once the orb moved off idle — a panel like reminders
      read as a different app from the orb it was opened next to. */
-  --color-nimbus-accent: #ff7a5c;
-  --color-nimbus-accent-bright: #ffab8f;
-  --color-nimbus-accent-deep: #c1503a;
+  --color-nimbus-accent: #9fcfdf;
+  --color-nimbus-accent-bright: #d4eff7;
+  --color-nimbus-accent-deep: #4d8499;
 
   /* Kept as tokens because components reference them; retuned from neon to
      muted so a badge is legible rather than loud. */
@@ -122,7 +151,7 @@ button:focus-visible, summary:focus-visible {
   --color-nimbus-green: #4ec99a;
 
   --color-nimbus-text: #eceef4;
-  --color-nimbus-text-dim: #8b8fa3;
+  --color-nimbus-text-dim: #a2b6c5;
 
   --color-nimbus-positive: #4ec99a;
   --color-nimbus-negative: #f2708a;

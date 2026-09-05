@@ -559,6 +559,36 @@ Answers render as visuals where the data supports it, not just spoken text:
 | "next train to Frankfurt" | **Departure board** — times, line badges, platform, changes |
 | "how far is Cologne" | **Map with the route drawn**, and a tab per travel mode |
 | "how does a jet engine work" | **Diagrams and photos** alongside the explanation |
+| "how much is an RTX 3070" | **The price in large type**, sellers underneath, specs below |
+| "requirements for a German driving licence" | A **numbered list**, not a paragraph |
+| "M4 MacBook Air vs Pro" | **Side-by-side columns**, the same rows in each |
+
+### Cards for questions nobody wired up an API for
+
+The first nine rows above are per-integration: someone built a weather card, a departure
+board, a route map. The last three are not. They come from `src/services/facts.ts`, which
+reads the *same pages the spoken answer came from* a second time and pulls out the figures
+in them, then says which of a small set of shapes those figures want — `price`, `metric`,
+`profile`, `comparison`, `list`, `steps`, `timeline`. So the **question** picks the layout
+rather than the topic picking it, and asking what something costs gets the price in the
+same weight the weather card gives a temperature, without a price API existing anywhere in
+the app.
+
+Three things keep it from being worse than the plain link list it replaces:
+
+- **It runs alongside the answer, not after it.** Extraction is started before synthesis
+  and has a 3.5-second presentation deadline. It uses an additional cloud model request
+  and may finish after the spoken answer; late results fall back to a plain search card.
+  The deadline bounds waiting, but does not cancel provider billing. Extraction is
+  skipped entirely on the on-device model, which serializes its calls behind one queue.
+- **Every value has to come from the sources**, and the model is told to return
+  `usable: false` rather than invent a table for a question that hasn't got one — opinions,
+  definitions and explanations read better as prose.
+- **A thin result is thrown away.** `src/services/facts-card.ts` re-types and re-measures
+  every field, drops rows with no value, and refuses to show a comparison with one column
+  or a table with one row, because a card like that looks like a bug. Anything that
+  doesn't clear the bar falls back to the ordinary search card. That module is pure —
+  no provider, no network — so the gate is covered by `npm test`.
 
 Two implementation notes worth knowing:
 
@@ -996,6 +1026,23 @@ assumed:
 | Crawl4AI | ⚠️ Not a search engine — it's a page *crawler/extractor* (Python). Useful paired with a search API, overkill to bundle in an Electron app. |
 
 Swapping providers means editing one file: `src/services/search.ts`.
+
+### "Search the internet" is an instruction, not a hint
+
+The router is a model, and models are agreeable: told to look something up, it would
+sometimes classify the sentence as chat and answer from memory — which comes out as "I
+don't have information about that" moments after the user said exactly where to get it.
+
+So `src/shared/search-phrases.ts` matches an explicit instruction to search *locally*, with
+no round trip and nothing to disagree with, and forces the search path. It is shape-based
+rather than a phrase list ("search the web for", "look it up online", "google it", "check
+online for", "what does the internet say", "such im Internet nach"), and it deliberately
+overrides only the intents that answer from the model — `chat` and `recall`. Everything
+with a real source keeps it: "google the weather in Berlin" is still a weather card, and
+"look up the next train to Frankfurt" is still a departure board, because those return
+data and a list of links would be the worse answer to the same sentence. The router prompt
+says the same thing, so the model usually gets there on its own; this is the backstop for
+when it doesn't.
 
 ### Deep research
 

@@ -8,6 +8,7 @@ import { PriceChart } from './PriceChart'
 import { WeatherGlyph } from './WeatherGlyph'
 import { CountUp, Countdown, FillBar, Stagger, StaggerItem, EASE } from './Motion'
 import { SpokenText } from './SpokenText'
+import { SaveAnswer } from './AnswerLibrary'
 import type {
   BriefingCardData,
   CalendarEvent,
@@ -17,6 +18,8 @@ import type {
   EntityCardData,
   EventCardData,
   ExplainerCardData,
+  FactRow,
+  FactsCardData,
   GithubCardData,
   TvCardData,
   FlightsCardData,
@@ -44,6 +47,7 @@ import type {
 } from '@shared/types'
 
 interface ResponseCardProps {
+  question?: string
   response: NimbusResponse
   speechProgressRef: RefObject<number>
   radio: RadioPlayerControls
@@ -64,6 +68,7 @@ const mediaIn = {
 
 /** Generic response card; body varies by `card.type`. */
 export function ResponseCard({
+  question,
   response,
   speechProgressRef,
   radio,
@@ -105,6 +110,7 @@ export function ResponseCard({
       <CardBody card={response.card} radio={radio} onReplace={onReplace} onAsk={onAsk} />
 
       {showCopy && <CopyButton text={displayText} />}
+      <SaveAnswer response={response} question={question} />
     </motion.div>
   )
 }
@@ -155,6 +161,8 @@ function CardBody({
       return <FlightsBody data={card.data} />
     case 'search':
       return <SearchBody data={card.data} />
+    case 'facts':
+      return <FactsBody data={card.data} />
     case 'entity':
       return <EntityBody data={card.data} />
     case 'music':
@@ -1957,6 +1965,209 @@ function ExplainerBody({ data }: { data: ExplainerCardData }) {
     <div className={panel}>
       <Illustrations items={data.illustrations} />
       <div className="text-[10px] uppercase tracking-wide text-nimbus-text-dim">{data.topic}</div>
+    </div>
+  )
+}
+
+/** One label/value line — the atom every fact layout is built from. */
+function FactRowLine({ row, tight = false }: { row: FactRow; tight?: boolean }) {
+  return (
+    <div className="flex items-baseline gap-3">
+      <span className={`shrink-0 ${tight ? 'w-[86px]' : 'w-[104px]'} truncate text-[10.5px] uppercase tracking-wide text-nimbus-text-dim`}>
+        {row.label}
+      </span>
+      <span
+        className={`min-w-0 flex-1 text-[12px] tabular-nums ${
+          row.trend === 'up'
+            ? 'text-nimbus-positive'
+            : row.trend === 'down'
+              ? 'text-nimbus-negative'
+              : 'text-nimbus-text'
+        }`}
+      >
+        {row.value}
+        {row.note && <span className="ml-1.5 text-[10px] text-nimbus-text-dim">{row.note}</span>}
+      </span>
+    </div>
+  )
+}
+
+/**
+ * A looked-up answer, laid out for the question that was asked.
+ *
+ * The same component covers a price, a spec sheet, a comparison and a list of
+ * requirements, because the difference between those is where the emphasis
+ * goes rather than what the pieces are: one figure in large type, some
+ * labelled rows, some groups, some bullets. `layout` decides which of them
+ * leads. Anything the extraction left empty simply does not render, so a thin
+ * answer degrades into a shorter card rather than a broken one.
+ */
+function FactsBody({ data }: { data: FactsCardData }) {
+  const illustrations = data.illustrations ?? []
+  const columns = data.layout === 'comparison' && data.groups.length >= 2
+  const ordered = data.layout === 'steps'
+  const headlineNote = [data.headlineLabel, data.headlineNote].filter(Boolean).join(' · ')
+
+  return (
+    <div className={panel}>
+      {illustrations.length > 0 && <Illustrations items={illustrations} />}
+
+      {/* The figure the question was actually asking for, in the same weight
+          the weather card gives a temperature — because it is the same kind of
+          answer, and the whole point is that it stops looking like a search
+          result and starts looking like the thing you asked for. */}
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[12.5px] font-semibold text-nimbus-text">{data.title}</div>
+          {data.subtitle && (
+            <div className="mt-0.5 truncate text-[10.5px] text-nimbus-text-dim">{data.subtitle}</div>
+          )}
+        </div>
+        {data.headline && (
+          <motion.div
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.32, ease: EASE }}
+            className="max-w-[55%] break-words text-right"
+          >
+            <div
+              className={`text-2xl font-semibold leading-none tabular-nums ${
+                data.layout === 'price' ? 'text-nimbus-accent-bright' : 'text-nimbus-text'
+              }`}
+            >
+              {data.headline}
+            </div>
+            {headlineNote && (
+              <div className="mt-1 text-[10px] text-nimbus-text-dim">{headlineNote}</div>
+            )}
+          </motion.div>
+        )}
+      </div>
+
+      {/* Set against each other in columns, so the same row label in each
+          group lines up and the difference is the thing you read. */}
+      {columns && (
+        <div className="mt-2.5 grid gap-2 border-t border-white/[0.07] pt-2.5" style={{ gridTemplateColumns: `repeat(${Math.min(3, data.groups.length)}, minmax(0, 1fr))` }}>
+          {data.groups.slice(0, 3).map((group) => (
+            <div key={group.title} className="min-w-0">
+              <div className="truncate text-[11px] font-medium text-nimbus-text">{group.title}</div>
+              {group.headline && (
+                <div className="mt-0.5 text-[15px] font-semibold tabular-nums text-nimbus-accent-bright">
+                  {group.headline}
+                </div>
+              )}
+              <Stagger className="mt-1 space-y-0.5">
+                {group.rows.map((row) => (
+                  <StaggerItem key={row.label}>
+                    <div className="text-[10px] uppercase tracking-wide text-nimbus-text-dim">
+                      {row.label}
+                    </div>
+                    <div className="truncate text-[11.5px] text-nimbus-text">{row.value}</div>
+                  </StaggerItem>
+                ))}
+              </Stagger>
+              {group.note && (
+                <div className="mt-1 truncate text-[9.5px] text-nimbus-text-dim">{group.note}</div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Otherwise one line each — sellers, variants, options. Clickable only
+          when the group was matched back to a page that was actually read. */}
+      {!columns && data.groups.length > 0 && (
+        <Stagger className="mt-2.5 space-y-1 border-t border-white/[0.07] pt-2">
+          {data.groups.map((group) => (
+            <StaggerItem key={group.title}>
+              {group.url ? (
+                <button
+                  onClick={() => openLink(group.url as string)}
+                  title={group.url}
+                  className="group flex w-full items-baseline justify-between gap-3 rounded-md px-1 py-0.5 text-left transition-colors hover:bg-white/[0.06]"
+                >
+                  <span className="min-w-0 flex-1 truncate text-[12px] text-nimbus-text group-hover:text-nimbus-accent-bright">
+                    {group.title}
+                    {group.note && (
+                      <span className="ml-1.5 text-[10px] text-nimbus-text-dim">{group.note}</span>
+                    )}
+                  </span>
+                  {group.headline && (
+                    <span className="shrink-0 text-[12.5px] font-semibold tabular-nums text-nimbus-text">
+                      {group.headline}
+                    </span>
+                  )}
+                </button>
+              ) : (
+                <div className="flex items-baseline justify-between gap-3 px-1">
+                  <span className="min-w-0 flex-1 truncate text-[12px] text-nimbus-text">
+                    {group.title}
+                    {group.note && (
+                      <span className="ml-1.5 text-[10px] text-nimbus-text-dim">{group.note}</span>
+                    )}
+                  </span>
+                  {group.headline && (
+                    <span className="shrink-0 text-[12.5px] font-semibold tabular-nums text-nimbus-text">
+                      {group.headline}
+                    </span>
+                  )}
+                </div>
+              )}
+              {group.rows.length > 0 && <div className="mt-1 space-y-1 px-1">
+                {group.rows.map((row, index) => <FactRowLine key={`${row.label}-${index}`} row={row} tight />)}
+              </div>}
+            </StaggerItem>
+          ))}
+        </Stagger>
+      )}
+
+      {data.rows.length > 0 && (
+        <Stagger className="mt-2.5 space-y-1 border-t border-white/[0.07] pt-2">
+          {data.rows.map((row) => (
+            <StaggerItem key={`${row.label}-${row.value}`}>
+              <FactRowLine row={row} tight={data.layout === 'timeline'} />
+            </StaggerItem>
+          ))}
+        </Stagger>
+      )}
+
+      {data.bullets.length > 0 && (
+        <Stagger className="mt-2.5 space-y-1.5 border-t border-white/[0.07] pt-2">
+          {data.bullets.map((bullet, index) => (
+            <StaggerItem key={bullet}>
+              <div className="flex gap-2">
+                {/* Numbered when the order is load-bearing, a dot when it is
+                    not — the difference between a recipe and a feature list. */}
+                <span className="mt-[1px] w-4 shrink-0 text-right text-[10.5px] tabular-nums text-nimbus-accent-bright">
+                  {ordered ? `${index + 1}.` : '·'}
+                </span>
+                <span className="min-w-0 flex-1 text-[12px] leading-relaxed text-nimbus-text">
+                  {bullet}
+                </span>
+              </div>
+            </StaggerItem>
+          ))}
+        </Stagger>
+      )}
+
+      {data.answer && (
+        <p className="mt-2.5 whitespace-pre-wrap border-t border-white/[0.07] pt-2 text-[12px] leading-relaxed text-nimbus-text-dim">
+          {data.answer}
+        </p>
+      )}
+
+      {data.sources.length > 0 && (
+        <ul className="mt-2 space-y-1 border-t border-white/[0.07] pt-2">
+          {data.sources.slice(0, 3).map((source) => (
+            <ListRow
+              key={source.url}
+              primary={source.title}
+              secondary={hostOf(source.url)}
+              url={source.url}
+            />
+          ))}
+        </ul>
+      )}
     </div>
   )
 }

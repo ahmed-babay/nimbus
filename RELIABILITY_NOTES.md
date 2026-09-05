@@ -46,3 +46,30 @@ The expanded overlay was rendered in Electron using a mocked bridge and visually
 This is a targeted reliability improvement, not a claim that Nimbus is commercially ready or perfectly accurate. There was no voice dataset supplied and no before/after recognition benchmark was run. Before release, record consented samples across quiet, noisy and accented speech; measure transcription errors, action correctness and latency on supported hardware.
 
 In-app playback here is internet radio, not an on-demand catalog of specific songs. Named tracks still return the existing music result card. Local models need their initial downloads, online services need connectivity, and optional cloud providers retain their existing key and quota requirements. Desktop transparency also needs testing on the Windows versions and graphics drivers you plan to support.
+# September 5: ice glass, reusable answers and quick tools
+
+- Reviewed and retained the uncommitted structured fact cards, explicit search routing,
+  brighter sound cues and inward-only orb rim vibration. Fact groups link only to an
+  exact source hostname; oversized fields are discarded rather than losing units to
+  truncation. Optional extraction excludes provider-generated summaries and stops
+  holding the UI after 3.5 seconds. It still uses cloud quota and is skipped locally.
+- The ice-glass interface uses cool layered surfaces and improved secondary text
+  contrast. Library is available from the main header. Save an answer explicitly,
+  search it later, pin it, copy with sources, ask again, remove/undo, or clear the
+  collection. Up to 100 answers are saved in this app's local browser storage.
+  This collection is separate from the existing conversation archive and memory.
+- Voice gain now measures decoded peaks across every channel before amplification.
+  Answers and thinking cues share the same headroom calculation. Settings includes
+  a voice-volume slider, also honored by the system speech fallback.
+- Quick arithmetic and common length, mass, time and temperature conversions run
+  before model classification. Supports parentheses, percentages and spoken operators
+  with numeric operands. No arbitrary code evaluation. Unsupported/ambiguous requests
+  retain the normal model route. Results use floating-point math, rounded to 12
+  significant digits; this is not an arbitrary-precision or financial calculator.
+- Validation: 20 reliability tests, TypeScript checks, production build, Electron
+  interaction tests, sound PCM checks and inward rim geometry checks. UI tests cover
+  saving, searching, pinning, removal/undo and closing the library without dismissing
+  Nimbus. Rendered screenshots inspected in out/qa.
+- Remaining validation: real microphone/accent/noise testing and live cloud extraction
+  quality. Automated UI checks use a mock bridge; no claim of benchmarked recognition
+  accuracy or production readiness is made by these tests.
