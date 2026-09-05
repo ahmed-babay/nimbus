@@ -74,6 +74,16 @@ export interface OrbDrive {
   level: number
   /** Whole-orb size multiplier: the entrance, the breath, and the voice swell. */
   scale: number
+  /**
+   * How hard the rim is ringing, 0..1.
+   *
+   * The shell's edge is displaced by a few travelling harmonics rather than
+   * the whole sphere being moved. Nimbus speaking is a surface that is
+   * vibrating, not an object that is being shaken — and unlike a translation,
+   * a rim tremor stays put in the layout, so it never nudges the text beside
+   * it or drags a 36px dock orb off its own centre.
+   */
+  tremor: number
 }
 
 function rand(a: number, b: number): number {
@@ -604,6 +614,83 @@ export function createStormOrb(canvas: HTMLCanvasElement, options: StormOptions)
     return 0.18 + 0.82 * clamp((z + 1) / 2, 0, 1)
   }
 
+  // --- the ringing rim ------------------------------------------------------
+
+  /**
+   * The three standing waves the edge rings with, as [lobes, speed, weight].
+   *
+   * Coprime lobe counts on purpose: 4, 7 and 11 never line up into a repeating
+   * shape, so the edge never settles into an obviously rotating flower. The
+   * speeds are deliberately fast and share no common factor — a rim moving at
+   * 9-16 rad/s reads as *vibration*, where anything under about 4 reads as a
+   * slow wobble, which is the "weird moving" this replaced.
+   */
+  const RIM_MODES: Array<[number, number, number]> = [
+    [4, 9.1, 0.5],
+    [7, 12.7, 0.32],
+    [11, 16.4, 0.18]
+  ]
+
+  /**
+   * Peak outward displacement of the rim, in CSS pixels.
+   *
+   * This is the full travel of the edge, all of it inward (see `rimPath`), so
+   * the rim swings between its resting radius and about 6% inside it. Small on
+   * purpose: a vibration is fast and shallow, and the same modes at three
+   * times this amplitude stopped reading as a ringing edge and started reading
+   * as a wobbling blob, which is a different and much worse idea. Floored and
+   * capped in pixels because a purely proportional figure disappears entirely
+   * on the 36px dock orb.
+   */
+  function tremorAmplitude(tremor: number, R: number): number {
+    if (tremor <= 0.001) return 0
+    return tremor * clamp(R * 0.062, 1.2, 4.2)
+  }
+
+  /**
+   * Lays down a closed rim path of radius `R`, displaced by the tremor.
+   *
+   * `offset` shifts the whole ring outward — the outer halo line sits a few
+   * pixels proud of the shell and has to ring with it rather than beside it.
+   * At rest this is exactly `ctx.arc`, so a still orb pays nothing for the
+   * capability and looks identical to before.
+   *
+   * The displacement is deliberately one-sided: the edge oscillates between
+   * its resting radius and a little *inside* it, never beyond. A symmetric
+   * wobble would need headroom bought out of the radius, and there is none to
+   * buy — the orb is already sized so its outermost halo just fits the bitmap,
+   * and a canvas cannot paint past its own edge, so the first thing a
+   * vibrating orb would do is come back with a flat side. In motion the two
+   * are indistinguishable: nobody can see that a rim rings about a mean one
+   * pixel in from where it rests, and everybody can see a sliced orb.
+   */
+  function rimPath(R: number, tremor: number, now: number, offset = 0): void {
+    const amp = tremorAmplitude(tremor, R)
+    ctx.beginPath()
+    if (amp <= 0) {
+      ctx.arc(cx, cy, R + offset, 0, TAU)
+      return
+    }
+    // Enough segments that the highest harmonic (11 lobes) is drawn as a curve
+    // rather than a polygon, and few enough to cost nothing at 30fps.
+    const steps = 96
+    const t = now / 1000
+    for (let i = 0; i <= steps; i++) {
+      const a = (i / steps) * TAU
+      let wave = 0
+      for (const [lobes, speed, weight] of RIM_MODES) {
+        wave += Math.sin(a * lobes + t * speed) * weight
+      }
+      // wave is -1..1; mapped to -1..0 so the rim only ever moves inward.
+      const r = R + offset + (wave - 1) * 0.5 * amp
+      const x = cx + Math.cos(a) * r
+      const y = cy + Math.sin(a) * r
+      if (i === 0) ctx.moveTo(x, y)
+      else ctx.lineTo(x, y)
+    }
+    ctx.closePath()
+  }
+
   // --- the frame -----------------------------------------------------------
 
   /**
@@ -631,7 +718,8 @@ export function createStormOrb(canvas: HTMLCanvasElement, options: StormOptions)
       release: num(drive.release, 0, 1),
       flash: num(drive.flash, 0, 1),
       level: num(drive.level, 0, 1),
-      scale: num(drive.scale, 0.3, 3, 1)
+      scale: num(drive.scale, 0.3, 3, 1),
+      tremor: num(drive.tremor, 0, 1)
     }
   }
 
@@ -727,8 +815,11 @@ export function createStormOrb(canvas: HTMLCanvasElement, options: StormOptions)
     // ---- the sphere body: a dark shell so the plasma is contained ----
     ctx.globalCompositeOperation = 'source-over'
     ctx.save()
-    ctx.beginPath()
-    ctx.arc(cx, cy, R, 0, TAU)
+    // Clipping to the *displaced* rim rather than a plain circle is what makes
+    // this read as the shell itself vibrating: the body, the haze and the inner
+    // rim light are all cut by the moving edge, so the surface ripples instead
+    // of a separate outline jittering around a static ball.
+    rimPath(R, drive.tremor, now)
     ctx.clip()
 
     // Tinted with the state's darkest colour rather than a fixed navy, so an
@@ -856,14 +947,20 @@ export function createStormOrb(canvas: HTMLCanvasElement, options: StormOptions)
 
     // ---- outer rim lines ----
     ctx.globalCompositeOperation = 'lighter'
-    ctx.beginPath()
-    ctx.arc(cx, cy, R, 0, TAU)
-    ctx.strokeStyle = rgba(pal.arc, 0.16 + power * 0.16)
+    rimPath(R, drive.tremor, now)
+    // The edge brightens as it rings. A vibrating rim that stayed the same
+    // brightness read as a rendering artefact; catching the light sells it as
+    // the surface being driven from inside.
+    ctx.strokeStyle = rgba(pal.arc, 0.16 + power * 0.16 + drive.tremor * 0.18)
     ctx.lineWidth = 1
     ctx.stroke()
 
-    ctx.beginPath()
-    ctx.arc(cx, cy, R + 3 * u, 0, TAU)
+    // The outer halo rings with the shell but deliberately does not brighten
+    // with it. It is the widest thing drawn and already grazes the edge of the
+    // bitmap; lifting its alpha with the tremor made a vibrating orb sit
+    // fractionally harder against its own boundary, which is the one place a
+    // canvas has no room to give.
+    rimPath(R, drive.tremor, now, 3 * u)
     ctx.strokeStyle = rgba(pal.beam, 0.1 + power * 0.12)
     ctx.lineWidth = Math.max(1, 7 * u)
     ctx.stroke()

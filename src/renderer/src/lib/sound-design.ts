@@ -2,6 +2,17 @@ export type SoundCue = 'open' | 'listen' | 'received' | 'interrupt' | 'close'
 export interface SoundNote {
   from: number; to: number; at: number; length: number; gain: number; pan: number
 }
+/**
+ * How loud the cues are relative to how they were authored.
+ *
+ * The original gains were set by ear against a quiet room and headphones, and
+ * on speakers — or under anything else playing — they were effectively
+ * inaudible: the loudest note in the set peaked at 0.045, roughly -27dBFS.
+ * Applied here rather than by rewriting each note so the balance between the
+ * cues, which is right, survives the change in level.
+ */
+export const CUE_GAIN = 3.4
+
 // One harmonic family, distinct contours. Short tails stay clear of speech.
 export const SOUND_SCORE: Record<SoundCue, SoundNote[]> = {
   open: [
@@ -28,6 +39,9 @@ export const SOUND_SCORE: Record<SoundCue, SoundNote[]> = {
   ]
 }
 
+/** Ceiling for any single note, so overlapping notes cannot sum into clipping. */
+export const CUE_CEILING = .28
+
 /** Works with both a live context and OfflineAudioContext for audio QA. */
 export function scheduleSound(ctx: BaseAudioContext, cue: SoundCue, offset = 0): void {
   for (const note of SOUND_SCORE[cue]) {
@@ -40,7 +54,9 @@ export function scheduleSound(ctx: BaseAudioContext, cue: SoundCue, offset = 0):
     tone.frequency.setValueAtTime(note.from, start)
     tone.frequency.exponentialRampToValueAtTime(note.to, end)
     envelope.gain.setValueAtTime(.0001, start)
-    envelope.gain.exponentialRampToValueAtTime(note.gain, start + .018)
+    // Capped below 1: three notes overlap in the open and close cues, and the
+    // sum of them has to stay inside the mixer's headroom or the chime clips.
+    envelope.gain.exponentialRampToValueAtTime(Math.min(CUE_CEILING, note.gain * CUE_GAIN), start + .018)
     envelope.gain.exponentialRampToValueAtTime(.0001, end)
     pan.pan.value = note.pan
     tone.connect(envelope).connect(pan).connect(ctx.destination)

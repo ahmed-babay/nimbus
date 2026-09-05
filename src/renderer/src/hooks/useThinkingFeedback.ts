@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { deferFeedback } from '../lib/deferred-feedback'
 import { useExperiencePreference } from '../lib/experience-preferences'
 import { chooseAcknowledgment } from '../lib/acknowledgment-phrases'
+import { speechGain, speechVolume } from '../lib/speech-level'
 
 export function useThinkingFeedback(active: boolean, voiceEnabled: boolean, language = 'English', turnSequence = 0): () => void {
   const enabled = useExperiencePreference('acknowledgments')
@@ -32,7 +33,11 @@ export function useThinkingFeedback(active: boolean, voiceEnabled: boolean, lang
       play: ({ ctx, buffer, phrase }) => {
         const source = ctx.createBufferSource()
         const gain = ctx.createGain()
-        gain.gain.value = .72
+        // Matched to the answer's own level rather than deliberately ducked.
+        // "Let me check" is spoken *instead of* silence, not underneath
+        // anything, so there is nothing for it to get out of the way of — and
+        // at .72 it was the quietest thing the app said.
+        gain.gain.value = speechGain(buffer, speechVolume())
         source.buffer = buffer
         source.connect(gain).connect(ctx.destination)
         source.onended = () => { source.disconnect(); gain.disconnect() }

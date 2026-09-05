@@ -6,6 +6,7 @@ import { useThinkingFeedback } from './useThinkingFeedback'
 import { useRadioPlayer, type RadioPlayerControls } from './useRadioPlayer'
 import { isStopPhrase, isStopPlaybackPhrase, isMediaStopRequest } from '../lib/stop-phrases'
 
+import { speechGain, speechVolume } from '../lib/speech-level'
 const DEFAULT_AUTO_FADE_MS = 8000
 // Consecutive turns with nothing said before the overlay gives up.
 const MAX_EMPTY_TURNS = 2
@@ -100,6 +101,17 @@ export function useNimbus(): NimbusOverlayState {
 
   const fadeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const audioCtxRef = useRef<AudioContext | null>(null)
+  /**
+   * The output stage every spoken answer is played through.
+   *
+   * Built once per audio context rather than once per utterance: it holds no
+   * per-answer state, and a fresh gain and compressor for every sentence would
+   * leave a small graph of orphaned nodes hanging off the destination each
+   * time Nimbus speaks.
+   */
+  const outputRef = useRef<GainNode | null>(null)
+  /** Detaches the current answer's analyser, whether it finished or was cut off. */
+  const releaseAnalyserRef = useRef<(() => void) | null>(null)
   const currentSourceRef = useRef<AudioBufferSourceNode | null>(null)
   const levelRef = useRef(0)
   /** 0..1 through the current spoken response — drives the text reveal. */
@@ -196,9 +208,40 @@ export function useNimbus(): NimbusOverlayState {
     }
   }, [])
 
+  /**
+   * The gain-then-limiter the voice is played through, built on first use.
+   *
+   * The voice used to go straight to the speakers at whatever level the
+   * synthesiser happened to produce, which is conservative — quiet enough to
+   * lose against a video, a call, or a room. Lifted here, then caught by a
+   * limiter rather than allowed to clip: a compressor reaching for the
+   * occasional peak is inaudible, a clipped consonant is not.
+   */
+  const speechOutput = useCallback((ctx: AudioContext, buffer: AudioBuffer): GainNode => {
+    // Rebuilt if the context was replaced — nodes belong to one context and
+    // connecting across two throws.
+    if (outputRef.current && outputRef.current.context === ctx) {
+      outputRef.current.gain.value = speechGain(buffer, speechVolume())
+      return outputRef.current
+    }
+    const lift = ctx.createGain()
+    lift.gain.value = speechGain(buffer, speechVolume())
+    const limiter = ctx.createDynamicsCompressor()
+    limiter.threshold.value = -6
+    limiter.knee.value = 12
+    limiter.ratio.value = 8
+    limiter.attack.value = 0.003
+    limiter.release.value = 0.18
+    lift.connect(limiter).connect(ctx.destination)
+    outputRef.current = lift
+    return lift
+  }, [])
+
   const stopPlayback = useCallback(() => {
     cancelThinkingRef.current()
     levelRef.current = 0
+    releaseAnalyserRef.current?.()
+    releaseAnalyserRef.current = null
     const source = currentSourceRef.current
     currentSourceRef.current = null
     if (source) {
@@ -396,6 +439,7 @@ export function useNimbus(): NimbusOverlayState {
       // rather than leaving it stuck mid-reveal.
       speechProgressRef.current = 1
       const utterance = new SpeechSynthesisUtterance(text)
+      utterance.volume = speechVolume()
       const generation = generationRef.current
       const voiceEpoch = voiceEpochRef.current
       // Keep the emergency system fallback consistent with Nimbus's male
@@ -504,7 +548,7 @@ export function useNimbus(): NimbusOverlayState {
           analyser.fftSize = 256
           analyser.smoothingTimeConstant = 0.75
           source.connect(analyser)
-          analyser.connect(ctx.destination)
+          analyser.connect(speechOutput(ctx, buffer))
 
           const samples = new Uint8Array(analyser.frequencyBinCount)
           let meter = 0
@@ -524,8 +568,19 @@ export function useNimbus(): NimbusOverlayState {
           }
           meter = requestAnimationFrame(readLevel)
 
+          // The analyser is the one node that is per-utterance, so it is the
+          // one that has to be let go of. Left connected it would sit on the
+          // shared output stage with nothing feeding it, one per answer, for
+          // as long as the app runs.
+          const release = (): void => {
+            try { analyser.disconnect() } catch { /* already gone */ }
+          }
+          releaseAnalyserRef.current = release
+
           source.onended = () => {
             cancelAnimationFrame(meter)
+            release()
+            releaseAnalyserRef.current = null
             levelRef.current = 0
             currentSourceRef.current = null
             speechProgressRef.current = 1
@@ -561,7 +616,7 @@ export function useNimbus(): NimbusOverlayState {
           speakNative(text, thenListen)
         })
     },
-    [listenAgain, scheduleAutoFade, speakNative, stopPlayback]
+    [listenAgain, scheduleAutoFade, speakNative, speechOutput, stopPlayback]
   )
 
   /** Sends an utterance through the normal assistant pipeline. */

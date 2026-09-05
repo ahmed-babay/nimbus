@@ -10,14 +10,33 @@ interface OrbProps {
   levelRef: RefObject<number>
   size?: number
   tight?: boolean
+  /**
+   * Changes whenever the orb arrives somewhere new — a different window size,
+   * a return to the main view. Each change rings the rim once, so shrinking to
+   * the dock and coming back are both acknowledged by the orb rather than
+   * happening silently to it.
+   */
+  pulseKey?: string | number
 }
 
 const ENERGY: Record<OrbMode, number> = {
   idle: .38, listening: .48, thinking: .58, searching: .65, speaking: .5, playing: .48
 }
 
-/** A fixed-size shell with a tiny voice-driven sway, never an expanding burst. */
-export function Orb({ state, searching = false, answerSeq = 0, levelRef, size = 52 }: OrbProps) {
+/** How long a layout tremor rings for before it has fully died away. */
+const PULSE_MS = 620
+
+/**
+ * A fixed-size shell.
+ *
+ * Two different motions, deliberately not the same one: **your** voice sways
+ * the whole orb a sub-two-pixel amount, because it is being moved by something
+ * outside it; **Nimbus's** voice rings the rim in place, because the sound is
+ * coming from inside. The shell never travels while it speaks — a talking
+ * object that drifts around the layout reads as a glitch, and it nudges the
+ * text beside it.
+ */
+export function Orb({ state, searching = false, answerSeq = 0, levelRef, size = 52, pulseKey }: OrbProps) {
   const rootRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const mode = orbModeFor(state, searching)
@@ -31,6 +50,12 @@ export function Orb({ state, searching = false, answerSeq = 0, levelRef, size = 
     previousAnswer.current = answerSeq
   }, [answerSeq])
 
+  // Rings on mount and on every layout change. Mount counts: the three window
+  // sizes are separate subtrees, so shrinking to the dock and expanding back
+  // both arrive here as a fresh orb rather than as a prop change.
+  const pulsedAt = useRef(-Infinity)
+  useEffect(() => { pulsedAt.current = performance.now() }, [pulseKey])
+
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -41,14 +66,33 @@ export function Orb({ state, searching = false, answerSeq = 0, levelRef, size = 
     let targetMode = live.current.mode
     let target = palette
     let level = 0
+    let tremor = 0
     let frame = 0
     let lastDraw = 0
+
+    /**
+     * How hard the rim should be ringing right now.
+     *
+     * Speaking holds a floor the whole time it speaks, so the rim keeps
+     * vibrating through the gaps between words rather than stopping dead on
+     * every pause and looking like the audio dropped out. It stops when the
+     * speech does, and not before.
+     */
+    const tremorTarget = (now: number): number => {
+      if (motion.matches) return 0
+      const pulse = Math.max(0, 1 - (now - pulsedAt.current) / PULSE_MS)
+      // Eased so a layout tremor lands hard and fades, rather than ramping
+      // linearly down like a slider being dragged.
+      const settling = pulse * pulse * 0.72
+      const speaking = live.current.state === 'speaking' ? Math.min(1, 0.42 + level * 0.75) : 0
+      return Math.min(1, Math.max(settling, speaking))
+    }
 
     const drive = (now: number) => ({
       palette,
       intensity: ENERGY[live.current.mode] + level * .18 +
         (motion.matches ? 0 : Math.max(0, 1 - (now - answeredAt.current) / 1000) * .1),
-      charge: 0, release: 0, flash: 0, level, scale: 1
+      charge: 0, release: 0, flash: 0, level, scale: 1, tremor
     })
     const resize = () => {
       storm.resize()
@@ -70,15 +114,23 @@ export function Orb({ state, searching = false, answerSeq = 0, levelRef, size = 
         target = stormPalette(STATE_THEME[targetMode].orb)
       }
       if (motion.matches) {
-        if (changed) { palette = target; level = 0; storm.still(drive(now)) }
+        if (changed) { palette = target; level = 0; tremor = 0; storm.still(drive(now)) }
         return
       }
       const raw = live.current.state === 'listening' || live.current.state === 'speaking' ? levelRef.current : 0
       const safe = Number.isFinite(raw) ? Math.max(0, Math.min(1, raw)) : 0
       level += (safe - level) * Math.min(1, dt / 120)
-      // A smooth, sub-two-pixel sway follows the voice envelope. Smaller
-      // dock orbs move proportionally less; silence settles back to center.
-      const amplitude = Math.sqrt(Math.max(0, level - .025)) * 1.6 * Math.min(1, live.current.size / 72)
+      // Quick to start ringing, slower to go quiet — an edge that stopped as
+      // abruptly as it started would look switched off rather than damped.
+      const wanted = tremorTarget(now)
+      tremor += (wanted - tremor) * Math.min(1, dt / (wanted > tremor ? 70 : 190))
+      if (tremor < .004) tremor = 0
+      // A smooth, sub-two-pixel sway follows *your* voice only. Smaller dock
+      // orbs move proportionally less; silence settles back to center. While
+      // Nimbus speaks the shell stays put and the rim does the work instead.
+      const amplitude = live.current.state === 'listening'
+        ? Math.sqrt(Math.max(0, level - .025)) * 1.6 * Math.min(1, live.current.size / 72)
+        : 0
       if (rootRef.current) {
         const seconds = now / 1000
         const x = Math.sin(seconds * 16) * amplitude
@@ -93,6 +145,7 @@ export function Orb({ state, searching = false, answerSeq = 0, levelRef, size = 
     }
     const onMotionChange = () => {
       level = 0
+      tremor = 0
       if (rootRef.current) rootRef.current.style.transform = 'none'
       palette = stormPalette(STATE_THEME[live.current.mode].orb); target = palette; resize()
     }
