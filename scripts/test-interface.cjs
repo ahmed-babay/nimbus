@@ -70,6 +70,13 @@ app.whenReady().then(async () => {
   await run('window.__qa.events.onScreenCaptured(null)')
   await new Promise(resolve => setTimeout(resolve, 600))
   await screenshot('studio')
+  const shellWidth = await run(`document.querySelector('.nimbus-presence .nimbus-orb').getBoundingClientRect().width`)
+  await run('window.__qa.events.onWake()')
+  await settle()
+  await screenshot('voice-message')
+  assert.equal(await run(`!!document.querySelector('button[aria-label="Send voice message"]') && !!document.querySelector('button[aria-label="Discard voice message"]')`), true, 'voice recording has send and discard controls')
+  await click('Discard voice message')
+  assert.equal(await run('window.__qa.requests.length'), 0, 'discard does not submit a question')
   await input('/')
   await screenshot('commands')
   assert.equal(await run(`(() => {
@@ -95,6 +102,17 @@ app.whenReady().then(async () => {
   await settle()
   assert.equal(await run(`document.body.innerText.includes('Latest answer') && !document.body.innerText.includes('Stale answer')`), true, 'old responses cannot replace a newer answer')
   await screenshot('answer')
+  assert.equal(await run(`document.querySelector('.nimbus-presence .nimbus-orb').getBoundingClientRect().width`), shellWidth, 'answer presentation preserves the orb size')
+  assert.equal(await run(`!!document.querySelector('.nimbus-orb-answer, .nimbus-orb-orbit, [style*="--orb-shock"]')`), false, 'no external orb bursts or shockwaves')
+  for (const squeeze of ['compact', 'icon', 'full']) {
+    await run(`window.__qa.events.onOverlayLayout({corner:${squeeze === 'full' ? 'null' : "'bottom-right'"},squeeze:${JSON.stringify(squeeze)}})`)
+    await settle()
+    assert.equal(await run(`(() => {
+      const orb = [...document.querySelectorAll('.nimbus-orb')].at(-1);
+      return Math.abs(orb.getBoundingClientRect().width - orb.offsetWidth) < .5 && getComputedStyle(orb).overflow === 'hidden';
+    })()`), true, 'orb stays contained without scale overshoot in ' + squeeze)
+    await settle()
+  }
   await click('Answers are silent')
   await submit('third question')
   await run(`window.__qa.requests[2].resolve({speech:'Pending speech',card:{type:'text'}})`)
@@ -138,7 +156,7 @@ app.whenReady().then(async () => {
   }
   assert.ok(peak > .005 && peak < .2, 'sound cues render audible, unclipped PCM')
   fs.writeFileSync(path.join(qa, 'sound-identity.wav'), wav)
-  console.log('PASS: palette color and layout, command drafts, stale answers, TTS mute races, stop response, sound settings')
+  console.log('PASS: voice send/discard controls, fixed orb shell, palette color and layout, command drafts, stale answers, TTS mute races, stop response, sound settings')
   console.log('PASS: five sound cues rendered without clipping; preview at out/qa/sound-identity.wav')
   console.log('Screenshots: out/qa/studio.png, commands.png, answer.png')
   app.quit()

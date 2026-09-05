@@ -9,6 +9,7 @@ import { TextInput } from './components/TextInput'
 import { KeySettings } from './components/KeySettings'
 import { ExperienceSettings } from './components/ExperienceSettings'
 import { Presence } from './components/Presence'
+import { VoiceMessageBar } from './components/VoiceMessageBar'
 import { SubtitleBar } from './components/SubtitleBar'
 import { MeetingPanel } from './components/MeetingPanel'
 import { StandingPanel } from './components/StandingPanel'
@@ -46,7 +47,7 @@ function peekOrigin(corner: OverlayCorner | null): string {
   return 'top left'
 }
 
-const PEEK_SPRING = { type: 'spring' as const, stiffness: 420, damping: 28, mass: 0.75 }
+const PEEK_SPRING = { duration: 0.2, ease: 'easeOut' as const }
 
 export default function App() {
   const [commandsOpen, setCommandsOpen] = useState(false)
@@ -310,9 +311,9 @@ export default function App() {
         )}
         {isVisible && squeeze === 'full' && (
           <motion.div
-            initial={{ opacity: 0, y: -14, scale: 0.97 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -10, scale: 0.98 }}
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
             transition={{ duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
             // Only the card itself captures the mouse; everything around it
             // stays click-through so the overlay never blocks the screen.
@@ -487,72 +488,6 @@ export default function App() {
                   onDragEnd={onDragEnd}
                 />
 
-                {/* No items-start here: it would let the scrolling child size
-                    to its content, so it grew past the card and got clipped
-                    instead of scrolling. The orb pins itself with self-start. */}
-                {/* The release washing over the panel.
-                    Centred on where the orb actually sits rather than on the
-                    card, so the light has a source you can point at — the
-                    whole intent is that the answer comes *out of* the orb and
-                    into the interface, not that a panel-wide overlay happens
-                    to flash at the same moment. Driven by --orb-shock, which
-                    the orb writes each frame during a release and leaves at 0
-                    otherwise, so this costs nothing at rest. */}
-                <div
-                  aria-hidden="true"
-                  className="pointer-events-none absolute inset-0 z-10 rounded-[20px]"
-                  style={{
-                    // Kept low: this is meant to be felt at the edge of
-                    // attention while reading the answer, not looked at.
-                    opacity: 'calc(var(--orb-shock, 0) * 0.22)',
-                    background:
-                      'radial-gradient(120% 90% at 42px 132px, var(--color-nimbus-accent-bright) 0%, transparent 62%)',
-                    mixBlendMode: 'screen'
-                  }}
-                />
-
-                {/* The front itself, crossing the panel.
-                    This is the part that actually touches what is in its way.
-                    It is a ring-shaped window with a backdrop-filter, so the
-                    answer text, the cards and the chrome *behind* it are
-                    genuinely blurred, brightened and pushed as the band sweeps
-                    over them — a drawn ring would have passed in front of the
-                    content without disturbing a pixel of it, which is what
-                    made the first version look like a sticker.
-
-                    Centred on the orb, scaled by how far the wave has got, and
-                    masked to a band so only the crest region filters. At rest
-                    --orb-wave is 0 and the whole thing is invisible and
-                    unscaled, which keeps the compositor out of it. */}
-                <div
-                  aria-hidden="true"
-                  className="pointer-events-none absolute inset-0 z-20 rounded-[20px]"
-                  style={
-                    {
-                      // The band's radius, in pixels from the orb's centre.
-                      // Far enough at full travel to clear the bottom corner.
-                      '--band': 'calc(var(--orb-wave, 0) * 780px)',
-                      opacity: 'calc(var(--orb-shock, 0) * 0.95)',
-                      // The mask moves, not the element.
-                      //
-                      // Scaling a transformed element would have been simpler
-                      // and completely wrong: a backdrop-filter is evaluated in
-                      // the element's own coordinates and *then* transformed,
-                      // so blur(1.4px) inside scale(760) is a thousand-pixel
-                      // blur and the card disappears. Animating the mask's
-                      // radii leaves the element still and the filter honest.
-                      maskImage:
-                        'radial-gradient(circle at 42px 132px, transparent calc(var(--band) - 30px), #000 calc(var(--band) - 9px), #000 calc(var(--band) + 9px), transparent calc(var(--band) + 34px))',
-                      WebkitMaskImage:
-                        'radial-gradient(circle at 42px 132px, transparent calc(var(--band) - 30px), #000 calc(var(--band) - 9px), #000 calc(var(--band) + 9px), transparent calc(var(--band) + 34px))',
-                      // What the crest does to whatever it is passing over.
-                      backdropFilter: 'blur(1.6px) brightness(1.24) saturate(1.4)',
-                      WebkitBackdropFilter: 'blur(1.6px) brightness(1.24) saturate(1.4)',
-                      willChange: 'opacity'
-                    } as React.CSSProperties
-                  }
-                />
-
                 <Presence state={state} searching={searching} answerSeq={answerSeq} levelRef={levelRef} compact={Boolean(commandsOpen || response || error || pendingSelection || pendingCapture || state === 'thinking')} transcribing={transcribing} />
 
                 <div className="flex min-h-0 flex-1 gap-3.5">
@@ -620,7 +555,7 @@ export default function App() {
                       <div className="flex items-center gap-3">
                         <motion.img
                           initial={{ opacity: 0, scale: 0.94 }}
-                          animate={{ opacity: 1, scale: 1 }}
+                          animate={{ opacity: 1 }}
                           transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
                           src={pendingCapture}
                           alt="Captured screen"
@@ -635,13 +570,7 @@ export default function App() {
                           </div>
                         </div>
                       </div>
-                    ) : transcribing ? null : state === 'listening' ? (
-                      <div className="flex justify-center pb-3">
-                        <div className="flex items-center gap-2 px-2.5 py-1.5">
-                          <Waveform levelRef={levelRef} barCount={22} compact />
-                        </div>
-                      </div>
-                    ) : (
+                    ) : transcribing || state === 'listening' ? null : (
                       // Mic is closed (typing, or a finished typed turn) — say
                       // so rather than showing a dead "listening" waveform.
                       <div className="nimbus-shortcuts">
@@ -664,21 +593,8 @@ export default function App() {
 
                 {meetingOpen && <MeetingPanel meeting={meeting} />}
 
-                {state === 'listening' && !transcribing && (
-                  <div className="nimbus-voice-strip mt-2 flex items-center justify-between gap-3 px-3 py-2.5">
-                    <div>
-                      <p className="text-[11px] font-medium text-nimbus-text">Microphone is listening</p>
-                      <p className="mt-0.5 text-[10px] text-nimbus-text-dim">Send now, or pause to finish.</p>
-                    </div>
-                    <button onClick={finishListening} className="shrink-0 rounded-full bg-nimbus-accent/15 px-3 py-2 text-[11px] font-medium text-nimbus-accent-bright hover:bg-nimbus-accent/25">Send voice ↑</button>
-                  </div>
-                )}
-
-                {(state === 'thinking' || state === 'speaking' || transcribing) && (
-                  <div className="mt-3 flex items-center justify-between border-t border-white/10 pt-3">
-                    <span className="text-[10px] text-nimbus-text-dim">{transcribing ? 'Recognizing your words…' : state === 'speaking' ? 'Your answer is ready' : 'Working on your request'}</span>
-                    <button onClick={interruptAnswer} className="rounded-full border border-white/15 px-3 py-1.5 text-[11px] text-nimbus-text hover:bg-white/5">■ Stop response</button>
-                  </div>
+                {(state === 'listening' || state === 'thinking' || state === 'speaking' || transcribing) && (
+                  <VoiceMessageBar state={state} transcribing={transcribing} levelRef={levelRef} onSend={finishListening} onStop={interruptAnswer} />
                 )}
                 {response && state !== 'thinking' && state !== 'speaking' && ttsEnabled && (
                   <button onClick={replayAnswer} className="mt-2 self-end rounded-full px-3 py-1.5 text-[11px] text-nimbus-accent-bright hover:bg-white/5">↻ Hear again</button>
@@ -713,18 +629,6 @@ export default function App() {
                   onTypingStart={onTypingStart}
                 />
 
-                {(response || error) && state === 'listening' && (
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="mt-2.5 flex items-center gap-2 border-t border-white/[0.06] pt-2"
-                  >
-                    <Waveform levelRef={levelRef} barCount={18} compact />
-                    <span className="text-[10px] text-nimbus-text-dim">
-                      Listening · say &ldquo;stop&rdquo; to close
-                    </span>
-                  </motion.div>
-                )}
               </div>
             )}
           </motion.div>
@@ -766,9 +670,9 @@ function PeekIcon({
     <motion.div
       role="button"
       tabIndex={0}
-      initial={{ opacity: 0, scale: 0.4 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.5 }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
       transition={PEEK_SPRING}
       onMouseEnter={() => window.nimbus.setMouseIgnore(false)}
       onMouseLeave={() => window.nimbus.setMouseIgnore(true)}
@@ -853,9 +757,9 @@ function PeekDock({
   const origin = peekOrigin(corner)
   return (
     <motion.div
-      initial={{ opacity: 0, scale: 0.18 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.14 }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
       transition={PEEK_SPRING}
       onMouseEnter={() => {
         onTouch()

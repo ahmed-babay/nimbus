@@ -1,5 +1,13 @@
 # Voice and interface reliability pass
 
+## Contained orb and voice messages
+
+Voice recording, transcription and spoken replies now share one message panel, with a live waveform, a send button, and an explicit discard/stop control. Duplicate listening strips were removed. Discarding a recording does not submit it.
+
+The orb now has a fixed shell: no entrance overshoot, expanding response ring, external particles or panel shockwave. Voice and new answers only modulate the internal light. An existing answer does not replay its response animation when the orb remounts. The full interface keeps the same orb size when results arrive, and compact/icon transitions use fades rather than scaling springs. Reduced-motion mode shows a still storm.
+
+Electron UI checks cover recording controls, discard behavior, fixed orb dimensions and containment through full/compact/icon transitions. The voice panel preview is saved to `out/qa/voice-message.png`.
+
 ## Sound and presence update
 
 Nimbus now has five locally synthesized cues: arrival, listening, recording received, interruption, and departure. Canceled recordings and silence timeouts do not play the received cue. Settings includes sound previews and persistent toggles for sound effects and thinking acknowledgments.
@@ -21,7 +29,7 @@ Validation: 12 regression tests, TypeScript checks and the production build pass
 - Browser playback requires an explicit request in the user's words; a model-generated destination alone cannot open it. Negated YouTube/browser requests are respected.
 - Voice endpointing counts voiced time rather than elapsed time. Short opening phrases get 1.8 seconds of pause tolerance; the default settled pause is 1.2 seconds, plus the existing tail padding. Requests can last up to 45 seconds.
 - Confident neural speech detected during microphone calibration can start the turn. The Groq fallback now receives the requested language and deterministic temperature.
-- The overlay and compact dock use layered translucent surfaces. The original storm orb gains a working-state orbit and an answer ripple, with reduced-motion handling.
+- The overlay and compact dock use layered translucent surfaces. The storm stays inside a fixed shell, with reduced-motion handling.
 - The expanded overlay has a Send voice button and an editable “What Nimbus heard” section. Corrections can be resubmitted without speaking again.
 - Local model setup no longer labels every hardware-selected download as the 0.8B model. Existing on-device language, recognition and synthesis support remains available; no new paid dependency was introduced.
 

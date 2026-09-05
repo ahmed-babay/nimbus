@@ -13,7 +13,7 @@
 }
 .nimbus-presence {
   position: relative; display: flex; flex-direction: column; align-items: center;
-  flex-shrink: 0; gap: 22px; padding: 35px 0 22px; text-align: center;
+  flex-shrink: 0; gap: 16px; padding: 22px 0 18px; text-align: center;
 }
 .nimbus-presence-light {
   pointer-events: none; position: absolute; inset: 0 -24px;
@@ -24,7 +24,7 @@
   letter-spacing: -.045em; line-height: 1.25; margin-top: 9px;
 }
 .nimbus-presence-caption { font-size: 11px; margin-top: 9px; color: var(--color-nimbus-text-dim); }
-.nimbus-presence.is-compact { flex-direction: row; gap: 16px; padding: 24px 0 20px; text-align: left; }
+.nimbus-presence.is-compact { gap: 16px; padding: 22px 0 18px; text-align: center; }
 .nimbus-presence.is-compact .nimbus-presence-title { font-size: 16px; margin: 0; letter-spacing: -.02em; }
 .nimbus-shortcuts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 2px 0 12px; }
 .nimbus-shortcuts button {
@@ -34,7 +34,32 @@
 .nimbus-shortcuts button:hover { background: rgb(255 255 255 / .065); border-color: var(--color-nimbus-accent-deep); }
 .nimbus-shortcuts span { display: block; font-size: 17px; color: var(--color-nimbus-accent-bright); margin-bottom: 10px; }
 .nimbus-shortcuts small { display: block; color: var(--color-nimbus-text-dim); font-size: 9px; margin-top: 4px; }
-.nimbus-voice-strip { border-top: 1px solid rgb(255 255 255 / .07); }
+.nimbus-orb-contained { border-radius: 50%; overflow: hidden; isolation: isolate; }
+.nimbus-orb-contained canvas { display: block; }
+.voice-message {
+  flex-shrink: 0; margin-top: 12px; padding: 13px 14px 10px;
+  border: 1px solid rgb(255 255 255 / .10); border-radius: 20px;
+  background: linear-gradient(145deg, rgb(255 255 255 / .045), rgb(255 255 255 / .015));
+  box-shadow: inset 0 1px rgb(255 255 255 / .035);
+}
+.voice-message-heading { display: flex; align-items: center; gap: 7px; color: var(--color-nimbus-text); font-size: 11px; }
+.voice-message-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--color-nimbus-accent-bright); }
+.voice-message-mode { margin-left: auto; color: var(--color-nimbus-text-dim); font-size: 8px; letter-spacing: .14em; }
+.voice-message-controls { display: flex; align-items: center; gap: 14px; min-height: 54px; }
+.voice-message-meter { display: flex; align-items: center; justify-content: center; flex: 1; min-width: 0; overflow: hidden; }
+.voice-message-meter svg { width: 100%; max-width: 260px; height: 28px; }
+.voice-message-stop, .voice-message-send { display: grid; place-items: center; flex-shrink: 0; width: 34px; height: 34px; border-radius: 50%; }
+.voice-message-stop { color: var(--color-nimbus-text-dim); border: 1px solid rgb(255 255 255 / .10); }
+.voice-message-stop:hover { color: var(--color-nimbus-text); background: rgb(255 255 255 / .07); }
+.voice-message-send { background: var(--color-nimbus-accent-bright); color: #10131b; }
+.voice-message-send:hover { filter: brightness(1.1); }
+.voice-message-hint { text-align: center; color: var(--color-nimbus-text-dim); font-size: 9px; }
+.voice-message-processing { display: flex; gap: 5px; }
+.voice-message-processing i { width: 4px; height: 4px; border-radius: 50%; background: var(--color-nimbus-accent-bright); animation: voice-processing 1.5s ease-in-out infinite; }
+.voice-message-processing i:nth-child(2) { animation-delay: .15s; }
+.voice-message-processing i:nth-child(3) { animation-delay: .3s; }
+@keyframes voice-processing { 0%, 100% { opacity: .3; } 50% { opacity: .9; } }
+@media (prefers-reduced-motion: reduce) { .voice-message-processing i { animation: none; opacity: .65; } }
 .nimbus-command-menu {
   border-radius: 18px; border: 1px solid rgb(255 255 255 / .12);
   background: linear-gradient(140deg, #252832, #151820);
@@ -56,30 +81,6 @@
 button:focus-visible, summary:focus-visible {
   outline: 2px solid var(--color-nimbus-accent-bright);
   outline-offset: 3px;
-}
-
-.nimbus-orb-orbit, .nimbus-orb-answer {
-  position: absolute;
-  pointer-events: none;
-  inset: -12%;
-  border-radius: 50%;
-  border: 1px solid color-mix(in srgb, var(--color-nimbus-accent) 22%, transparent);
-}
-.nimbus-orb-orbit {
-  border-top-color: var(--color-nimbus-accent-bright);
-  animation: nimbus-orbit 2.4s linear infinite;
-}
-.nimbus-orb-answer {
-  animation: nimbus-answer 1.2s ease-out both;
-}
-@keyframes nimbus-orbit { to { transform: rotate(360deg); } }
-@keyframes nimbus-answer {
-  from { transform: scale(0.8); opacity: 0.8; }
-  to { transform: scale(1.6); opacity: 0; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .nimbus-orb-orbit, .nimbus-orb-answer { animation: none; }
-  .nimbus-orb-answer { display: none; }
 }
 
 @theme {
