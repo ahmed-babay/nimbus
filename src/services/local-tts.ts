@@ -54,8 +54,7 @@ async function devicesToTry(): Promise<readonly string[]> {
 }
 
 /**
- * A full, low male narrator voice. Fenrir is one of Kokoro's stronger male
- * voices and stays clear when Nimbus reads short answers at a brisk pace.
+ * A conversational male voice, shared by answers and acknowledgment cues.
  *
  * Read lazily, not at module load: this module is reached (via tts.ts) from
  * main/index.ts's static imports, which run before that file's own
@@ -63,7 +62,7 @@ async function devicesToTry(): Promise<readonly string[]> {
  * .env was ever read.
  */
 function voice(): string {
-  return process.env.NIMBUS_LOCAL_VOICE || 'am_fenrir'
+  return process.env.NIMBUS_LOCAL_VOICE || 'am_michael'
 }
 
 /** The voice the out-of-process host should use. */

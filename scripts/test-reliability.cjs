@@ -14,6 +14,50 @@ function source(file) {
 const { directMusicIntent, wantsBrowserPlayback } = source('src/services/music-intent.ts')
 const { findStation, normalizeGenre } = source('src/services/radio.ts')
 const { silenceWindowMs } = source('src/renderer/src/lib/voice-timing.ts')
+const { deferFeedback } = source('src/renderer/src/lib/deferred-feedback.ts')
+const { SOUND_SCORE } = source('src/renderer/src/lib/sound-design.ts')
+
+test('sound cues have distinct contours and bounded levels and tails', () => {
+  const scores = Object.values(SOUND_SCORE)
+  assert.equal(new Set(scores.map(JSON.stringify)).size, 5)
+  for (const score of scores) for (const note of score) {
+    assert.ok(note.gain > 0 && note.gain <= .05)
+    assert.ok(note.at + note.length <= .35)
+    assert.ok(note.from > 0 && note.to > 0)
+  }
+})
+
+test('fast answers cancel acknowledgment before synthesis starts', () => {
+  let run; let prepared = 0
+  const cancel = deferFeedback({
+    prepare: async () => { prepared++; return 'audio' }, play: () => () => {},
+    schedule: callback => { run = callback; return () => {} }
+  })
+  cancel(); run()
+  assert.equal(prepared, 0)
+})
+
+test('late acknowledgment cannot play after cancellation', async () => {
+  let resolve; let run; let played = false
+  const cancel = deferFeedback({
+    prepare: () => new Promise(done => { resolve = done }),
+    play: () => { played = true; return () => {} },
+    schedule: callback => { run = callback; return () => {} }
+  })
+  run(); cancel(); resolve('audio')
+  await new Promise(done => setImmediate(done))
+  assert.equal(played, false)
+})
+
+test('answer arrival stops active acknowledgment once', async () => {
+  let run; let stopped = 0
+  const cancel = deferFeedback({
+    prepare: async () => 'audio', play: () => () => { stopped++ },
+    schedule: callback => { run = callback; return () => {} }
+  })
+  run(); await new Promise(done => setImmediate(done)); cancel(); cancel()
+  assert.equal(stopped, 1)
+})
 
 test('voice pauses stay patient after a short opening and honor longer preferences', () => {
   assert.equal(silenceWindowMs(400, 900), 1800)
