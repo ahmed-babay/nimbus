@@ -15,6 +15,7 @@ interface TextInputProps {
   placeholder?: string
   /** Drops the top margin and uses a pill field, for the squeezed dock. */
   compact?: boolean
+  onPaletteChange?: (open: boolean) => void
 }
 
 /**
@@ -32,6 +33,7 @@ export function TextInput({
   focusKey,
   onTypingStart,
   onAction,
+  onPaletteChange,
   placeholder = 'Type a message, or / to see what I can do…',
   compact = false
 }: TextInputProps) {
@@ -47,6 +49,7 @@ export function TextInput({
     [paletteQuery]
   )
   const paletteOpen = paletteQuery !== null
+  useEffect(() => { onPaletteChange?.(paletteOpen) }, [paletteOpen, onPaletteChange])
 
   useEffect(() => {
     setActiveIndex(0)

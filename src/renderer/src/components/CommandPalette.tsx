@@ -28,7 +28,7 @@ export function CommandPalette({ matches, activeIndex, onPick, onHover }: Comman
 
   if (matches.length === 0) {
     return (
-      <div className="rounded-xl border border-white/15 bg-[#1a1c28] px-3 py-2.5 text-[12px] text-[#d5d8e4] shadow-[0_16px_40px_-16px_rgba(0,0,0,0.85)]">
+      <div className="nimbus-command-menu px-4 py-4 text-[12px] text-nimbus-text-dim">
         Nothing matches — but you can just ask in your own words.
       </div>
     )
@@ -39,7 +39,8 @@ export function CommandPalette({ matches, activeIndex, onPick, onHover }: Comman
   return (
     <ul
       ref={listRef}
-      className="nimbus-scroll max-h-[min(220px,42vh)] overflow-y-auto rounded-xl border border-white/15 bg-[#1a1c28] py-1.5 shadow-[0_16px_40px_-16px_rgba(0,0,0,0.85)]"
+      aria-label="Nimbus commands"
+      className="nimbus-command-menu nimbus-scroll max-h-[min(240px,42vh)] overflow-y-auto py-2"
     >
       {matches.map((capability, index) => {
         const showGroup = capability.group !== lastGroup
@@ -49,7 +50,7 @@ export function CommandPalette({ matches, activeIndex, onPick, onHover }: Comman
         return (
           <li key={capability.title}>
             {showGroup && (
-              <div className="px-2.5 pb-0.5 pt-1.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-[#ffb198]">
+              <div className="px-4 pb-1 pt-3 text-[9px] font-semibold uppercase tracking-[0.16em] text-nimbus-accent-bright">
                 {capability.group}
               </div>
             )}
@@ -63,16 +64,17 @@ export function CommandPalette({ matches, activeIndex, onPick, onHover }: Comman
                 onPick(capability)
               }}
               onMouseEnter={() => onHover(index)}
-              className={`flex w-full items-baseline gap-2 px-2.5 py-1.5 text-left transition-colors ${
-                active ? 'bg-[#ff7a5c] text-white' : 'hover:bg-white/[0.08]'
+              onClick={(event) => { if (event.detail === 0) onPick(capability) }}
+              className={`nimbus-command-item flex w-full items-baseline gap-3 px-4 py-2.5 text-left transition-colors ${
+                active ? 'bg-nimbus-accent/15 text-nimbus-accent-bright' : 'hover:bg-white/[0.04]'
               }`}
             >
-              <span className={`shrink-0 text-[12px] font-medium ${active ? 'text-white' : 'text-[#f2f4fa]'}`}>
+              <span className={`shrink-0 text-[12px] font-medium ${active ? 'text-nimbus-accent-bright' : 'text-nimbus-text'}`}>
                 {capability.title}
               </span>
               <span
                 className={`min-w-0 flex-1 truncate text-[11px] italic ${
-                  active ? 'text-white/85' : 'text-[#c4c8d6]'
+                  active ? 'text-nimbus-text' : 'text-nimbus-text-dim'
                 }`}
               >
                 “{capability.example}”

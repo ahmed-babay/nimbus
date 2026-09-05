@@ -7,6 +7,8 @@ import { ResponseCard } from './components/ResponseCard'
 import { SelectionActions } from './components/SelectionActions'
 import { TextInput } from './components/TextInput'
 import { KeySettings } from './components/KeySettings'
+import { ExperienceSettings } from './components/ExperienceSettings'
+import { Presence } from './components/Presence'
 import { SubtitleBar } from './components/SubtitleBar'
 import { MeetingPanel } from './components/MeetingPanel'
 import { StandingPanel } from './components/StandingPanel'
@@ -47,6 +49,7 @@ function peekOrigin(corner: OverlayCorner | null): string {
 const PEEK_SPRING = { type: 'spring' as const, stiffness: 420, damping: 28, mass: 0.75 }
 
 export default function App() {
+  const [commandsOpen, setCommandsOpen] = useState(false)
   const {
     state,
     mode,
@@ -66,6 +69,9 @@ export default function App() {
     isOpen,
     submitText,
     finishListening,
+    transcribing,
+    interruptAnswer,
+    replayAnswer,
     onTypingStart,
     answerSeq,
     micEnabled,
@@ -359,7 +365,7 @@ export default function App() {
               // follows the orb without a single component knowing about state.
               // Transitioned so a state change is a shift in the light rather
               // than a flicker.
-              ...accentVars(orbModeFor(state, searching)),
+              ...accentVars(orbModeFor(transcribing ? 'thinking' : state, searching)),
               transition: 'color 500ms ease'
             }}
           >
@@ -460,9 +466,9 @@ export default function App() {
               />
             ) : (
               // Header and input stay put; only the answer between them moves.
-              <div className="flex min-h-0 flex-1 flex-col px-[18px] py-4">
+              <div className="nimbus-studio flex min-h-0 flex-1 flex-col px-6 py-5">
                 <Header
-                  state={state}
+                  state={transcribing ? 'thinking' : state}
                   searching={searching}
                   onClose={dismiss}
                   micEnabled={micEnabled}
@@ -547,15 +553,16 @@ export default function App() {
                   }
                 />
 
-                <div className="mt-2.5 flex min-h-0 flex-1 gap-3.5">
-                  <Orb state={state} searching={searching} answerSeq={answerSeq} levelRef={levelRef} />
+                <Presence state={state} searching={searching} answerSeq={answerSeq} levelRef={levelRef} compact={Boolean(commandsOpen || response || error || pendingSelection || pendingCapture || state === 'thinking')} transcribing={transcribing} />
+
+                <div className="flex min-h-0 flex-1 gap-3.5">
 
                   <div className="nimbus-scroll min-h-0 min-w-0 flex-1 overflow-y-auto pr-1 pt-0.5">
                     {/* An existing answer stays on screen while listening for a
                         follow-up, so there's time to actually read it. */}
                     {/* Response takes priority over a later error, so a mic
                         hiccup can't wipe out an answer being read. */}
-                    {response ? (
+                    {commandsOpen && !response && !error ? null : response ? (
                       <ResponseCard
                         response={response}
                         speechProgressRef={speechProgressRef}
@@ -628,20 +635,19 @@ export default function App() {
                           </div>
                         </div>
                       </div>
-                    ) : state === 'listening' ? (
-                      <div className="flex h-10 items-center">
-                        <div className="flex items-center gap-2 rounded-full border border-white/[0.07] bg-white/[0.025] px-2.5 py-1.5">
+                    ) : transcribing ? null : state === 'listening' ? (
+                      <div className="flex justify-center pb-3">
+                        <div className="flex items-center gap-2 px-2.5 py-1.5">
                           <Waveform levelRef={levelRef} barCount={22} compact />
-                          <p className="text-[10px] text-nimbus-text-dim">Listening</p>
                         </div>
                       </div>
                     ) : (
                       // Mic is closed (typing, or a finished typed turn) — say
                       // so rather than showing a dead "listening" waveform.
-                      <div className="flex h-14 flex-col justify-center">
-                        <p className="text-[9.5px] text-nimbus-text-dim">
-                          &gt; {micEnabled ? 'Type below, or speak' : 'Voice off — type below'}
-                        </p>
+                      <div className="nimbus-shortcuts">
+                        <button onClick={() => submitText('Play lofi music')}><span>♫</span>Find focus<small>Music in Nimbus</small></button>
+                        <button onClick={() => submitText('What is the weather today?')}><span>☀</span>Step outside<small>Today’s weather</small></button>
+                        <button onClick={() => submitText('What do you remember about me?')}><span>◇</span>My memory<small>Make it personal</small></button>
                       </div>
                     )}
                   </div>
@@ -658,14 +664,24 @@ export default function App() {
 
                 {meetingOpen && <MeetingPanel meeting={meeting} />}
 
-                {state === 'listening' && (
-                  <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2.5">
+                {state === 'listening' && !transcribing && (
+                  <div className="nimbus-voice-strip mt-2 flex items-center justify-between gap-3 px-3 py-2.5">
                     <div>
-                      <p className="text-[12px] font-medium text-nimbus-text">Take your time. I’m listening.</p>
-                      <p className="mt-0.5 text-[10px] text-nimbus-text-dim">Pause naturally, or send when you’re ready.</p>
+                      <p className="text-[11px] font-medium text-nimbus-text">Microphone is listening</p>
+                      <p className="mt-0.5 text-[10px] text-nimbus-text-dim">Send now, or pause to finish.</p>
                     </div>
                     <button onClick={finishListening} className="shrink-0 rounded-full bg-nimbus-accent/15 px-3 py-2 text-[11px] font-medium text-nimbus-accent-bright hover:bg-nimbus-accent/25">Send voice ↑</button>
                   </div>
+                )}
+
+                {(state === 'thinking' || state === 'speaking' || transcribing) && (
+                  <div className="mt-3 flex items-center justify-between border-t border-white/10 pt-3">
+                    <span className="text-[10px] text-nimbus-text-dim">{transcribing ? 'Recognizing your words…' : state === 'speaking' ? 'Your answer is ready' : 'Working on your request'}</span>
+                    <button onClick={interruptAnswer} className="rounded-full border border-white/15 px-3 py-1.5 text-[11px] text-nimbus-text hover:bg-white/5">■ Stop response</button>
+                  </div>
+                )}
+                {response && state !== 'thinking' && state !== 'speaking' && ttsEnabled && (
+                  <button onClick={replayAnswer} className="mt-2 self-end rounded-full px-3 py-1.5 text-[11px] text-nimbus-accent-bright hover:bg-white/5">↻ Hear again</button>
                 )}
 
                 {transcript && state !== 'thinking' && (
@@ -685,6 +701,7 @@ export default function App() {
                 {/* Always available — talking isn't possible everywhere. */}
                 <TextInput
                   onSubmit={submitText}
+                  onPaletteChange={setCommandsOpen}
                   onAction={(action) =>
                     action === 'subtitles'
                       ? void subtitles.start()
@@ -981,7 +998,7 @@ function Header({
       <div className="flex items-center gap-2.5">
         {/* Set in the interface face rather than a marquee mono, and lit by
             weight and colour instead of a text-shadow glow. */}
-        <span className="text-[13px] font-semibold tracking-[-0.01em] text-nimbus-text">Nimbus</span>
+        <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-nimbus-text">Nimbus</span>
         {/* A lit dot rather than a divider and a word. State is the thing this
             header exists to convey, and a dot in the state's own colour says
             it faster than a label — the label is then free to be quiet. */}
@@ -1037,7 +1054,7 @@ function Header({
           title="Settings — API keys and model"
           className="rounded-lg px-2 py-1 text-[11px] text-nimbus-text-dim transition-colors hover:bg-white/[0.07] hover:text-nimbus-text"
         >
-          Setup
+          Settings
         </button>
         <button
           onClick={onClose}
@@ -1208,6 +1225,7 @@ function SettingsPanel({
           <p className="mt-2 text-[10px] text-nimbus-text-dim">
             Edit config.json and restart Nimbus to change these.
           </p>
+          <ExperienceSettings />
           <KeySettings />
         </div>
       )}

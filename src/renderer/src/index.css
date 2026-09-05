@@ -1,9 +1,56 @@
 @import 'tailwindcss';
 
 .nimbus-glass {
-  background: linear-gradient(135deg, rgb(35 39 55 / 0.88), rgb(13 17 28 / 0.82) 65%);
-  backdrop-filter: blur(32px) saturate(145%);
-  -webkit-backdrop-filter: blur(32px) saturate(145%);
+  background: linear-gradient(145deg, rgb(30 33 42 / .97), rgb(12 15 22 / .96) 66%);
+  backdrop-filter: blur(40px) saturate(125%);
+  -webkit-backdrop-filter: blur(40px) saturate(125%);
+}
+
+.nimbus-studio { position: relative; isolation: isolate; }
+.experience-eyebrow {
+  font-size: 9px; font-weight: 600; letter-spacing: .2em; text-transform: uppercase;
+  color: var(--color-nimbus-accent-bright);
+}
+.nimbus-presence {
+  position: relative; display: flex; flex-direction: column; align-items: center;
+  flex-shrink: 0; gap: 22px; padding: 35px 0 22px; text-align: center;
+}
+.nimbus-presence-light {
+  pointer-events: none; position: absolute; inset: 0 -24px;
+  background: radial-gradient(ellipse at 50% 30%, color-mix(in srgb, var(--color-nimbus-accent) 9%, transparent), transparent 65%);
+}
+.nimbus-presence-title {
+  color: var(--color-nimbus-text); font-size: 23px; font-weight: 450;
+  letter-spacing: -.045em; line-height: 1.25; margin-top: 9px;
+}
+.nimbus-presence-caption { font-size: 11px; margin-top: 9px; color: var(--color-nimbus-text-dim); }
+.nimbus-presence.is-compact { flex-direction: row; gap: 16px; padding: 24px 0 20px; text-align: left; }
+.nimbus-presence.is-compact .nimbus-presence-title { font-size: 16px; margin: 0; letter-spacing: -.02em; }
+.nimbus-shortcuts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 2px 0 12px; }
+.nimbus-shortcuts button {
+  text-align: left; padding: 13px 10px; border: 1px solid rgb(255 255 255 / .07);
+  border-radius: 15px; background: rgb(255 255 255 / .025); font-size: 11px; color: var(--color-nimbus-text);
+}
+.nimbus-shortcuts button:hover { background: rgb(255 255 255 / .065); border-color: var(--color-nimbus-accent-deep); }
+.nimbus-shortcuts span { display: block; font-size: 17px; color: var(--color-nimbus-accent-bright); margin-bottom: 10px; }
+.nimbus-shortcuts small { display: block; color: var(--color-nimbus-text-dim); font-size: 9px; margin-top: 4px; }
+.nimbus-voice-strip { border-top: 1px solid rgb(255 255 255 / .07); }
+.nimbus-command-menu {
+  border-radius: 18px; border: 1px solid rgb(255 255 255 / .12);
+  background: linear-gradient(140deg, #252832, #151820);
+  box-shadow: 0 14px 35px -18px #000, inset 0 1px rgb(255 255 255 / .05);
+}
+.nimbus-command-item[data-active='true'] { box-shadow: inset 2px 0 var(--color-nimbus-accent-bright); }
+.experience-settings { margin: 22px 0; border-top: 1px solid rgb(255 255 255 / .09); padding-top: 18px; }
+.experience-settings label { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0; }
+.experience-settings strong { display: block; font-size: 12px; font-weight: 500; color: var(--color-nimbus-text); }
+.experience-settings small { display: block; font-size: 10px; line-height: 1.5; color: var(--color-nimbus-text-dim); margin-top: 4px; }
+.experience-settings input { accent-color: var(--color-nimbus-accent); width: 16px; height: 16px; }
+@media (max-height: 520px) {
+  .nimbus-presence { flex-direction: row; gap: 18px; padding: 16px 0; text-align: left; }
+  .nimbus-presence .nimbus-orb { width: 58px !important; height: 58px !important; }
+  .nimbus-presence-title { font-size: 18px; }
+  .nimbus-presence-caption, .nimbus-shortcuts small { display: none; }
 }
 
 button:focus-visible, summary:focus-visible {

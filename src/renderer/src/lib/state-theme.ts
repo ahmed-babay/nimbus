@@ -40,8 +40,8 @@ export const STATE_THEME: Record<OrbMode, StatePalette> = {
   // banked rather than working. Deliberately not alarm red — a saturated red
   // on an assistant means "recording" or "broken" to everyone who sees it.
   idle: {
-    orb: ['#26100e', '#5c241f', '#ff7a5c'],
-    accent: { base: '#d9694c', bright: '#ff9c80', deep: '#8c3526' }
+    orb: ['#251b14', '#68503a', '#ffd0a1'],
+    accent: { base: '#c5a17c', bright: '#f0d1b0', deep: '#796046' }
   },
   listening: {
     orb: ['#0d1a33', '#1e4c8a', '#7fb2ff'],
