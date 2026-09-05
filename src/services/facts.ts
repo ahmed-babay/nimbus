@@ -1,8 +1,9 @@
-import { activeProvider, complete } from './llm'
+import { activeProvider, complete, inputBudgetChars } from './llm'
 import { currentTimeContext } from './now'
 import { LAYOUTS, factsFromReply } from './facts-card'
 import type { Evidence } from './search'
 import type { FactsCardData, SearchResult } from '../shared/types'
+import { replyLanguageContext } from './region'
 
 /**
  * Turning a web answer into a card built for the question that was asked.
@@ -81,6 +82,7 @@ const FACTS_SCHEMA: Record<string, unknown> = {
   type: 'OBJECT',
   properties: {
     usable: { type: 'BOOLEAN' },
+    answer: { type: 'STRING' },
     layout: { type: 'STRING', enum: LAYOUTS, format: 'enum' },
     title: { type: 'STRING' },
     subtitle: { type: 'STRING' },
@@ -110,7 +112,7 @@ const FACTS_SCHEMA: Record<string, unknown> = {
 const EXTRACT_BUDGET = 14000
 
 function evidenceBlock(evidence: Evidence[]): string {
-  let budget = EXTRACT_BUDGET
+  let budget = Math.max(1000, Math.min(EXTRACT_BUDGET, inputBudgetChars() - 5500))
   const parts: string[] = []
   for (const item of evidence) {
     if (budget <= 0) break
@@ -119,6 +121,25 @@ function evidenceBlock(evidence: Evidence[]): string {
     parts.push(`${item.title}\n${item.host}${item.published ? ` — ${item.published}` : ''}\n${body}`)
   }
   return parts.join('\n\n---\n\n')
+}
+
+/** One generation for both speech and layout, including on-device providers. */
+export async function answerWebSearch(input: {
+  question: string; query: string; evidence: Evidence[]; sources: SearchResult[]
+}): Promise<{ speech: string; facts: FactsCardData | null }> {
+  const evidence = input.evidence.filter(item => /^https?:\/\//i.test(item.url))
+  if (!evidence.length) throw new Error('No usable web sources were returned. Try a more specific search.')
+  const reply = await complete({
+    system: `${EXTRACT_PROMPT}\n\nAlso supply "answer": the answer to the user's question in 1-2 short spoken sentences, usually under 45 words. Answer the QUESTION, not an overview of the product or topic. For costs, lead with the supported price or range, currency, edition and new/used condition. Do not substitute launch prices, monthly payments or accessory prices for the product price. Never combine different currencies or editions into a single range. If current prices are missing, say so. Use the price layout for cost questions, comparison for comparisons, steps for procedures, profile for specifications. Put extra supported details in the card, not the speech. For a price headline, include a range only if the sources explicitly support it; otherwise show one supported offer with its conditions. Keep "answer" even when usable is false. Source snippets can be incomplete or outdated: distinguish advertised offers from a verified current checkout price.\n${currentTimeContext()}\n${replyLanguageContext()}`,
+    jsonSchema: { ...FACTS_SCHEMA, required: ['usable', 'layout', 'title', 'answer'] },
+    temperature: 0,
+    messages: [{ role: 'user', text: `Question: ${input.question}\n\nSources:\n${evidenceBlock(evidence)}` }]
+  })
+  const parsed = JSON.parse(reply.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, ''))
+  if (typeof parsed?.answer !== 'string' || !parsed.answer.trim()) throw new Error('The search answer was empty.')
+  const speech = parsed.answer.trim()
+  const facts = factsFromReply(JSON.stringify(parsed), input)
+  return { speech, facts: facts ? { ...facts, answer: speech } : null }
 }
 
 /**

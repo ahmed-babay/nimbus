@@ -211,11 +211,7 @@ export function forgetDeviceLocation(): void {
  * kind of confident wrongness that makes an assistant untrustworthy about
  * everything else.
  */
-export function asksWhereTheyAre(utterance: string): boolean {
-  return /\b(where am i|where i am|where we are|my location|my position|where do i live|wo bin ich|mein standort)\b/i.test(
-    utterance
-  )
-}
+export { asksWhereTheyAre } from '../shared/location-intent'
 
 /**
  * A spoken answer to "where am I".

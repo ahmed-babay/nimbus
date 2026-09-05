@@ -75,6 +75,6 @@ export function quickCalculation(input: string): string | null {
     const value = sum()
     if (position !== tokens.length) return null
     if (!Number.isFinite(value) || Math.abs(value) > Number.MAX_SAFE_INTEGER) return 'That result exceeds the precision of the quick calculator.'
-    return `${numberText(value)}. Calculated on this device.`
+    return `${numberText(value)}.`
   } catch (error) { return error instanceof Error ? error.message : null }
 }

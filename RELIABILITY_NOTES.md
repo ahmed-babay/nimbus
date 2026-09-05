@@ -73,3 +73,26 @@ In-app playback here is internet radio, not an on-demand catalog of specific son
 - Remaining validation: real microphone/accent/noise testing and live cloud extraction
   quality. Automated UI checks use a mock bridge; no claim of benchmarked recognition
   accuracy or production readiness is made by these tests.
+# Follow-up: relevant answers and visible motion
+
+- Fixed the broad location phrase rule that intercepted “how hot it is where I am”.
+  Current local-weather questions now fetch weather at the Windows location fix;
+  unavailable location asks for a city instead of pretending the configured city
+  is the current position. Other questions mentioning location no longer trigger
+  the address shortcut.
+- Calculations speak only the answer. Speaking rim displacement and its minimum
+  intensity increased; the rim still moves inward within the fixed canvas.
+- Sun rays use an explicit SVG rotation center. Electron tests sample four times
+  in the animation and check alignment with the sun circle.
+- Simple searches generate speech and generic layout in one model request on
+  either local or cloud providers. Prices can use a headline-only card; other
+  layouts include comparisons, specifications, lists, steps and timelines.
+  Explicit web and price requests no longer substitute Wikipedia entity summaries.
+  Price requests skip deep planning and unrelated illustrations. Prompting asks
+  for 1–2 short sentences with prices, currency, edition and condition first.
+- No new search provider was introduced. Live web search still requires Tavily
+  configuration. Empty or invalid result sets fail explicitly. Price/currentness
+  and layout quality remain dependent on retrieved evidence and model output.
+- Verified: 23 reliability tests, type checking, production build and Electron UI
+  tests. Search/model responses in regression tests are fixtures, not live accuracy
+  benchmarks. Weather screenshot inspected in out/qa/weather.png.

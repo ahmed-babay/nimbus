@@ -4,10 +4,12 @@ const { buildSync } = require('esbuild')
 const Module = require('node:module')
 const path = require('node:path')
 
-function source(file) {
+function source(file, mocks = {}) {
   const filename = path.resolve(file)
-  const { outputFiles } = buildSync({ entryPoints: [filename], bundle: true, write: false, platform: 'node', format: 'cjs' })
+  const { outputFiles } = buildSync({ entryPoints: [filename], bundle: true, write: false, platform: 'node', format: 'cjs', external: Object.keys(mocks) })
   const mod = new Module(filename, module)
+  const originalRequire = mod.require.bind(mod)
+  mod.require = id => Object.hasOwn(mocks, id) ? mocks[id] : originalRequire(id)
   mod._compile(outputFiles[0].text, filename)
   return mod.exports
 }
@@ -22,12 +24,56 @@ const { factsFromReply } = source('src/services/facts-card.ts')
 const { parseLibrary, answerMarkdown } = source('src/renderer/src/lib/answer-library.ts')
 const { speechGain } = source('src/renderer/src/lib/speech-level.ts')
 const { quickCalculation } = source('src/shared/quick-calculation.ts')
+const { asksWhereTheyAre, asksLocalWeather } = source('src/shared/location-intent.ts')
+
+test('local search produces speech and a price card in one model call', async () => {
+  const calls = []
+  const { answerWebSearch } = source('src/services/facts.ts', {
+    './llm': { activeProvider: () => 'local', inputBudgetChars: () => 10000, complete: async request => {
+      calls.push(request)
+      return JSON.stringify({ usable: true, layout: 'price', title: 'PS5 Digital', headline: '€449', headlineLabel: 'New · advertised offer',
+        answer: 'This listing advertises a new PS5 Digital for €449. Check delivery and availability.',
+        groups: [{ title: 'Shop', headline: '€449', sourceNote: 'shop.example' }] })
+    } }, './now': { currentTimeContext: () => 'Today is a test date.' }, './region': { replyLanguageContext: () => 'Answer in English.' }
+  })
+  const result = await answerWebSearch({ question: 'How much does a PS5 cost?', query: 'PS5 price',
+    evidence: [{ title: 'PS5 Digital', host: 'shop.example', url: 'https://shop.example/ps5', text: 'New PS5 Digital €449', published: null },
+      { title: 'AI summary', host: 'search', url: '', text: 'Unsupported invented claim', published: null }],
+    sources: [{ title: 'Shop', url: 'https://shop.example/ps5', snippet: 'New PS5 Digital €449' }] })
+  assert.equal(calls.length, 1)
+  assert.equal(result.facts.headline, '€449')
+  assert.equal(result.facts.groups[0].url, 'https://shop.example/ps5')
+  assert.match(result.speech, /€449/)
+  assert.doesNotMatch(calls[0].messages[0].text, /Unsupported invented claim/)
+  await assert.rejects(answerWebSearch({ question: 'Price?', query: 'price', evidence: [], sources: [] }), /No usable web sources/)
+  assert.equal(calls.length, 1, 'empty sources never invoke an ungrounded answer')
+})
+
+test('location qualifiers do not hijack weather and other questions', () => {
+  const weather = 'can you see how hot it is where i am now'
+  assert.equal(asksWhereTheyAre(weather), false)
+  assert.equal(asksLocalWeather(weather), true)
+  assert.equal(asksWhereTheyAre('find restaurants near my location'), false)
+  assert.equal(asksWhereTheyAre('what is the weather where i am'), false)
+  assert.equal(asksWhereTheyAre('where am i now?'), true)
+  assert.equal(asksWhereTheyAre('can you tell me where i am?'), true)
+  assert.equal(asksLocalWeather('remind me in 5 minutes to check the weather here'), false)
+})
+
+test('conversational internet shopping requests are explicit searches', () => {
+  const question = 'I want to see on the internet how much it costs to buy a ps5'
+  assert.equal(wantsWebSearch(question), true)
+  assert.equal(searchSubject(question), 'how much it costs to buy a ps5')
+  assert.equal(wantsWebSearch('I want to see how the internet works'), false)
+  const card = factsFromReply(JSON.stringify({ usable: true, layout: 'price', title: 'PS5', headline: '€449–€499' }), { query: question, sources: [] })
+  assert.equal(card.headline, '€449–€499')
+})
 
 test('local calculations preserve precedence, percentages and explicit errors', () => {
-  assert.equal(quickCalculation('calculate (125 + 75) / 4'), '50. Calculated on this device.')
-  assert.equal(quickCalculation('what is 20 percent of 150'), '30. Calculated on this device.')
-  assert.equal(quickCalculation('2 plus 3 times 4'), '14. Calculated on this device.')
-  assert.equal(quickCalculation('(-2 + 5) * 3'), '9. Calculated on this device.')
+  assert.equal(quickCalculation('calculate (125 + 75) / 4'), '50.')
+  assert.equal(quickCalculation('what is 20 percent of 150'), '30.')
+  assert.equal(quickCalculation('2 plus 3 times 4'), '14.')
+  assert.equal(quickCalculation('(-2 + 5) * 3'), '9.')
   assert.match(quickCalculation('5 / 0'), /undefined/)
   assert.match(quickCalculation('9007199254740993 + 1'), /precision/)
   assert.equal(quickCalculation('2026-09-05'), null)

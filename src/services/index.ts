@@ -21,7 +21,8 @@ import { describeEpisode, nextEpisode } from './tv'
 import { describeFlights, overheadFlights } from './flights'
 import { snippetEvidence, webSearch } from './search'
 import { research } from './research'
-import { extractFacts } from './facts'
+import { answerWebSearch } from './facts'
+import { activeProvider } from './llm'
 import { tryIllustrate } from './illustrate'
 import { addReminder, cancelReminders, pendingReminders } from './reminders'
 import { planDepartureAlarm } from './departure-alarm'
@@ -152,6 +153,7 @@ export async function handleUtterance(
 }
 
 import { quickCalculation } from '../shared/quick-calculation'
+import { asksLocalWeather } from '../shared/location-intent'
 
 async function resolveUtterance(
   utterance: string,
@@ -166,6 +168,10 @@ async function resolveUtterance(
   }
   const calculation = quickCalculation(utterance)
   if (calculation !== null) return { speech: calculation, card: { type: 'text' }, intent: 'chat' }
+  if (asksLocalWeather(utterance)) {
+    const response = await runIntent('weather', { city: 'here' }, utterance, onChunk, onSearching)
+    return { ...response, intent: 'weather' }
+  }
   const classified = await classifyIntent(utterance)
   const { intent, params } = honourExplicitSearch(utterance, classified)
   // Noted before running it, so a question still counts even if the lookup
@@ -218,7 +224,7 @@ async function runIntent(
     // phrasing rather than the handful someone thought to list. The phrase
     // test behind it is only a backstop for when the router drops the intent,
     // which this one does often enough to matter.
-    if (intent === 'location' || asksWhereTheyAre(utterance)) {
+    if ((intent === 'location' && !asksLocalWeather(utterance)) || asksWhereTheyAre(utterance)) {
       const speech = await describeWhereYouAre()
       // "Where am I" wants telling; "show me where I am on the map" wants
       // showing. Every map in Nimbus used to be a by-product of working out a
@@ -267,7 +273,10 @@ async function runIntent(
         }
         const city = params.city
         if (!city) throw new Error("I didn't catch which city you meant.")
-        const data = await getWeather(city)
+        const local = city === 'here' || asksLocalWeather(utterance)
+        const fix = local ? await deviceLocation() : null
+        if (local && !fix) throw new Error('I could not get your current location. Tell me a city to check its weather.')
+        const data = await getWeather(local ? 'Your current location' : city, fix ?? undefined)
         const speech = await formatResponse('weather', utterance, data, onChunk)
         return { speech, card: { type: 'weather', data } }
       }
@@ -823,14 +832,16 @@ async function runIntent(
         // Runs alongside the search and synthesis, so pictures cost no extra
         // wall-clock time. Skipped for entity answers, which already carry
         // their own Wikipedia photo.
-        const pictures = params.entity ? Promise.resolve([]) : tryIllustrate(params.topic)
+        const explicitWeb = wantsWebSearch(utterance)
+        const priceQuestion = /\b(price|cost|costs|how much|buy|preis|kostet)\b/i.test(utterance)
+        const pictures = explicitWeb || priceQuestion || params.entity ? Promise.resolve([]) : tryIllustrate(params.topic)
 
         // Wikipedia is the right tool only when the question is *about* a
         // named thing ("who is Marie Curie") — it gives a description and a
         // photo, and needs no API key. For relational questions ("who is the
         // CEO of Nvidia") it returns the tangential company page, so those go
         // to web search instead.
-        if (params.entity) {
+        if (params.entity && !explicitWeb && !priceQuestion) {
           const entity = await lookupEntity(params.entity)
           if (entity) {
             const speech = await formatResponse(
@@ -849,7 +860,7 @@ async function runIntent(
 
         // No Tavily key configured? Fall back to Wikipedia rather than just
         // erroring out — a decent answer beats none.
-        if (!process.env.TAVILY_API_KEY) {
+        if (!process.env.TAVILY_API_KEY && !explicitWeb && !priceQuestion) {
           const entity = await lookupEntity(query)
           if (entity) {
             const speech = await formatResponse(
@@ -869,7 +880,7 @@ async function runIntent(
         // Deep mode plans sub-queries and reads the pages themselves; it costs
         // more search credits and a couple of seconds, and answers questions a
         // snippet search simply can't.
-        if (config.search?.deep) {
+        if (config.search?.deep && activeProvider() !== 'local' && !priceQuestion) {
           // Once a chunk has reached the UI there's no falling back — a second
           // attempt would stream a fresh answer on top of the first.
           let streamed = false
@@ -900,20 +911,20 @@ async function runIntent(
         } finally {
           onSearching?.(false)
         }
-        // Started before the answer is phrased, for the same reason the deep
-        // path does it: two model calls in parallel cost one call's wait.
-        const pendingFacts = extractFacts({
+        // One generation produces both the answer and its question-specific card.
+        let generated: Awaited<ReturnType<typeof answerWebSearch>> | null = null
+        try { generated = await answerWebSearch({
           question: utterance,
           query,
           evidence: snippetEvidence(data),
           sources: data.results
-        })
+        }) } catch (error) { console.warn('[nimbus] structured search answer failed:', error) }
         // Tavily often returns its own summary; prefer letting Gemini phrase
         // it conversationally, but fall back to Tavily's if Gemini is rate
         // limited so the user still gets an answer.
         let speech: string
         try {
-          speech = await formatResponse(
+          speech = generated?.speech ?? await formatResponse(
             'search',
             utterance,
             { answer: data.answer, results: data.results.slice(0, 3) },
@@ -924,7 +935,7 @@ async function runIntent(
           speech = data.answer
         }
         const illustrations = await pictures
-        const facts = await pendingFacts
+        const facts = generated?.facts
         if (facts) {
           return { speech, card: { type: 'facts', data: { ...facts, answer: speech, illustrations } } }
         }

@@ -33,6 +33,7 @@ const SEARCH_VERB = '(search|look up|look|google|bing|find out|find|check|resear
 const WEB_NOUN = '(the )?(internet|websearch|web|online|net|google|browser|netz)'
 
 const PATTERNS: RegExp[] = [
+  /\b(?:see|check|find|know|learn) (?:on|from) (?:the )?(?:internet|web)\b/,
   // "search the internet for the price of a 3070", "look it up online",
   // "check online for the ps5 price", "find out on the web who won".
   new RegExp(
@@ -90,6 +91,7 @@ export function wantsWebSearch(transcript: string): boolean {
  */
 export function searchSubject(transcript: string): string {
   const stripped = transcript
+    .replace(/^\s*i\s+(?:want|would like|need)\s+to\s+(?:see|check|find|know|learn)\s+(?:on|from)\s+(?:the\s+)?(?:internet|web)\s*/i, '')
     .replace(/^\s*(ok|okay|alright|hey|nimbus|please|just)\b[\s,]*/gi, '')
     .replace(/^\s*(can|could|would|will)\s+you\b[\s,]*/i, '')
     .replace(/^\s*i\s+(want|need)\s+you\s+to\b[\s,]*/i, '')

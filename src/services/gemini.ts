@@ -841,7 +841,8 @@ export async function formatResponse(
     'now. Never use times, numbers, prices or names from anywhere else. If Data',
     'does not contain something, say you do not have it.',
     '',
-    'Respond with only the spoken sentence(s), nothing else.'
+    'Respond with only the spoken sentence(s), nothing else.',
+    intent === 'search' ? 'Use 1-2 short sentences, usually under 45 words. Answer the specific question first. For a price question, lead with the supported price/range and currency, distinguish edition and new/used condition, and skip product history and specifications. If the sources have no current price, say so.' : ''
   ]
     .filter(Boolean)
     .join('\n')

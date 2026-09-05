@@ -75,8 +75,8 @@ function shortPlace(name: string): string {
   return name.split(',')[0].trim() || name
 }
 
-export async function getWeather(city: string): Promise<WeatherCardData> {
-  const place = await geocode(city)
+export async function getWeather(city: string, coordinates?: { lat: number; lon: number }): Promise<WeatherCardData> {
+  const place = coordinates ? { ...coordinates, name: city } : await geocode(city)
   if (!place) {
     throw new Error(`I couldn't find a city named "${city}".`)
   }

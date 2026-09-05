@@ -579,8 +579,10 @@ Three things keep it from being worse than the plain link list it replaces:
 - **It runs alongside the answer, not after it.** Extraction is started before synthesis
   and has a 3.5-second presentation deadline. It uses an additional cloud model request
   and may finish after the spoken answer; late results fall back to a plain search card.
-  The deadline bounds waiting, but does not cancel provider billing. Extraction is
-  skipped entirely on the on-device model, which serializes its calls behind one queue.
+  The deadline bounds waiting, but does not cancel provider billing. This extra
+  extraction applies to the deep-research path and is skipped on-device. Simple
+  searches instead produce the short answer and card together in one generation,
+  including on local models. Price questions use this direct path.
 - **Every value has to come from the sources**, and the model is told to return
   `usable: false` rather than invent a table for a question that hasn't got one — opinions,
   definitions and explanations read better as prose.

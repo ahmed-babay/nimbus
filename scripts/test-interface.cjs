@@ -179,6 +179,23 @@ app.whenReady().then(async () => {
   await run(`document.querySelector('.answer-library').dispatchEvent(new KeyboardEvent('keydown', {key:'Escape', bubbles:true})); document.querySelector('.answer-library').close()`)
   await settle()
   assert.equal(await run(`!!document.querySelector('.nimbus-presence')`), true, 'closing the library preserves the assistant')
+  await submit('how hot is it here')
+  await run(`window.__qa.requests.at(-1).resolve({speech:'It is 24 degrees and clear.', card:{type:'weather',data:{city:'Current location', temp:24, feelsLike:24, condition:'clear sky',kind:'clear',humidity:40,windSpeed:2}}})`)
+  await settle()
+  const sunCenters = await run(`(() => {
+    const rays = document.querySelector('.weather-sun-rays');
+    const svg = rays.ownerSVGElement;
+    svg.pauseAnimations();
+    return [0, 10, 20, 30].map(time => {
+      svg.setCurrentTime(time);
+      const circle = rays.parentNode.querySelector('circle');
+      const center = new DOMPoint(circle.cx.baseVal.value, circle.cy.baseVal.value);
+      const a = center.matrixTransform(rays.getCTM()), b = center.matrixTransform(circle.getCTM());
+      return Math.hypot(a.x-b.x, a.y-b.y);
+    });
+  })()`)
+  assert.ok(sunCenters.every(distance => distance < .01), 'sun rays rotate around the sun center throughout the animation')
+  await screenshot('weather')
   await click('Settings')
   assert.equal(await run(`document.body.innerText.includes('Signature sounds') && document.body.innerText.includes('Thinking acknowledgment')`), true)
   assert.deepEqual(await run('window.__qa.errors'), [])

@@ -126,6 +126,7 @@ function bullets(value: unknown): string[] {
  */
 function worthShowing(card: FactsCardData): boolean {
   if (!card.title) return false
+  if ((card.layout === 'price' || card.layout === 'metric') && card.headline) return true
   const substance =
     card.rows.length + card.groups.length + card.bullets.length + (card.headline ? 2 : 0)
   if (card.layout === 'comparison') return card.groups.length >= 2

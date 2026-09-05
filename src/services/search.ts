@@ -79,12 +79,15 @@ export async function webSearch(query: string): Promise<SearchCardData> {
     search_depth: 'basic'
   })
 
-  const results: SearchResult[] = (json.results ?? []).map((r) => ({
+  const results: SearchResult[] = (json.results ?? []).filter(r => {
+    try { return typeof r.title === 'string' && typeof r.content === 'string' && ['https:', 'http:'].includes(new URL(r.url).protocol) } catch { return false }
+  }).map((r) => ({
     title: r.title,
     url: r.url,
     snippet: r.content
   }))
 
+  if (!results.length) throw new Error('No usable web results came back. Try a more specific product, edition or location.')
   return { query, answer: json.answer ?? null, results }
 }
 
