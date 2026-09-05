@@ -397,6 +397,8 @@ export interface StormOptions {
   fill: number
   /** Drop the outer atmosphere. For the tiny chip, where it would only clip. */
   bare: boolean
+  /** Keep particles within the shell for the assistant's restrained presentation. */
+  contained?: boolean
 }
 
 export function createStormOrb(canvas: HTMLCanvasElement, options: StormOptions): StormOrb | null {
@@ -676,7 +678,7 @@ export function createStormOrb(canvas: HTMLCanvasElement, options: StormOptions)
     // them in: the space around the orb visibly empties into it while a
     // question is being taken in, which is most of why the gathering reads as
     // gathering rather than as the orb simply getting brighter.
-    for (let i = 0; i < motes.length; i++) {
+    for (let i = 0; !options.contained && i < motes.length; i++) {
       const mo = motes[i]
       const pull = 1 - drive.charge * 0.62
       const target = 0.98 + (mo.rest - 0.98) * pull

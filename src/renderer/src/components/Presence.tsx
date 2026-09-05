@@ -12,7 +12,7 @@ export function Presence({ state, searching, answerSeq, levelRef, compact, trans
   }[state]
   return <div className={`nimbus-presence ${compact ? 'is-compact' : ''}`}>
     <div className="nimbus-presence-light" aria-hidden="true" />
-    <Orb state={transcribing ? 'thinking' : state} searching={searching} answerSeq={answerSeq} levelRef={levelRef} size={compact ? 48 : 106} />
+    <Orb state={transcribing ? 'thinking' : state} searching={searching} answerSeq={answerSeq} levelRef={levelRef} size={72} />
     <div className="nimbus-presence-copy">
       {!compact && <p className="experience-eyebrow">Your personal intelligence</p>}
       <p className="nimbus-presence-title" role="status">{title}</p>
